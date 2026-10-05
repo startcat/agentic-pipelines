@@ -28,6 +28,7 @@ the commands and what gets persisted is in [`docs/reference.md`](docs/reference.
 - [How it fits together](#how-it-fits-together)
 - [What happens during a run](#what-happens-during-a-run)
 - [What an `agent` step does](#what-an-agent-step-does)
+- [The dashboard](#the-dashboard)
 - [Installation](#installation)
 - [Your first pipeline in ten minutes](#your-first-pipeline-in-ten-minutes)
 - [Operating day to day](#operating-day-to-day)
@@ -118,6 +119,29 @@ not the SDK:
   a `shell` step's; `max_cost_usd` stops the step if it goes over budget.
 
 Full details in [The security model](docs/reference.md#the-security-model).
+
+## The dashboard
+
+`pipelines web` opens a local, read-only dashboard at
+`http://127.0.0.1:7717` with every pipeline in the data repo. It answers
+"did last night work?" in three seconds:
+
+- **Overview.** Which pipelines are scheduled in `launchd`, which failed
+  their last run, what the last run cost and when it was. A pipeline that
+  isn't installed, is disabled, or is loaded but hasn't produced a single run
+  shows up in red even when there's no error to report: the silent failure
+  that `stale_after` can't see, because with no run there's nothing to
+  evaluate.
+- **Pipeline page.** Its steps (`shell` or `agent`), its guards, its params
+  with their descriptions, and its run history with the cost of each run.
+- **Run page.** How long each step took, what it cost, which tools the agent
+  used and, above all, the **sandbox denials**: every action the engine
+  refused the agent, with the path and the reason. In one of our test runs an
+  agent tried to read a file outside its working folder; the engine blocked
+  it, recorded it, and the run still finished green.
+
+The dashboard updates live while a run is in progress. Like the CLI messages,
+it's in Spanish for now.
 
 ## Installation
 
