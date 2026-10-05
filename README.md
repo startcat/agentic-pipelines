@@ -121,9 +121,11 @@ Full details in [The security model](docs/reference.md#the-security-model).
 
 ## Installation
 
-You need **Bun** (tested with 1.3.9), a compatible **Node** on the `PATH`,
-`git`, and an authenticated Claude Code session on any machine that will run
-`agent` steps. Full list in [Requirements and environment](docs/reference.md#requirements-and-environment).
+You need **Bun** (tested with 1.3.9), a compatible **Node** on the `PATH` and
+`git`. Pipelines with `agent` steps also need an **Anthropic API key**: create
+one in the [Claude Console](https://platform.claude.com/) and put it in the
+data repo's `.env` as `ANTHROPIC_API_KEY=...` (that's what a scheduled run
+sees). Full list in [Requirements and environment](docs/reference.md#requirements-and-environment).
 
 ```bash
 git clone https://github.com/startcat/agentic-pipelines.git
@@ -325,9 +327,16 @@ What changes compared to a `shell` step:
   it gets `Read`, `Grep` and `Glob`.
 - `max_cost_usd` caps the spend of this particular step.
 
+`agent` steps authenticate with your Anthropic API key, read from the data
+repo's `.env` (gitignored):
+
+```bash
+echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env
+```
+
 ```bash
 pipelines validate hello-agent
-pipelines doctor hello-agent          # also checks the agent and the Claude Code session
+pipelines doctor hello-agent          # also checks the agent and your Anthropic API key
 pipelines run hello-agent --set workdir=/tmp/hello-agent
 ```
 

@@ -16,6 +16,8 @@ export type RunOptions = {
   params: Record<string, string>;
   /** Valores de los secretos declarados en requires.env. */
   secrets: Record<string, string>;
+  /** Credencial de Claude del `.env` del repo de datos, solo para los pasos `agent`. */
+  agentAuth?: Record<string, string>;
   /** Run previo a retomar. Sus pasos correctos no se re-ejecutan. */
   resumeFrom?: RunRecord;
   /** El run se lanzó con `run --force`: queda anotado en el registro. */
@@ -55,6 +57,7 @@ async function executeOnce(
     repoRoot: options.repoRoot,
     promptText,
     mcpServers: options.pipeline.mcpServers,
+    agentAuth: options.agentAuth,
   });
 }
 

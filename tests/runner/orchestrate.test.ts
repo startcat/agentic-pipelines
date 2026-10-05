@@ -407,6 +407,33 @@ steps:
     expect(first.steps.b!.status).toBe('skipped');
   });
 
+  test('la credencial del .env (agentAuth) llega al runner de los pasos agent', async () => {
+    const pipelineDir = join(root, 'pipelines', 'demo');
+    mkdirSync(pipelineDir, { recursive: true });
+    writeFileSync(join(pipelineDir, 'a.md'), 'Hola.');
+    const pipeline = parsePipeline(`
+name: demo
+description: d
+version: 1
+steps:
+  - id: a
+    type: agent
+    agent: worker
+    prompt: a.md
+`);
+    let received: Record<string, string> | undefined;
+    const agentRunner: NonNullable<RunOptions['agentRunner']> = async (_step, ctx) => {
+      received = ctx.agentAuth;
+      return { ok: true, outputs: {}, log: '', durationMs: 1 };
+    };
+    const record = await runPipeline({
+      pipeline, repoRoot: root, store, params: {}, secrets: {},
+      agentAuth: { ANTHROPIC_API_KEY: 'ap-test-del-env' }, agentRunner,
+    });
+    expect(record.status).toBe('success');
+    expect(received).toEqual({ ANTHROPIC_API_KEY: 'ap-test-del-env' });
+  });
+
   test('resume acumula el coste de un paso previo y uno nuevo, a través de la rama agent (prompt real + agentRunner inyectado)', async () => {
     // Único test de este bloque que ejercita la rama `agent` de `executeOnce`:
     // lee un fichero de prompt real de disco (no se stubea esa lectura) y

@@ -115,6 +115,19 @@ describe('composeAgentEnv', () => {
     expect(composeAgentEnv({}).AP_VARIABLE_DE_PRUEBA).toBeUndefined();
     delete process.env.AP_VARIABLE_DE_PRUEBA;
   });
+  // Bajo launchd el entorno no trae la clave: la del `.env` (agentAuth) es la
+  // que cuenta, y gana a la del entorno si están las dos.
+  test('la credencial del .env (agentAuth) gana a la del entorno del proceso', () => {
+    const previous = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = 'ap-test-del-entorno';
+    try {
+      expect(composeAgentEnv({}, { ANTHROPIC_API_KEY: 'ap-test-del-env' }).ANTHROPIC_API_KEY).toBe('ap-test-del-env');
+      expect(composeAgentEnv({}).ANTHROPIC_API_KEY).toBe('ap-test-del-entorno');
+    } finally {
+      if (previous === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = previous;
+    }
+  });
 });
 
 describe('validateOutputs', () => {

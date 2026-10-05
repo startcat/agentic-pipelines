@@ -52,6 +52,8 @@ export type AgentStepContext = StepContext & {
   promptText: string;
   /** Registro `mcp_servers` del pipeline; el paso activa un subconjunto por nombre. */
   mcpServers: Record<string, McpServerConfig>;
+  /** Credencial de Claude tomada del `.env` del repo de datos; solo llega a los pasos `agent`. */
+  agentAuth?: Record<string, string>;
   queryFn?: QueryFn;
 };
 
@@ -608,7 +610,7 @@ export async function runAgentStep(
     tools: step.tools,
     cwd,
     additionalDirectories: additionalDirs, // informativo para el SDK/modelo — la aplicación real es el hook
-    env: composeAgentEnv(ctx.secrets),
+    env: composeAgentEnv(ctx.secrets, ctx.agentAuth),
     settingSources: [],
     permissionMode: 'bypassPermissions',
     allowDangerouslySkipPermissions: true,

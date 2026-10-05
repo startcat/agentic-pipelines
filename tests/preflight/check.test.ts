@@ -34,6 +34,21 @@ steps:
     run: 'true'
 `);
 
+// Igual que PIPELINE pero con un paso `agent`: solo estos pipelines exigen
+// credenciales de Claude.
+const AGENT_PIPELINE = parsePipeline(`
+name: demo
+description: d
+version: 1
+requires:
+  agents: [local-writer, user-writer]
+  env: [MY_TOKEN]
+steps:
+  - id: a
+    agent: local-writer
+    prompt: a.md
+`);
+
 const okProbes = {
   hasBinary: async () => true,
   resolvesHost: async () => true,
@@ -161,7 +176,7 @@ describe('preflight', () => {
 
   test('falla si no hay credenciales de Claude en el entorno', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
-    const report = await preflight(PIPELINE, {
+    const report = await preflight(AGENT_PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
       processEnv: {}, dotEnv: { MY_TOKEN: 's' }, probes: okProbes,
     });
@@ -176,7 +191,7 @@ describe('preflight', () => {
   // cualquier `run` con pasos agent.
   test('acepta una credencial guardada en el llavero, sin fichero ni API key', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
-    const report = await preflight(PIPELINE, {
+    const report = await preflight(AGENT_PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
       processEnv: {}, dotEnv: { MY_TOKEN: 's' },
       probes: { ...okProbes, hasKeychainSession: async () => true },
@@ -190,11 +205,32 @@ describe('preflight', () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
     mkdirSync(claudeDir, { recursive: true });
     writeFileSync(join(claudeDir, '.credentials.json'), '{}');
-    const report = await preflight(PIPELINE, {
+    const report = await preflight(AGENT_PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
       processEnv: {}, dotEnv: { MY_TOKEN: 's' }, probes: okProbes,
     });
     expect(report.checks.find((c) => c.kind === 'auth')!.ok).toBe(true);
+  });
+
+  // La vía documentada: una clave de API en el `.env` del repo de datos, que
+  // es lo único que llega a un run lanzado por launchd.
+  test('acepta ANTHROPIC_API_KEY en el .env del repo de datos', async () => {
+    writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
+    const report = await preflight(AGENT_PIPELINE, {
+      repoRoot, userClaudeDir: claudeDir,
+      processEnv: {}, dotEnv: { MY_TOKEN: 's', ANTHROPIC_API_KEY: 'sk-del-env' }, probes: okProbes,
+    });
+    const auth = report.checks.find((c) => c.kind === 'auth');
+    expect(auth!.ok).toBe(true);
+    expect(auth!.detail).toContain('.env');
+  });
+
+  test('un pipeline sin pasos agent no exige credenciales de Claude', async () => {
+    const report = await preflight(PIPELINE, {
+      repoRoot, userClaudeDir: claudeDir,
+      processEnv: {}, dotEnv: { MY_TOKEN: 's' }, probes: okProbes,
+    });
+    expect(report.checks.find((c) => c.kind === 'auth')).toBeUndefined();
   });
 
   test('falla si un binario declarado no está en PATH', async () => {

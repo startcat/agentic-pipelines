@@ -255,22 +255,32 @@ export async function preflight(
   const probes = { ...defaultProbes(env), ...env.probes };
   const checks: PreflightCheck[] = [];
 
-  // Autenticación. El motor nunca la intermedia: solo comprueba que existe.
-  const hasApiKey = Boolean(env.processEnv.ANTHROPIC_API_KEY);
-  const hasSessionFile = await exists(join(env.userClaudeDir, '.credentials.json'));
-  const hasKeychain = hasSessionFile ? false : await probes.hasKeychainSession();
-  checks.push({
-    kind: 'auth',
-    name: 'claude',
-    ok: hasApiKey || hasSessionFile || hasKeychain,
-    detail: hasApiKey
-      ? 'ANTHROPIC_API_KEY presente'
-      : hasSessionFile
-        ? 'sesión de Claude Code iniciada'
-        : hasKeychain
-          ? 'sesión de Claude Code en el llavero'
-          : 'sin credenciales: define ANTHROPIC_API_KEY o inicia sesión con `claude`',
-  });
+  // Autenticación. El motor nunca la intermedia: solo comprueba que existe, y
+  // solo si el pipeline tiene algún paso `agent` — uno solo de shell no habla
+  // con Claude y no debe quedar bloqueado por no tener credenciales.
+  // La vía documentada es una clave de API, en el `.env` del repo de datos
+  // (es lo único que llega a un run lanzado por launchd) o en el entorno.
+  if (pipeline.steps.some((step) => step.type === 'agent')) {
+    const apiKeySource = env.dotEnv.ANTHROPIC_API_KEY
+      ? '.env'
+      : env.processEnv.ANTHROPIC_API_KEY
+        ? 'entorno'
+        : undefined;
+    const hasSessionFile = apiKeySource ? false : await exists(join(env.userClaudeDir, '.credentials.json'));
+    const hasKeychain = apiKeySource || hasSessionFile ? false : await probes.hasKeychainSession();
+    checks.push({
+      kind: 'auth',
+      name: 'claude',
+      ok: Boolean(apiKeySource) || hasSessionFile || hasKeychain,
+      detail: apiKeySource
+        ? `ANTHROPIC_API_KEY presente (${apiKeySource})`
+        : hasSessionFile
+          ? 'sesión de Claude Code iniciada'
+          : hasKeychain
+            ? 'sesión de Claude Code en el llavero'
+            : 'sin credenciales: pon ANTHROPIC_API_KEY en el .env del repo de datos',
+    });
+  }
 
   // Agentes: primero los del repo, después los del usuario.
   const repoAgents = await markdownNames(join(env.repoRoot, 'agents'));

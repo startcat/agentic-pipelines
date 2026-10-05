@@ -109,6 +109,17 @@ export async function loadLocalParams(
   return all[pipeline] ?? {};
 }
 
+/**
+ * Credencial de Claude para los pasos `agent`, tomada del `.env` del repo de
+ * datos. Bajo launchd el entorno del proceso no la trae (el plist solo lleva
+ * PATH y HOME), así que el `.env` es la vía que funciona igual a mano y
+ * programado. Si no está, el subproceso del SDK usa la del entorno.
+ */
+export function collectAgentAuth(ctx: RepoContext): Record<string, string> {
+  const key = ctx.dotEnv.ANTHROPIC_API_KEY;
+  return key ? { ANTHROPIC_API_KEY: key } : {};
+}
+
 /** Secretos declarados por un pipeline o un canal de notify, tomados del .env o del entorno. */
 export function collectSecrets(ctx: RepoContext, names: string[]): Record<string, string> {
   const secrets: Record<string, string> = {};

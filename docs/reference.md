@@ -282,8 +282,9 @@ Every step, `shell` or `agent`, accepts these fields:
     summary: string
 ```
 
-`agent` steps run through the Claude Agent SDK, so the machine needs an
-authenticated Claude Code session (see
+`agent` steps run through the Claude Agent SDK and authenticate with an
+Anthropic API key (`ANTHROPIC_API_KEY`), read from the data repo's `.env` or
+from the environment (see
 [Requirements and environment](#requirements-and-environment)).
 
 | Field | Type | Required | Notes |
@@ -444,6 +445,10 @@ its **value** is resolved at runtime like this:
    optional quotes). It takes precedence.
 2. If it isn't there, the process's own environment (`process.env`).
 
+`ANTHROPIC_API_KEY` is the one value you don't declare: the engine reads it
+from `.env` (or the environment) by itself and passes it only to `agent`
+steps (see [Requirements and environment](#requirements-and-environment)).
+
 `.env` and `.params.local.json` are in the data repo's expected
 `.gitignore`; they are never committed.
 
@@ -461,7 +466,7 @@ current directory.
 | Command | Usage | What it does |
 |---|---|---|
 | `validate` | `pipelines validate [name]` | Validates the schema, the dependency graph (cycles), `{{...}}` references in prompts/`cwd`/`when` (including `when[].changed.path`)/`run`/`additional_dirs`, that `notify.channel` exists, and five fixed rules on the shell text; see [`validate`: the five rules and `--file`](#validate-the-five-rules-and---file) below. Without `name`, validates every pipeline in the repo. `--file <path>` validates a standalone YAML instead of an installed one. |
-| `doctor` | `pipelines doctor <name>` | Checks that the current machine can run the pipeline: agents, binaries, MCP servers (real start-up + live schema drift), environment variables, network resolution, Claude authentication. |
+| `doctor` | `pipelines doctor <name>` | Checks that the current machine can run the pipeline: agents, binaries, MCP servers (real start-up + live schema drift), environment variables, network resolution, and the Anthropic API key when the pipeline has `agent` steps. |
 | `install` | `pipelines install <name> [--set k=v] [--force] [--dry-run]` | Installs the pipeline as a launchd job from its `triggers.cron`. Writes the params to `.params.local.json` and a derived plist (with no values) to `~/Library/LaunchAgents/`. Computes the `PATH` from `requires.bin` and the `mcp_servers` `command`s, and checks that this `PATH` resolves everything needed (including `sh`) before writing anything. Warns about optional params without a value and the steps they affect. `--force` skips the cut-off for a red `doctor` or a suspicious foreign job, but still WARNS about both, never silently. `--dry-run` goes through those same validations, prints the plist it would write and exits without touching anything: not the plist, not `.params.local.json` even if it gets `--set`, not `launchctl`. A failing validation makes it fail all the same, so it is usable inside a script. |
 | `uninstall` | `pipelines uninstall <name>` | Unloads the job (always, even if the plist no longer exists) and deletes its plist if it finds it. Doesn't touch `.params.local.json` or the logs. Idempotent. |
 | `run` | `pipelines run <name> [--set key=value ...] [--force]` | Runs the pipeline now. `--set` is repeatable, to pass/override params. Evaluates `requires` (blocking) and the `when:` guards (a `skipped` is a success, not an error) before starting. Acquires an exclusive per-pipeline lock for the duration of the run. `--force` skips the `when:` guards (policy: "not today") but NOT `requires`, which measures whether this machine can run the pipeline; it warns on stderr and marks the run with `forced: true`, which `status` shows as `(guardas omitidas)`. A forced run doesn't prove the guards would have let it through, and it does anchor the `throttle` like any other run that executed. |
@@ -641,8 +646,11 @@ email through the `email` channel when it finishes.
 - **`@anthropic-ai/claude-agent-sdk`** `^0.3.222`: `agent` steps.
 - **`commander`**, **`yaml`**, **`zod`**: CLI, YAML parsing, schema
   validation.
-- An authenticated Claude Code session on the machine that runs `agent`
-  steps (`doctor` checks it as the `auth` check).
+- An **Anthropic API key** for `agent` steps, as `ANTHROPIC_API_KEY` in the
+  data repo's `.env` (the only place a `launchd` run can read it from) or in
+  the environment; the `.env` value wins. `doctor` and `run` check it as the
+  `auth` check, only for pipelines that have `agent` steps. Only `agent`
+  steps receive it: `shell` steps and notification channels never do.
 - `git`, plus any binary a given pipeline declares in `requires.bin` (e.g.
   `yarn`, `jq`).
 

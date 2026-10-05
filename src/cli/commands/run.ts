@@ -5,7 +5,7 @@ import { resolveParams } from '../../params/resolve.ts';
 import { hasBlockingFailures, preflight } from '../../preflight/check.ts';
 import { runPipeline } from '../../runner/orchestrate.ts';
 import { RunStore } from '../../runs/store.ts';
-import { collectSecrets, loadLocalParams, loadPipeline } from '../context.ts';
+import { collectAgentAuth, collectSecrets, loadLocalParams, loadPipeline } from '../context.ts';
 import { withLock } from '../lock.ts';
 import {
   collectSetFlag,
@@ -95,6 +95,7 @@ export function registerRun(program: Command): void {
               store,
               params,
               secrets: collectSecrets(ctx, pipeline.requires.env),
+              agentAuth: collectAgentAuth(ctx),
               forced: opts.force,
             });
 

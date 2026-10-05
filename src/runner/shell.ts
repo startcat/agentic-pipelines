@@ -94,18 +94,22 @@ const AGENT_AUTH_ENV_KEYS = [
 /**
  * Entorno del subproceso del SDK del Agent: la misma base mínima y el mismo
  * locale fijo que `composeEnv`, más las variables de autenticación/red de
- * `AGENT_AUTH_ENV_KEYS`, más los secretos declarados. Los secretos se
- * aplican al final para que, si un pipeline declarase un secreto con el
- * mismo nombre que una de estas variables, gane el valor declarado — igual
- * que ya hace `composeEnv`.
+ * `AGENT_AUTH_ENV_KEYS`, más la credencial del `.env` del repo de datos
+ * (`agentAuth`, que gana a la del entorno: bajo launchd el entorno no la
+ * trae), más los secretos declarados. Los secretos se aplican al final para
+ * que, si un pipeline declarase un secreto con el mismo nombre que una de
+ * estas variables, gane el valor declarado — igual que ya hace `composeEnv`.
  */
-export function composeAgentEnv(secrets: Record<string, string>): Record<string, string> {
+export function composeAgentEnv(
+  secrets: Record<string, string>,
+  agentAuth: Record<string, string> = {},
+): Record<string, string> {
   const env: Record<string, string> = {};
   for (const key of [...BASE_ENV_KEYS, ...AGENT_AUTH_ENV_KEYS]) {
     const value = process.env[key];
     if (value !== undefined) env[key] = value;
   }
-  return { ...env, ...FIXED_LOCALE_ENV, ...secrets };
+  return { ...env, ...FIXED_LOCALE_ENV, ...agentAuth, ...secrets };
 }
 
 export type StepOutcome =

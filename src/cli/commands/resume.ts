@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { runPipeline } from '../../runner/orchestrate.ts';
 import { RunStore } from '../../runs/store.ts';
-import { collectSecrets, loadPipeline } from '../context.ts';
+import { collectAgentAuth, collectSecrets, loadPipeline } from '../context.ts';
 import { withLock } from '../lock.ts';
 import { EXIT_FAILURE, notifyRunClosed, withContext } from '../shared.ts';
 import { unknownToolWarnings } from '../warnings.ts';
@@ -33,6 +33,7 @@ export function registerResume(program: Command): void {
               store,
               params: previous.params,
               secrets: collectSecrets(ctx, pipeline.requires.env),
+              agentAuth: collectAgentAuth(ctx),
               resumeFrom: previous,
             });
 
