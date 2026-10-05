@@ -1,0 +1,253 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Anatomy of an agent step",
+    "output": "paso-agent.html",
+    "viewBox": [
+      1080,
+      620
+    ],
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "views": [
+      {
+        "id": "preparacion",
+        "label": "Preparation",
+        "focus": [
+          "runner",
+          "repo",
+          "sdk"
+        ],
+        "note": "The runner builds the prompt and opens the session with a closed list of tools."
+      },
+      {
+        "id": "gobierno",
+        "label": "Governed session",
+        "focus": [
+          "sdk",
+          "guard",
+          "workspace",
+          "mcp"
+        ],
+        "note": "Every tool goes through the guard before it runs; writing outside cwd is denied."
+      },
+      {
+        "id": "cierre",
+        "label": "Close",
+        "focus": [
+          "sdk",
+          "runner",
+          "runs"
+        ],
+        "note": "Outputs are validated against the contract and everything is kept in .runs/."
+      }
+    ]
+  },
+  "participants": [
+    {
+      "id": "runner",
+      "type": "backend",
+      "label": "Runner",
+      "sublabel": "runAgentStep"
+    },
+    {
+      "id": "repo",
+      "type": "database",
+      "label": "Data repo",
+      "sublabel": "agents/ · steps/"
+    },
+    {
+      "id": "sdk",
+      "type": "backend",
+      "label": "Claude Agent SDK",
+      "sublabel": "query()"
+    },
+    {
+      "id": "guard",
+      "type": "security",
+      "label": "FS guard",
+      "sublabel": "hook PreToolUse"
+    },
+    {
+      "id": "workspace",
+      "type": "database",
+      "label": "Workspace",
+      "sublabel": "step cwd"
+    },
+    {
+      "id": "mcp",
+      "type": "external",
+      "label": "MCP server",
+      "sublabel": "stdio"
+    },
+    {
+      "id": "runs",
+      "type": "database",
+      "label": ".runs/",
+      "sublabel": "StepRecord + log"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 255,
+      "label": "Preparation"
+    },
+    {
+      "from": 272,
+      "to": 458,
+      "label": "Governed session"
+    },
+    {
+      "from": 474,
+      "to": 537,
+      "label": "Close"
+    }
+  ],
+  "messages": [
+    {
+      "id": "lee-agente",
+      "from": "runner",
+      "to": "repo",
+      "y": 176,
+      "label": "reads agents/<agent>.md and steps/<step>.md"
+    },
+    {
+      "id": "prompt",
+      "from": "repo",
+      "to": "runner",
+      "y": 206,
+      "label": "prompt with {{...}} interpolated",
+      "variant": "return"
+    },
+    {
+      "id": "abre-sesion",
+      "from": "runner",
+      "to": "sdk",
+      "y": 238,
+      "label": "query(): closed tools, strictMcpConfig, settingSources: []",
+      "variant": "emphasis"
+    },
+    {
+      "id": "arranca-mcp",
+      "from": "sdk",
+      "to": "mcp",
+      "y": 290,
+      "label": "starts mcp_servers of the step",
+      "variant": "dashed"
+    },
+    {
+      "id": "pre-tool",
+      "from": "sdk",
+      "to": "guard",
+      "y": 320,
+      "label": "PreToolUse: Write(path)",
+      "variant": "security"
+    },
+    {
+      "id": "veredicto",
+      "from": "guard",
+      "to": "sdk",
+      "y": 350,
+      "label": "allow if path ⊂ cwd; else denial",
+      "variant": "return"
+    },
+    {
+      "id": "escribe",
+      "from": "sdk",
+      "to": "workspace",
+      "y": 382,
+      "label": "Read · Write · Edit"
+    },
+    {
+      "id": "usa-mcp",
+      "from": "sdk",
+      "to": "mcp",
+      "y": 412,
+      "label": "mcp__playwright__*"
+    },
+    {
+      "id": "mcp-ok",
+      "from": "mcp",
+      "to": "sdk",
+      "y": 442,
+      "label": "result",
+      "variant": "return"
+    },
+    {
+      "id": "outputs",
+      "from": "sdk",
+      "to": "runner",
+      "y": 492,
+      "label": "StructuredOutput → outputs, cost, tokens",
+      "variant": "return"
+    },
+    {
+      "id": "persiste",
+      "from": "runner",
+      "to": "runs",
+      "y": 522,
+      "label": "validated outputs, denials, redacted log",
+      "variant": "emphasis"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "runner",
+      "from": 171,
+      "to": 528,
+      "type": "backend"
+    },
+    {
+      "participant": "sdk",
+      "from": 238,
+      "to": 496,
+      "type": "backend"
+    },
+    {
+      "participant": "guard",
+      "from": 315,
+      "to": 355,
+      "type": "security"
+    },
+    {
+      "participant": "workspace",
+      "from": 377,
+      "to": 395,
+      "type": "database"
+    },
+    {
+      "participant": "mcp",
+      "from": 285,
+      "to": 447,
+      "type": "external"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Preparation",
+      "items": [
+        "The agent is a .md with front matter in agents/",
+        "The prompt can use previous outputs and declared secrets"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Governance",
+      "items": [
+        "permissionMode bypass: the engine hook is in charge",
+        "cwd is the only write root; Bash is forbidden"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Close",
+      "items": [
+        "outputs are validated against the step contract",
+        "Every denial is kept in StepRecord.denials"
+      ]
+    }
+  ]
+}

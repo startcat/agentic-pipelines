@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Lifecycle of a run",
+    "output": "ciclo-de-un-run.html",
+    "viewBox": [
+      980,
+      566
+    ],
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "camino-verde",
+        "label": "Green path",
+        "focus": [
+          "disparo",
+          "preflight",
+          "pasos",
+          "cierre",
+          "success"
+        ],
+        "note": "The five phases of a run that starts and ends well."
+      },
+      {
+        "id": "salto",
+        "label": "Skipped by a guard",
+        "focus": [
+          "preflight",
+          "skipped"
+        ],
+        "note": "A skipped run is a normal outcome, exit 0, not a failure."
+      },
+      {
+        "id": "fallo",
+        "label": "Failure and resume",
+        "focus": [
+          "pasos",
+          "cierre",
+          "failed"
+        ],
+        "note": "resume picks up from the failed step, with the original params."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Run phases"
+    },
+    {
+      "id": "saltos",
+      "label": "Skip"
+    },
+    {
+      "id": "fallos",
+      "label": "Failure and resume"
+    },
+    {
+      "id": "terminal",
+      "label": "Every run ends in success, failed or skipped"
+    }
+  ],
+  "states": [
+    {
+      "id": "disparo",
+      "type": "start",
+      "label": "Trigger",
+      "sublabel": "launchd or pipelines run",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "tag": "entry"
+    },
+    {
+      "id": "preflight",
+      "type": "decision",
+      "label": "Preflight",
+      "sublabel": "requires · lock · when",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "starts?"
+    },
+    {
+      "id": "pasos",
+      "type": "active",
+      "label": "Steps",
+      "sublabel": "shell and agent, by graph",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "work"
+    },
+    {
+      "id": "cierre",
+      "type": "active",
+      "label": "Close",
+      "sublabel": "always · notify",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "tag": "always"
+    },
+    {
+      "id": "success",
+      "type": "success",
+      "label": "success",
+      "sublabel": "exit 0 · throttle anchor",
+      "lane": "main",
+      "col": 4,
+      "step": "05",
+      "tag": "terminal"
+    },
+    {
+      "id": "failed",
+      "type": "failure",
+      "label": "failed",
+      "sublabel": "a step used all retries",
+      "lane": "fallos",
+      "col": 1,
+      "tag": "exit 1"
+    },
+    {
+      "id": "skipped",
+      "type": "neutral",
+      "label": "skipped",
+      "sublabel": "false guard or lock",
+      "lane": "saltos",
+      "col": 0,
+      "tag": "exit 0 / 3"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "preflight-skipped",
+      "from": "preflight",
+      "to": "skipped",
+      "label": "when: fails",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "id": "cierre-failed",
+      "from": "cierre",
+      "to": "failed",
+      "label": "a step went red",
+      "variant": "security",
+      "route": "straight",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    },
+    {
+      "id": "failed-resume",
+      "from": "failed",
+      "to": "pasos",
+      "label": "pipelines resume <run-id>",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          880,
+          307
+        ],
+        [
+          880,
+          80
+        ],
+        [
+          402,
+          80
+        ]
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Green path",
+      "items": [
+        "requires: can this machine run it; when: is it due today",
+        "success anchors the throttle for the next run"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Skip",
+      "items": [
+        "A throttle skip is normal: check skipReason",
+        "Busy lock exits with 3; false guard, with 0"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Failure",
+      "items": [
+        "always runs anyway, on success or on failure",
+        "resume reuses the params of the original run"
+      ]
+    }
+  ]
+}

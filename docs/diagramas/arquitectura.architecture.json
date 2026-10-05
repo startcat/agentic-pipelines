@@ -1,0 +1,355 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "agentic-pipelines architecture",
+    "output": "arquitectura.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "camino-principal",
+        "label": "Main path",
+        "focus": [
+          "launchd",
+          "cli",
+          "repo",
+          "runner",
+          "runs"
+        ],
+        "note": "From the scheduled time to run.json: the engine reads the data repo and persists the result."
+      },
+      {
+        "id": "paso-agent",
+        "label": "Governed agent step",
+        "focus": [
+          "runner",
+          "agent",
+          "guard",
+          "mcp",
+          "workspaces"
+        ],
+        "note": "The SDK does not decide what the agent may touch: the engine guard does."
+      },
+      {
+        "id": "fuera-de-los-repos",
+        "label": "What lives outside",
+        "focus": [
+          "launchd",
+          "workspaces",
+          "notify"
+        ],
+        "note": "Three things you do not see by reading the code: plists, workspaces and the notification channel."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "operador",
+      "type": "external",
+      "label": "Operator",
+      "sublabel": "run · status · show",
+      "pos": [
+        20,
+        70
+      ],
+      "size": [
+        120,
+        60
+      ]
+    },
+    {
+      "id": "launchd",
+      "type": "external",
+      "label": "launchd",
+      "sublabel": "cron plist",
+      "pos": [
+        20,
+        210
+      ],
+      "size": [
+        120,
+        60
+      ],
+      "tag": "macOS"
+    },
+    {
+      "id": "cli",
+      "type": "backend",
+      "label": "pipelines CLI",
+      "sublabel": "Bun · src/cli",
+      "pos": [
+        255,
+        140
+      ],
+      "size": [
+        125,
+        60
+      ]
+    },
+    {
+      "id": "runner",
+      "type": "backend",
+      "label": "Runner",
+      "sublabel": "graph · lock · when",
+      "pos": [
+        410,
+        140
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "shell",
+      "type": "backend",
+      "label": "Shell step",
+      "sublabel": "sh -c · fixed env",
+      "pos": [
+        610,
+        60
+      ],
+      "size": [
+        130,
+        60
+      ]
+    },
+    {
+      "id": "agent",
+      "type": "backend",
+      "label": "Agent step",
+      "sublabel": "Claude Agent SDK",
+      "pos": [
+        610,
+        220
+      ],
+      "size": [
+        130,
+        60
+      ]
+    },
+    {
+      "id": "guard",
+      "type": "security",
+      "label": "FS guard",
+      "sublabel": "hook PreToolUse",
+      "pos": [
+        800,
+        220
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "tag": "deny by default"
+    },
+    {
+      "id": "mcp",
+      "type": "external",
+      "label": "MCP server",
+      "sublabel": "stdio · playwright",
+      "pos": [
+        1000,
+        220
+      ],
+      "size": [
+        130,
+        60
+      ]
+    },
+    {
+      "id": "repo",
+      "type": "database",
+      "label": "Data repo",
+      "sublabel": "pipeline.yaml · agents/",
+      "pos": [
+        220,
+        400
+      ],
+      "size": [
+        150,
+        60
+      ]
+    },
+    {
+      "id": "runs",
+      "type": "database",
+      "label": ".runs/",
+      "sublabel": "run.json · logs",
+      "pos": [
+        410,
+        400
+      ],
+      "size": [
+        140,
+        60
+      ],
+      "tag": "gitignored"
+    },
+    {
+      "id": "notify",
+      "type": "messagebus",
+      "label": "Notify channel",
+      "sublabel": "notify-email.sh",
+      "pos": [
+        610,
+        400
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "workspaces",
+      "type": "database",
+      "label": "Workspaces",
+      "sublabel": "own clones",
+      "pos": [
+        800,
+        400
+      ],
+      "size": [
+        180,
+        60
+      ],
+      "tag": "outside repo"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Engine: agentic-pipelines",
+      "wraps": [
+        "cli",
+        "runner",
+        "shell",
+        "agent",
+        "guard"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Data repo: your pipelines",
+      "wraps": [
+        "repo",
+        "runs",
+        "notify"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "operador-cli",
+      "from": "operador",
+      "to": "cli",
+      "label": "by hand"
+    },
+    {
+      "id": "launchd-cli",
+      "from": "launchd",
+      "to": "cli",
+      "label": "at cron time",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cli-repo",
+      "from": "cli",
+      "to": "repo",
+      "label": "reads YAML, .env",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "cli-runner",
+      "from": "cli",
+      "to": "runner",
+      "variant": "emphasis"
+    },
+    {
+      "id": "runner-shell",
+      "from": "runner",
+      "to": "shell",
+      "label": "type: shell"
+    },
+    {
+      "id": "runner-agent",
+      "from": "runner",
+      "to": "agent",
+      "label": "type: agent"
+    },
+    {
+      "id": "agent-guard",
+      "from": "agent",
+      "to": "guard",
+      "label": "every tool",
+      "variant": "security"
+    },
+    {
+      "id": "guard-mcp",
+      "from": "guard",
+      "to": "mcp",
+      "label": "declared tools only",
+      "variant": "dashed",
+      "labelDy": -26
+    },
+    {
+      "id": "guard-workspaces",
+      "from": "guard",
+      "to": "workspaces",
+      "label": "writes only in cwd",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "runner-runs",
+      "from": "runner",
+      "to": "runs",
+      "label": "run.json + logs",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24,
+      "labelDx": -50
+    },
+    {
+      "id": "runner-notify",
+      "from": "runner",
+      "to": "notify",
+      "label": "on run close",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Engine",
+      "items": [
+        "Contains no real pipeline",
+        "Validates the YAML in strict mode before running anything",
+        "No built-in scheduler: install translates the cron to launchd"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Data repo",
+      "items": [
+        "One directory per pipeline, with its pipeline.yaml",
+        "Prompts in steps/, agents in agents/, channel in scripts/",
+        ".runs/, .env and .params.local.json are never committed"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Outside both repos",
+      "items": [
+        "launchd plists in ~/Library/LaunchAgents",
+        "Workspaces: own clones, forced to origin/main",
+        "Retiring an old cron job is manual: launchctl disable"
+      ]
+    }
+  ]
+}
