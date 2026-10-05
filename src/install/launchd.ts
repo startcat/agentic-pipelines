@@ -192,10 +192,31 @@ export function logPathFor(home: string, pipelineName: string): string {
   return join(home, 'Library', 'Logs', `pipelines-${pipelineName}.log`);
 }
 
+/**
+ * Ruta de `bun` que se escribe en el plist. `process.execPath` llega ya
+ * resuelto hasta el binario real, y con Homebrew eso es una carpeta con la
+ * versión (`/usr/local/Cellar/bun/1.4.2/bin/bun`) que desaparece con el
+ * siguiente `brew upgrade`: el job dejaría de arrancar sin que ningún run lo
+ * registrase. Si el `bun` del PATH (normalmente un enlace estable como
+ * `/usr/local/bin/bun`) apunta al mismo binario, se usa ese; si no, el real.
+ */
+export function stableBunPath(
+  execPath: string,
+  whichBun: string | null,
+  realpath: (path: string) => string,
+): string {
+  if (!whichBun || whichBun === execPath) return execPath;
+  try {
+    return realpath(whichBun) === realpath(execPath) ? whichBun : execPath;
+  } catch {
+    return execPath;
+  }
+}
+
 export type PlistSpecInput = {
   pipelineName: string;
   repoRoot: string;
-  /** Ruta del binario de bun que ejecuta el motor (`process.execPath`). */
+  /** Ruta del binario de bun que ejecuta el motor (ver `stableBunPath`). */
   bunPath: string;
   /** Ruta del punto de entrada del CLI (`src/cli/index.ts`). */
   cliEntry: string;

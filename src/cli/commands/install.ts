@@ -1,4 +1,5 @@
 import { homedir } from 'node:os';
+import { realpathSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { Command } from 'commander';
@@ -14,6 +15,7 @@ import {
   MAX_CALENDAR_INTERVALS,
   parseDisabledLabels,
   renderPlist,
+  stableBunPath,
   unresolvedInPath,
 } from '../../install/launchd.ts';
 import { unsetParamImpacts } from '../../install/params.ts';
@@ -103,9 +105,8 @@ export function registerInstall(program: Command): void {
           ...pipeline.requires.bin,
           ...Object.values(pipeline.mcpServers).map((server) => server.command),
         ];
-        const path = computePath(requiredBinaries, (bin) => Bun.which(bin), [
-          dirname(process.execPath),
-        ]);
+        const bunPath = stableBunPath(process.execPath, Bun.which('bun'), realpathSync);
+        const path = computePath(requiredBinaries, (bin) => Bun.which(bin), [dirname(bunPath)]);
 
         // Cinturón, no solo el suelo de `computePath`: valida contra el PATH
         // QUE SE VA A ESCRIBIR, no contra el del operador que ejecuta
@@ -222,7 +223,7 @@ export function registerInstall(program: Command): void {
           buildPlistSpec({
             pipelineName: name,
             repoRoot: ctx.root,
-            bunPath: process.execPath,
+            bunPath,
             cliEntry: join(import.meta.dir, '..', 'index.ts'),
             home: homedir(),
             path,

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildPlistSpec,
   computePath,
+  stableBunPath,
   cronToCalendarIntervals,
   foreignJobsMentioning,
   jobsNamedAfter,
@@ -383,5 +384,23 @@ describe('jobsNamedAfter', () => {
 
   test('sin ningún job homónimo no informa de nada', () => {
     expect(jobsNamedAfter('weekly-report', agents, 'x', [])).toEqual([]);
+  });
+});
+
+// Con Homebrew, process.execPath es la carpeta con la versión, que desaparece
+// en el siguiente `brew upgrade`: el plist debe llevar el enlace estable.
+describe('stableBunPath', () => {
+  const real = '/usr/local/Cellar/bun/1.4.2/bin/bun';
+  const realpath = (p: string) => (p === '/usr/local/bin/bun' ? real : p);
+
+  test('usa el bun del PATH si apunta al mismo binario', () => {
+    expect(stableBunPath(real, '/usr/local/bin/bun', realpath)).toBe('/usr/local/bin/bun');
+  });
+  test('se queda con el real si el del PATH es otro bun', () => {
+    expect(stableBunPath(real, '/opt/otro/bun', realpath)).toBe(real);
+  });
+  test('se queda con el real si no hay bun en el PATH o no se puede resolver', () => {
+    expect(stableBunPath(real, null, realpath)).toBe(real);
+    expect(stableBunPath(real, '/roto/bun', () => { throw new Error('ENOENT'); })).toBe(real);
   });
 });
