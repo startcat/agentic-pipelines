@@ -18,6 +18,11 @@ the commands and what gets persisted is in [`docs/reference.md`](docs/reference.
 > `launchd`, and there is no systemd or crontab backend yet. CLI messages and
 > code comments are currently in Spanish; the documentation is in English.
 
+> **Want something that works today?** [pipelines-starter](https://github.com/startcat/pipelines-starter)
+> has seven ready-to-use pipelines (website checks, stale pull requests, a
+> weekly briefing, docs drift, a news digest and more), each installable with
+> a single command.
+
 ## Table of contents
 
 - [How it fits together](#how-it-fits-together)
@@ -591,6 +596,8 @@ the HTML.
 - [`docs/reference.md`](docs/reference.md): the full contract of
   `pipeline.yaml`, the security model, `pipelines.yaml`, secrets, every
   command, exit codes, `.runs/` and known limitations.
+- [pipelines-starter](https://github.com/startcat/pipelines-starter): seven
+  ready-to-use pipelines to install as they are or copy as examples.
 
 ## License
 
