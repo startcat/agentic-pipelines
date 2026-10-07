@@ -1,5 +1,4 @@
 import { homedir } from 'node:os';
-import { realpathSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { Command } from 'commander';
@@ -15,14 +14,13 @@ import {
   MAX_CALENDAR_INTERVALS,
   parseDisabledLabels,
   renderPlist,
-  stableBunPath,
   unresolvedInPath,
 } from '../../install/launchd.ts';
 import { unsetParamImpacts } from '../../install/params.ts';
 import { resolveParams } from '../../params/resolve.ts';
 import { hasBlockingFailures, preflight } from '../../preflight/check.ts';
 import { loadLocalParams, loadPipeline } from '../context.ts';
-import { launchAgentsDir, readLaunchAgents, writeLocalParams } from '../install-helpers.ts';
+import { jobBunPath, launchAgentsDir, readLaunchAgents, writeLocalParams } from '../install-helpers.ts';
 import { collectSetFlag, EXIT_FAILURE, OK, parseSetFlags, printPreflight, withContext } from '../shared.ts';
 
 export function registerInstall(program: Command): void {
@@ -105,7 +103,7 @@ export function registerInstall(program: Command): void {
           ...pipeline.requires.bin,
           ...Object.values(pipeline.mcpServers).map((server) => server.command),
         ];
-        const bunPath = stableBunPath(process.execPath, Bun.which('bun'), realpathSync);
+        const bunPath = jobBunPath();
         const path = computePath(requiredBinaries, (bin) => Bun.which(bin), [dirname(bunPath)]);
 
         // Cinturón, no solo el suelo de `computePath`: valida contra el PATH

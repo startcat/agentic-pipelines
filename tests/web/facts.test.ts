@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtemp, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createJobFactsCache } from '../../src/web/facts.ts';
+import { jobBunPath } from '../../src/cli/install-helpers.ts';
+import { collectJobFacts, createJobFactsCache } from '../../src/web/facts.ts';
 
 async function fakeLaunchctl(stdout: string, code: number): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'launchctl-'));
@@ -30,5 +31,21 @@ describe('createJobFactsCache', () => {
     // Pasado el TTL, sí vuelve a preguntar: objeto nuevo.
     const third = await cache.get(pipeline, ctx as never, new Date(t0.getTime() + 31_000));
     expect(third).not.toBe(first);
+  });
+});
+
+describe('collectJobFacts', () => {
+  // Con Homebrew, `process.execPath` es la ruta versionada de la Cellar e
+  // `install` escribe el enlace estable (`stableBunPath`). Si el panel generara
+  // su plist esperado con la otra ruta, todo job recién instalado saldría como
+  // `drifted`.
+  test('el plist esperado usa el mismo bun que escribe install', async () => {
+    process.env.PIPELINES_LAUNCHCTL_BIN = await fakeLaunchctl('', 0);
+    const ctx = { root: '/repo', config: { channels: {}, defaults: {} }, dotEnv: {} };
+    const pipeline = { name: 'demo', triggers: [{ cron: '0 3 * * *' }], requires: { bin: [] }, mcpServers: {}, when: [] } as never;
+
+    const facts = await collectJobFacts(pipeline, ctx as never, new Date('2026-10-07T08:00:00.000Z'));
+
+    expect(facts.plistExpected).toContain(`<string>${jobBunPath()}</string>`);
   });
 });

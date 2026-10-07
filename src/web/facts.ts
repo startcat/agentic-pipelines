@@ -6,6 +6,7 @@
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { RepoContext } from '../cli/context.ts';
+import { jobBunPath } from '../cli/install-helpers.ts';
 import type { JobFacts } from '../health/evaluate.ts';
 import {
   buildPlistSpec, computePath, cronToCalendarIntervals, labelFor,
@@ -32,12 +33,13 @@ function expectedPlist(pipeline: Pipeline, ctx: RepoContext, now: Date): string 
       ...pipeline.requires.bin,
       ...Object.values(pipeline.mcpServers).map((server) => server.command),
     ];
-    const path = computePath(binaries, (bin) => Bun.which(bin), [dirname(process.execPath)]);
+    const bunPath = jobBunPath();
+    const path = computePath(binaries, (bin) => Bun.which(bin), [dirname(bunPath)]);
     return renderPlist(
       buildPlistSpec({
         pipelineName: pipeline.name,
         repoRoot: ctx.root,
-        bunPath: process.execPath,
+        bunPath,
         cliEntry: join(import.meta.dir, '..', 'cli', 'index.ts'),
         home: homedir(),
         path,

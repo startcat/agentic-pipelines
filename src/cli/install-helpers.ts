@@ -1,6 +1,19 @@
 import { homedir } from 'node:os';
+import { realpathSync } from 'node:fs';
 import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { stableBunPath } from '../install/launchd.ts';
+
+/**
+ * El `bun` que va al plist de un job. `install` lo escribe y el panel
+ * (`web/facts.ts`) lo usa para generar el plist esperado: si cada uno lo
+ * calculara por su cuenta, el panel marcaría como `drifted` un job recién
+ * instalado, que es justo lo que pasó cuando solo `install` empezó a usar
+ * `stableBunPath`.
+ */
+export function jobBunPath(): string {
+  return stableBunPath(process.execPath, Bun.which('bun'), realpathSync);
+}
 
 /** Directorio de LaunchAgents del usuario actual. */
 export function launchAgentsDir(): string {
