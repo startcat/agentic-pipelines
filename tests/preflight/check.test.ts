@@ -713,7 +713,18 @@ steps:
       kind: 'env',
       name: 'QA_{{params.app}}_TOKEN',
       ok: false,
-      detail: 'el nombre resultante "QA_my-app_TOKEN" no es un nombre de variable válido (solo letras, dígitos y _)',
+      detail: 'el nombre resultante "QA_my-app_TOKEN" no es un nombre de variable válido (solo letras, dígitos y _, y no puede empezar por dígito)',
+    });
+  });
+
+  test('un nombre resuelto que empieza por dígito falla con el mismo mensaje', async () => {
+    const report = await preflight(
+      { ...TPL, requires: { ...TPL.requires, env: ['{{params.app}}_X'] } } as typeof TPL,
+      { ...base(), dotEnv: {}, params: { app: '9app' } },
+    );
+    expect(envCheck(report)).toMatchObject({
+      ok: false,
+      detail: 'el nombre resultante "9app_X" no es un nombre de variable válido (solo letras, dígitos y _, y no puede empezar por dígito)',
     });
   });
 });

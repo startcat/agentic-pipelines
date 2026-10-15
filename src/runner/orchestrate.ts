@@ -52,10 +52,18 @@ async function executeOnce(
 
   const promptText = await readFile(join(pipelineDir, step.prompt), 'utf8');
   const runner = options.agentRunner ?? runAgentStep;
+  // El prompt solo puede referenciar secretos con nombre literal en
+  // requires.env (como en `validate`); los nombres resueltos desde plantillas
+  // quedan fuera del prompt aunque sigan en `secrets` (redacción, MCP, env).
+  const literal = new Set(options.pipeline.requires.env);
+  const promptSecrets = Object.fromEntries(
+    Object.entries(options.secrets).filter(([name]) => literal.has(name)),
+  );
   return runner(step, {
     ...ctx,
     repoRoot: options.repoRoot,
     promptText,
+    promptSecrets,
     mcpServers: options.pipeline.mcpServers,
     agentAuth: options.agentAuth,
   });

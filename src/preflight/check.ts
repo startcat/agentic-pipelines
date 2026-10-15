@@ -434,7 +434,7 @@ export async function preflight(
           resolution.reason === 'missing-params'
             ? `depende de params sin valor: ${resolution.missing.join(', ')} (pásalos con --set)`
             : resolution.reason === 'invalid-name'
-              ? `el nombre resultante "${resolution.name}" no es un nombre de variable válido (solo letras, dígitos y _)`
+              ? `el nombre resultante "${resolution.name}" no es un nombre de variable válido (solo letras, dígitos y _, y no puede empezar por dígito)`
               : `solo admite referencias {{params.*}}: ${resolution.refs.join(', ')}`,
       });
       continue;
