@@ -136,10 +136,12 @@ name, and redacts it in the logs like any other secret. Rules:
 - Only references to declared params are allowed; `validate` rejects
   `{{secrets.*}}` and `{{step.field}}` in these names.
 - The resulting name must be a valid variable name (letters, digits and
-  `_`): a `my-app` param produces an invalid name and the preflight
-  rejects it.
-- `pipelines doctor` accepts `--set` to resolve them; without it, each name
-  that can't be resolved shows as a red check saying which param is missing.
+  `_`, and it can't start with a digit): a `my-app` or `9app` param
+  produces an invalid name and the preflight rejects it.
+- `pipelines doctor` accepts `--set` to resolve them; without it (and
+  without values in `.params.local.json`, which `doctor` also reads, so an
+  installed pipeline resolves without `--set`), each name that can't be
+  resolved shows as a red check saying which param is missing.
 - A templated name can't be referenced with `{{secrets.X}}` from the prompt
   of an `agent` step: that reference requires the literal name.
 
@@ -479,6 +481,9 @@ steps (see [Requirements and environment](#requirements-and-environment)).
 `.env` and `.params.local.json` are in the data repo's expected
 `.gitignore`; they are never committed.
 
+Names in `requires.env` can depend on params (`QA_{{params.app}}_USER`): see
+"Names that depend on params" in the [`requires`](#requires) section.
+
 ## Command reference
 
 ```
@@ -492,8 +497,8 @@ current directory.
 
 | Command | Usage | What it does |
 |---|---|---|
-| `validate` | `pipelines validate [name]` | Validates the schema, the dependency graph (cycles), `{{...}}` references in prompts/`cwd`/`when` (including `when[].changed.path`)/`run`/`additional_dirs`, that `notify.channel` exists, and five fixed rules on the shell text; see [`validate`: the five rules and `--file`](#validate-the-five-rules-and---file) below. Without `name`, validates every pipeline in the repo. `--file <path>` validates a standalone YAML instead of an installed one. |
-| `doctor` | `pipelines doctor <name> [--set key=value ...]` | Checks that the current machine can run the pipeline: agents, binaries, MCP servers (real start-up + live schema drift), environment variables, network resolution, and the Anthropic API key when the pipeline has `agent` steps. `--set` (repeatable) gives values to params, which `requires.env` secrets whose name depends on params need (see [Secrets](#secrets) and the [`requires`](#requires) section); without it, each name that can't be resolved shows as a red check. |
+| `validate` | `pipelines validate [name]` | Validates the schema, the dependency graph (cycles), `{{...}}` references in prompts/`cwd`/`when` (including `when[].changed.path`)/`run`/`additional_dirs`/`requires.env`, that `notify.channel` exists, and five fixed rules on the shell text; see [`validate`: the five rules and `--file`](#validate-the-five-rules-and---file) below. Without `name`, validates every pipeline in the repo. `--file <path>` validates a standalone YAML instead of an installed one. |
+| `doctor` | `pipelines doctor <name> [--set key=value ...]` | Checks that the current machine can run the pipeline: agents, binaries, MCP servers (real start-up + live schema drift), environment variables, network resolution, and the Anthropic API key when the pipeline has `agent` steps. `--set` (repeatable) gives values to params, which `requires.env` secrets whose name depends on params need (see [Secrets](#secrets) and the [`requires`](#requires) section); without it, and without values in `.params.local.json` (which `doctor` also reads, so an installed pipeline resolves without `--set`), each name that can't be resolved shows as a red check. |
 | `install` | `pipelines install <name> [--set k=v] [--force] [--dry-run]` | Installs the pipeline as a launchd job from its `triggers.cron`. Writes the params to `.params.local.json` and a derived plist (with no values) to `~/Library/LaunchAgents/`. Computes the `PATH` from `requires.bin` and the `mcp_servers` `command`s, and checks that this `PATH` resolves everything needed (including `sh`) before writing anything. Warns about optional params without a value and the steps they affect. `--force` skips the cut-off for a red `doctor` or a suspicious foreign job, but still WARNS about both, never silently. `--dry-run` goes through those same validations, prints the plist it would write and exits without touching anything: not the plist, not `.params.local.json` even if it gets `--set`, not `launchctl`. A failing validation makes it fail all the same, so it is usable inside a script. |
 | `uninstall` | `pipelines uninstall <name>` | Unloads the job (always, even if the plist no longer exists) and deletes its plist if it finds it. Doesn't touch `.params.local.json` or the logs. Idempotent. |
 | `run` | `pipelines run <name> [--set key=value ...] [--force]` | Runs the pipeline now. `--set` is repeatable, to pass/override params. Evaluates `requires` (blocking) and the `when:` guards (a `skipped` is a success, not an error) before starting. Acquires an exclusive per-pipeline lock for the duration of the run. `--force` skips the `when:` guards (policy: "not today") but NOT `requires`, which measures whether this machine can run the pipeline; it warns on stderr and marks the run with `forced: true`, which `status` shows as `(guardas omitidas)`. A forced run doesn't prove the guards would have let it through, and it does anchor the `throttle` like any other run that executed. |
