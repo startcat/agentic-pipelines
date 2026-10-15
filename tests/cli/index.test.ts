@@ -702,6 +702,9 @@ describe('requires.env con plantillas, de punta a punta', () => {
     const first = await cli(['run', 'tpl', '--set', 'app=demo']);
     expect(first.code).toBe(1);
     writePipeline('tpl', TPL);
+    // Params locales distintos a los del run original: si resume resolviera
+    // con estos (QA_otro_TOKEN, ausente del .env), el paso fallaría.
+    writeFileSync(join(root, '.params.local.json'), JSON.stringify({ tpl: { app: 'otro' } }));
     const { code } = await cli(['resume', 'tpl', latestRunId('tpl')]);
     expect(code).toBe(0);
   });
