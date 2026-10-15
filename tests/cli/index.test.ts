@@ -121,6 +121,16 @@ describe('pipelines validate', () => {
     expect(out).toContain('description');
   });
 
+  test('sale con 1 si requires.env usa un param no declarado', async () => {
+    writePipeline(
+      'tpl',
+      'name: tpl\ndescription: d\nversion: 1\nrequires:\n  env: ["QA_{{params.app}}_TOKEN"]\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
+    );
+    const { code, out } = await cli(['validate', 'tpl']);
+    expect(code).toBe(1);
+    expect(out).toContain('requires.env.0: referencia "{{params.app}}", no declarado en params');
+  });
+
   test('exits 1 if a prompt references an undeclared param', async () => {
     mkdirSync(join(root, 'pipelines', 'with-prompt'), { recursive: true });
     writeFileSync(
