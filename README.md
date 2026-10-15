@@ -599,7 +599,7 @@ channels:
 ### Installing
 
 ```bash
-pipelines doctor <name>
+pipelines doctor <name> [--set key=value ...]
 pipelines install <name> --set key=value --dry-run   # prints the plist (or units), touches nothing
 pipelines install <name> --set key=value
 launchctl print gui/$(id -u)/cat.start.pipelines.<name>      # on Linux: systemctl --user status cat.start.pipelines.<name>.timer
