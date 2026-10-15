@@ -1,23 +1,37 @@
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
+import { resolveParamsLenient } from '../../params/resolve.ts';
 import { preflight } from '../../preflight/check.ts';
-import { loadPipeline } from '../context.ts';
-import { EXIT_FAILURE, printPreflight, withContext } from '../shared.ts';
+import { loadLocalParams, loadPipeline } from '../context.ts';
+import { collectSetFlag, EXIT_FAILURE, parseSetFlags, printPreflight, withContext } from '../shared.ts';
 
 export function registerDoctor(program: Command): void {
   program
     .command('doctor')
     .argument('<name>')
+    .option(
+      '--set <key=value>',
+      'value of a param (repeatable); needed by secrets whose name depends on params',
+      collectSetFlag,
+      [] as string[],
+    )
     .description('Check whether this machine can run the pipeline')
-    .action(async (name: string) => {
+    .action(async (name: string, opts: { set: string[] }) => {
       await withContext(async (ctx) => {
         const pipeline = await loadPipeline(ctx, name);
+        // Leniente a propósito: un param ausente no corta `doctor`; aparece
+        // como check en rojo en los secretos que dependen de él.
+        const params = resolveParamsLenient(pipeline, {
+          local: await loadLocalParams(ctx, name),
+          overrides: parseSetFlags(opts.set),
+        });
         const report = await preflight(pipeline, {
           repoRoot: ctx.root,
           userClaudeDir: `${homedir()}/.claude`,
           processEnv: process.env,
           dotEnv: ctx.dotEnv,
           includePlatform: true,
+          params,
         });
         printPreflight(report);
         if (!report.ok) {

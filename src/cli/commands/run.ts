@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import { evaluateGuards } from '../../guards/evaluate.ts';
+import { resolvedEnvNames } from '../../params/env-names.ts';
 import { resolveParams } from '../../params/resolve.ts';
 import { hasBlockingFailures, preflight } from '../../preflight/check.ts';
 import { runPipeline } from '../../runner/orchestrate.ts';
@@ -31,11 +32,21 @@ export function registerRun(program: Command): void {
         const pipeline = await loadPipeline(ctx, name);
         const store = new RunStore(ctx.root);
 
+        // Resolved BEFORE taking the lock: a missing required param must not
+        // make this process compete for (or block) a run that is never going
+        // to start. Also before the preflight: the requires.env names may
+        // depend on the params.
+        const params = resolveParams(pipeline, {
+          local: await loadLocalParams(ctx, name),
+          overrides: parseSetFlags(opts.set),
+        });
+
         const report = await preflight(pipeline, {
           repoRoot: ctx.root,
           userClaudeDir: `${homedir()}/.claude`,
           processEnv: process.env,
           dotEnv: ctx.dotEnv,
+          params,
         });
         // `hasBlockingFailures`, not `report.ok`: an `mcp-schema` check is
         // purely informational for `doctor` (see its doc comment) — it must
@@ -55,14 +66,6 @@ export function registerRun(program: Command): void {
             console.error(`  warning: ${check.kind} ${check.name} — ${check.detail}`);
           }
         }
-
-        // Resolved BEFORE taking the lock: a missing required param must not
-        // make this process compete for (or block) a run that is never going
-        // to start.
-        const params = resolveParams(pipeline, {
-          local: await loadLocalParams(ctx, name),
-          overrides: parseSetFlags(opts.set),
-        });
 
         await withLock(
           ctx.root,
@@ -96,7 +99,7 @@ export function registerRun(program: Command): void {
               repoRoot: ctx.root,
               store,
               params,
-              secrets: collectSecrets(ctx, pipeline.requires.env),
+              secrets: collectSecrets(ctx, resolvedEnvNames(pipeline.requires.env, params)),
               agentAuth: collectAgentAuth(ctx),
               forced: opts.force,
             });
