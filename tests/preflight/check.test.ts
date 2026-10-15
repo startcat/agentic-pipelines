@@ -667,3 +667,86 @@ describe('listMcpToolsViaStdio — handshake timeout', () => {
     ).rejects.toThrow(/timed out/);
   });
 });
+
+describe('preflight — requires.env con plantillas', () => {
+  const TPL = parsePipeline(`
+name: tpl
+description: d
+version: 1
+params:
+  app:
+    description: a
+requires:
+  env: ["QA_{{params.app}}_TOKEN"]
+steps:
+  - id: a
+    type: shell
+    run: 'true'
+`);
+
+  const base = () => ({
+    repoRoot,
+    userClaudeDir: claudeDir,
+    processEnv: { ANTHROPIC_API_KEY: 'sk-x' },
+    probes: okProbes,
+  });
+
+  const envCheck = (report: PreflightReport) => report.checks.find((c) => c.kind === 'env');
+
+  test('resuelve el nombre con los params y lo busca en .env', async () => {
+    const report = await preflight(TPL, { ...base(), dotEnv: { QA_myapp_TOKEN: 'secreto-valido' }, params: { app: 'myapp' } });
+    expect(envCheck(report)).toEqual({ kind: 'env', name: 'QA_myapp_TOKEN', ok: true, detail: 'definida' });
+  });
+
+  test('nombre resuelto sin valor en .env', async () => {
+    const report = await preflight(TPL, { ...base(), dotEnv: {}, params: { app: 'myapp' } });
+    expect(envCheck(report)).toEqual({
+      kind: 'env',
+      name: 'QA_myapp_TOKEN',
+      ok: false,
+      detail: 'sin definir (añádela a .env)',
+    });
+  });
+
+  test('sin el param, el check falla y dice cuál falta', async () => {
+    const report = await preflight(TPL, { ...base(), dotEnv: {} });
+    expect(envCheck(report)).toEqual({
+      kind: 'env',
+      name: 'QA_{{params.app}}_TOKEN',
+      ok: false,
+      detail: 'depende de params sin valor: app (pásalos con --set)',
+    });
+    expect(hasBlockingFailures(report)).toBe(true);
+  });
+
+  test('dos entradas que resuelven al mismo nombre dan un solo check', async () => {
+    const DOBLE = parsePipeline(`
+name: doble
+description: d
+version: 1
+params:
+  app:
+    description: a
+requires:
+  env: ["QA_myapp_TOKEN", "QA_{{params.app}}_TOKEN"]
+steps:
+  - id: a
+    type: shell
+    run: 'true'
+`);
+    const report = await preflight(DOBLE, { ...base(), dotEnv: { QA_myapp_TOKEN: 'secreto-valido' }, params: { app: 'myapp' } });
+    expect(report.checks.filter((c) => c.kind === 'env')).toEqual([
+      { kind: 'env', name: 'QA_myapp_TOKEN', ok: true, detail: 'definida' },
+    ]);
+  });
+
+  test('un nombre resuelto inválido falla y nombra el resultado', async () => {
+    const report = await preflight(TPL, { ...base(), dotEnv: {}, params: { app: 'my-app' } });
+    expect(envCheck(report)).toEqual({
+      kind: 'env',
+      name: 'QA_{{params.app}}_TOKEN',
+      ok: false,
+      detail: 'el nombre resultante "QA_my-app_TOKEN" no es un nombre de variable válido (solo letras, dígitos y _)',
+    });
+  });
+});

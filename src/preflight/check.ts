@@ -6,6 +6,7 @@ import { platformChecks } from '../install/platform-checks.ts';
 import type { Pipeline } from '../schema/pipeline.ts';
 import { TOOL_FS_PROFILES, type ToolFsProfile } from '../runner/fs-guard.ts';
 import type { McpServerConfig } from '../schema/pipeline.ts';
+import { resolveEnvNames } from '../params/env-names.ts';
 
 /**
  * Minimum length for a `requires.env` value to count as a real secret.
@@ -57,6 +58,8 @@ export type PreflightEnv = {
   userClaudeDir: string;
   processEnv: Record<string, string | undefined>;
   dotEnv: Record<string, string>;
+  /** Params del run, para resolver las plantillas `{{params.*}}` de `requires.env`. */
+  params?: Record<string, string>;
   probes?: Partial<Probes>;
   /** Adds the platform checks (systemd, linger, zone). `doctor` only: `run` must not take longer. */
   includePlatform?: boolean;
@@ -442,7 +445,27 @@ export async function preflight(
     }
   }
 
-  for (const name of pipeline.requires.env) {
+  // Un mismo nombre puede llegar por dos entradas (literal y plantilla): se
+  // comprueba una vez.
+  const checkedEnv = new Set<string>();
+  for (const resolution of resolveEnvNames(pipeline.requires.env, env.params ?? {})) {
+    if (!resolution.ok) {
+      checks.push({
+        kind: 'env',
+        name: resolution.declared,
+        ok: false,
+        detail:
+          resolution.reason === 'missing-params'
+            ? `depende de params sin valor: ${resolution.missing.join(', ')} (pásalos con --set)`
+            : resolution.reason === 'invalid-name'
+              ? `el nombre resultante "${resolution.name}" no es un nombre de variable válido (solo letras, dígitos y _)`
+              : `solo admite referencias {{params.*}}: ${resolution.refs.join(', ')}`,
+      });
+      continue;
+    }
+    const name = resolution.name;
+    if (checkedEnv.has(name)) continue;
+    checkedEnv.add(name);
     const value = env.dotEnv[name] ?? env.processEnv[name];
     const ok = value !== undefined && value.trim().length >= MIN_SECRET_LENGTH;
     checks.push({
