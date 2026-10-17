@@ -4,6 +4,7 @@ import type { Command } from 'commander';
 import { buildGraph } from '../../graph/build.ts';
 import {
   checkAlwaysReferences,
+  checkEnvReferences,
   checkGuardReferences,
   checkPromptReferences,
   checkStepReferences,
@@ -53,6 +54,7 @@ async function validatePipeline(
     ...checkAlwaysReferences(pipeline),
     ...checkStepReferences(pipeline),
     ...checkGuardReferences(pipeline),
+    ...checkEnvReferences(pipeline),
     ...lintPipeline(pipeline),
   );
 

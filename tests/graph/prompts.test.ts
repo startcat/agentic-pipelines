@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { parsePipeline } from '../../src/schema/pipeline.ts';
-import { checkAlwaysReferences, checkGuardReferences, checkPromptReferences, checkStepReferences } from '../../src/graph/prompts.ts';
+import { checkAlwaysReferences, checkEnvReferences, checkGuardReferences, checkPromptReferences, checkStepReferences } from '../../src/graph/prompts.ts';
 
 const PIPELINE = parsePipeline(`
 name: demo
@@ -533,5 +533,49 @@ steps:
     run: "true"
 `);
     expect(checkGuardReferences(pipeline)).toEqual([]);
+  });
+});
+
+describe('checkEnvReferences', () => {
+  const conEnv = (env: string) =>
+    parsePipeline(`
+name: demo
+description: d
+version: 1
+params:
+  app:
+    description: a
+requires:
+  env: ["${env}"]
+steps:
+  - id: a
+    type: shell
+    run: 'true'
+`);
+
+  test('un nombre literal no da problemas', () => {
+    expect(checkEnvReferences(conEnv('MY_TOKEN'))).toEqual([]);
+  });
+
+  test('una referencia a un param declarado no da problemas', () => {
+    expect(checkEnvReferences(conEnv('QA_{{params.app}}_TOKEN'))).toEqual([]);
+  });
+
+  test('una referencia a un param no declarado es un problema', () => {
+    expect(checkEnvReferences(conEnv('QA_{{params.entorno}}_TOKEN'))).toEqual([
+      'requires.env.0: referencia "{{params.entorno}}", no declarado en params',
+    ]);
+  });
+
+  test('una referencia a secrets es un problema', () => {
+    expect(checkEnvReferences(conEnv('QA_{{secrets.OTRO}}'))).toEqual([
+      'requires.env.0: referencia "{{secrets.OTRO}}" — el nombre de un secreto solo puede depender de params',
+    ]);
+  });
+
+  test('una referencia a un output es un problema', () => {
+    expect(checkEnvReferences(conEnv('QA_{{scan.count}}'))).toEqual([
+      'requires.env.0: referencia "scan.count" — el nombre de un secreto se resuelve antes de que corra ningún paso, solo puede depender de params',
+    ]);
   });
 });

@@ -39,14 +39,15 @@ export type InterpolationScope = {
 const REFERENCE_RE = /\{\{\s*([a-zA-Z0-9_-]+)\.([a-zA-Z0-9_-]+)\s*\}\}/g;
 
 /**
- * Resuelve los params con la precedencia default < local < override.
+ * Valida los overrides contra los params declarados y aplica la precedencia
+ * default < local < override. Devuelve lo resuelto y los obligatorios sin valor.
  * Todos los valores se normalizan a string: el YAML puede traer números o
  * booleanos, pero la interpolación siempre produce texto.
  */
-export function resolveParams(
+function resolveWithMissing(
   pipeline: Pipeline,
   sources: ParamSources,
-): Record<string, string> {
+): { resolved: Record<string, string>; missing: string[] } {
   const declared = new Set(Object.keys(pipeline.params));
 
   for (const key of Object.keys(sources.overrides ?? {})) {
@@ -70,8 +71,31 @@ export function resolveParams(
     resolved[name] = String(value);
   }
 
+  return { resolved, missing };
+}
+
+/** Resuelve los params con la precedencia default < local < override. */
+export function resolveParams(
+  pipeline: Pipeline,
+  sources: ParamSources,
+): Record<string, string> {
+  const { resolved, missing } = resolveWithMissing(pipeline, sources);
   if (missing.length > 0) throw new MissingParamsError(missing);
   return resolved;
+}
+
+/**
+ * Como `resolveParams`, pero sin lanzar por params obligatorios ausentes:
+ * devuelve lo que hay. Es para `doctor`, que debe enseñar TODOS los checks
+ * (incluido qué secreto no se puede nombrar sin un param) en vez de cortar
+ * en el primero. Un override no declarado sigue siendo un error: suele ser
+ * una errata en `--set`.
+ */
+export function resolveParamsLenient(
+  pipeline: Pipeline,
+  sources: ParamSources,
+): Record<string, string> {
+  return resolveWithMissing(pipeline, sources).resolved;
 }
 
 /** Extrae todas las referencias `{{x.y}}` de un texto, en orden de aparición. */

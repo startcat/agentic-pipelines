@@ -65,11 +65,18 @@ export function registerInstall(program: Command): void {
           return;
         }
 
+        const overrides = parseSetFlags(opts.set);
+        const params = resolveParams(pipeline, {
+          local: await loadLocalParams(ctx, name),
+          overrides,
+        });
+
         const report = await preflight(pipeline, {
           repoRoot: ctx.root,
           userClaudeDir: `${homedir()}/.claude`,
           processEnv: process.env,
           dotEnv: ctx.dotEnv,
+          params,
         });
         const blocked = hasBlockingFailures(report);
         if (blocked && !opts.force) {
@@ -86,12 +93,6 @@ export function registerInstall(program: Command): void {
           printPreflight(report);
           console.error('\n--force: se instala igualmente pese a los checks en rojo de arriba.');
         }
-
-        const overrides = parseSetFlags(opts.set);
-        const params = resolveParams(pipeline, {
-          local: await loadLocalParams(ctx, name),
-          overrides,
-        });
 
         // El PATH del job tiene que cubrir todo lo que puede necesitar
         // arrancar en marcha: los binarios de `requires.bin` Y el `command` de
