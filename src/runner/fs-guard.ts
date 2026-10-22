@@ -33,6 +33,13 @@ export type ToolFsProfile =
   | { kind: 'path'; mutates: boolean; field: string; required: boolean; knownFields: string[] }
   | { kind: 'multi-path'; mutates: boolean; fields: PathField[]; knownFields: string[] };
 
+/**
+ * Prefix of the reason the hook gives when it denies a tool of a `declared`
+ * server that is not in its `allow`. `unknownToolWarnings` reads it as a
+ * prefix, so rewording it must break there rather than pass silently.
+ */
+export const DECLARED_DENY_PREFIX = 'tool no permitida del servidor declared';
+
 export type FsRoots = { cwdRoot: string; readRoots: string[] };
 
 export type PathCheckResult = { allowed: true } | { allowed: false; reason: string };
