@@ -1,3 +1,4 @@
+import { DECLARED_DENY_PREFIX } from '../runner/fs-guard.ts';
 import type { RunRecord } from '../runs/types.ts';
 
 /**
@@ -27,6 +28,10 @@ const LEGACY_UNKNOWN_TOOL_DENY_PREFIX = 'tool desconocida para el motor';
  * (step, tool): the same run can deny the same tool twice (the model
  * retries) without that deserving two identical warnings.
  *
+ * It also warns about denials from a `kind: declared` server (reason starting
+ * with `DECLARED_DENY_PREFIX`): the tool is not in its `allow` or the step does
+ * not grant it in `tools:`, and the hook (via `declaredAllow`) denies it.
+ *
  * Lives in its own module (not in `cli/index.ts`) because `index.ts` runs
  * `program.parseAsync(process.argv)` on load — importing it directly from a
  * test would fire the real CLI against the test runner's argv.
@@ -36,7 +41,9 @@ export function unknownToolWarnings(record: RunRecord): string[] {
   const warnings: string[] = [];
   for (const [stepId, step] of Object.entries(record.steps)) {
     for (const denial of step.denials ?? []) {
+      const declared = denial.reason?.startsWith(DECLARED_DENY_PREFIX) ?? false;
       if (
+        !declared &&
         !denial.reason?.startsWith(UNKNOWN_TOOL_DENY_PREFIX) &&
         !denial.reason?.startsWith(LEGACY_UNKNOWN_TOOL_DENY_PREFIX)
       ) {
@@ -45,6 +52,12 @@ export function unknownToolWarnings(record: RunRecord): string[] {
       const key = `${stepId}:${denial.toolName}`;
       if (seen.has(key)) continue;
       seen.add(key);
+      if (declared) {
+        warnings.push(
+          `warning: step "${stepId}" invoked "${denial.toolName}", which is not in the allow of its declared server (denied) — if it is legitimate, add it to the server's allow and to the step's tools:`,
+        );
+        continue;
+      }
       warnings.push(
         `warning: step "${stepId}" invoked "${denial.toolName}", which the engine does not govern (denied) — if it is legitimate, add its profile to TOOL_FS_PROFILES in fs-guard.ts`,
       );

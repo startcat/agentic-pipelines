@@ -205,7 +205,7 @@ export async function listMcpToolsViaStdio(
     send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
     const response = await readOneMessageWithTimeout();
     const tools = (response.result as { tools?: Array<{ name: string; inputSchema?: { properties?: Record<string, unknown> } }> })?.tools ?? [];
-    const out: Record<string, string[]> = {};
+    const out: Record<string, string[]> = Object.create(null);
     for (const tool of tools) {
       out[tool.name] = Object.keys(tool.inputSchema?.properties ?? {});
     }
@@ -400,6 +400,13 @@ export async function preflight(
       const real = await probes.listMcpTools(server, {}); // real env resolved by the caller if needed in the future
       const drift: string[] = [];
       for (const suffix of granted) {
+        // A `declared` server has no field profiles in the engine (only its
+        // `allow`), so the only thing to check is that the granted tool still
+        // exists in the real server.
+        if (server.kind === 'declared') {
+          if (!Object.hasOwn(real, suffix)) drift.push(`${suffix}: the tool no longer exists on the real server`);
+          continue;
+        }
         const profile: ToolFsProfile | undefined = TOOL_FS_PROFILES[suffix];
         const governedFields =
           profile?.kind === 'path' ? [profile.field]
@@ -407,7 +414,7 @@ export async function preflight(
           : profile?.kind === 'url' ? [profile.field]
           : [];
         const knownFields = profile?.knownFields ?? [];
-        const realFields = real[suffix];
+        const realFields = Object.hasOwn(real, suffix) ? real[suffix] : undefined;
         if (realFields === undefined) {
           drift.push(`${suffix}: the tool no longer exists on the real server`);
           continue;
@@ -433,7 +440,12 @@ export async function preflight(
         kind: 'mcp-schema',
         name,
         ok: drift.length === 0,
-        detail: drift.length === 0 ? 'real schema matches the engine table' : drift.join('; '),
+        detail:
+          drift.length > 0
+            ? drift.join('; ')
+            : server.kind === 'declared'
+              ? 'the granted tools exist in the real server'
+              : 'real schema matches the engine table',
       });
     } catch (err) {
       checks.push({

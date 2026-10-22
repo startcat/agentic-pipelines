@@ -20,7 +20,7 @@ import {
   type StepOutcome,
 } from './shell.ts';
 import { redactSecrets } from '../runs/store.ts';
-import { captureRoots, evaluateToolCall, type FsRoots } from './fs-guard.ts';
+import { captureRoots, DECLARED_DENY_PREFIX, evaluateToolCall, type FsRoots } from './fs-guard.ts';
 import type { HookInput, HookJSONOutput } from '@anthropic-ai/claude-agent-sdk';
 // `Denial` lives in `runs/types.ts` (not here) to avoid a module cycle —
 // see the comment next to its definition there. It is re-exported from this
@@ -138,18 +138,22 @@ function normalizeToolName(toolName: string, mcpServerNames: readonly string[]):
 /**
  * Builds the `PreToolUse` hook for a step, closed over `roots`, a mutable
  * denial log (`hookLog`, populated as a side effect every time the hook
- * denies — `buildDenials` consumes it at the end of the step) and the MCP
+ * denies — `buildDenials` consumes it at the end of the step), the MCP
  * server names the step enabled (`mcpServerNames`, for
- * `normalizeToolName`). The whole body is wrapped in a single `try/catch`
- * that never lets an exception escape — `evaluateToolCall` no longer throws
- * on its own, but this layer is the safety net if something in the future
- * broke that guarantee before a test caught it: the sandbox never fails
- * open, and when in doubt it denies.
+ * `normalizeToolName`) and `declaredAllow`: for each active `kind: declared`
+ * server, the tool suffixes the step grants in `tools:` (not the server's
+ * whole `allow`). It is required: omitting it would let a declared server's
+ * tool through under a Playwright profile. The whole body is wrapped in a
+ * single `try/catch` that never lets an exception escape — `evaluateToolCall`
+ * no longer throws on its own, but this layer is the safety net if something
+ * in the future broke that guarantee before a test caught it: the sandbox
+ * never fails open, and when in doubt it denies.
  */
-function makePreToolUseHook(
+export function makePreToolUseHook(
   roots: FsRoots,
   hookLog: Map<string, { toolName: string; reason: string }>,
   mcpServerNames: readonly string[],
+  declaredAllow: ReadonlyMap<string, ReadonlySet<string>>,
 ): (input: HookInput, toolUseId: string | undefined, options: { signal: AbortSignal }) => Promise<HookJSONOutput> {
   return async (input, toolUseId) => {
     try {
@@ -159,6 +163,22 @@ function makePreToolUseHook(
       // `result.permission_denials` uses too, so `buildDenials` pairs them by
       // the same name. Only the LOOKUP in `TOOL_FS_PROFILES` uses the
       // normalized suffix.
+      // The engine knows no filesystem profile for a `declared` server: the
+      // tools the step grants (a subset of its `allow`) are the only source
+      // of truth, so decide before normalizing. Otherwise a tool named like a
+      // Playwright one (`browser_navigate`) would inherit its profile by chance.
+      for (const [server, allow] of declaredAllow) {
+        const prefix = `mcp__${server}__`;
+        if (!input.tool_name.startsWith(prefix)) continue;
+        if (allow.has(input.tool_name.slice(prefix.length))) {
+          return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } };
+        }
+        const reason = `${DECLARED_DENY_PREFIX} "${server}": the tool is not granted by the step or is not in its allow`;
+        if (toolUseId) hookLog.set(toolUseId, { toolName: input.tool_name, reason });
+        return {
+          hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason },
+        };
+      }
       const normalized = normalizeToolName(input.tool_name, mcpServerNames);
       const result = evaluateToolCall(normalized, input.tool_input, roots);
       if (result.allowed) {
@@ -601,6 +621,17 @@ export async function runAgentStep(
   const hookLog = new Map<string, { toolName: string; reason: string }>();
   const agents = await loadRepoAgents(ctx.repoRoot);
   const mcpServers = resolveMcpServers(step.mcpServers, ctx.mcpServers, ctx.secrets, ctx.scope);
+  const declaredAllow = new Map<string, ReadonlySet<string>>();
+  for (const name of step.mcpServers) {
+    const config = ctx.mcpServers[name];
+    if (config?.kind !== 'declared') continue;
+    // Only what the step grants: the SDK does not filter by `allowedTools`
+    // (it only auto-approves), so this hook is the only filter and the
+    // server's `allow` is the ceiling, not what is granted.
+    const prefix = `mcp__${name}__`;
+    const granted = step.tools.filter((t) => t.startsWith(prefix)).map((t) => t.slice(prefix.length));
+    declaredAllow.set(name, new Set(granted));
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ctx.timeoutMs);
 
@@ -618,7 +649,7 @@ export async function runAgentStep(
     strictMcpConfig: true,
     abortController: controller,
     persistSession: false,
-    hooks: { PreToolUse: [{ hooks: [makePreToolUseHook(roots, hookLog, step.mcpServers)] }] },
+    hooks: { PreToolUse: [{ hooks: [makePreToolUseHook(roots, hookLog, step.mcpServers, declaredAllow)] }] },
   };
   if (step.outputs) {
     options.outputFormat = { type: 'json_schema', schema: outputsToJsonSchema(step.outputs) };

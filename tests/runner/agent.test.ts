@@ -12,7 +12,7 @@ import type {
   SDKResultSuccess,
 } from '@anthropic-ai/claude-agent-sdk';
 import { parsePipeline, type AgentStep } from '../../src/schema/pipeline.ts';
-import { loadRepoAgents, outputsToJsonSchema, runAgentStep } from '../../src/runner/agent.ts';
+import { loadRepoAgents, makePreToolUseHook, outputsToJsonSchema, runAgentStep } from '../../src/runner/agent.ts';
 import { TOOL_FS_PROFILES } from '../../src/runner/fs-guard.ts';
 import { REDACTION } from '../../src/runs/store.ts';
 
@@ -834,6 +834,149 @@ describe('runAgentStep — repo agents', () => {
 });
 
 describe('runAgentStep — PreToolUse hook', () => {
+  async function callHook(
+    declaredAllow: Map<string, Set<string>>,
+    toolName: string,
+    toolInput: unknown,
+    hookLog = new Map<string, { toolName: string; reason: string }>(),
+  ) {
+    const hook = makePreToolUseHook(
+      { cwdRoot: tmpdir(), readRoots: [tmpdir()] },
+      hookLog,
+      ['my-device'],
+      declaredAllow,
+    );
+    const outcome = await hook(
+      { hook_event_name: 'PreToolUse', tool_name: toolName, tool_input: toolInput, tool_use_id: 'd1' } as never,
+      'd1',
+      { signal: new AbortController().signal },
+    );
+    return outcome as { hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string } };
+  }
+
+  test('the hook allows a tool of a declared server that is in allow', async () => {
+    const outcome = await callHook(new Map([['my-device', new Set(['screenshot'])]]), 'mcp__my-device__screenshot', {
+      any: 'thing',
+    });
+    expect(outcome.hookSpecificOutput?.permissionDecision).toBe('allow');
+  });
+
+  test('the hook denies a tool of a declared server that is not in allow, with a reason', async () => {
+    const log = new Map<string, { toolName: string; reason: string }>();
+    const outcome = await callHook(new Map([['my-device', new Set(['screenshot'])]]), 'mcp__my-device__erase', {}, log);
+    expect(outcome.hookSpecificOutput?.permissionDecision).toBe('deny');
+    const reason = outcome.hookSpecificOutput?.permissionDecisionReason ?? '';
+    expect(reason).toContain('allow');
+    expect(reason).toContain('my-device');
+    expect(log.get('d1')?.toolName).toBe('mcp__my-device__erase');
+  });
+
+  test('a tool of a declared server named like a Playwright tool does not use the Playwright profile', async () => {
+    const outcome = await callHook(
+      new Map([['my-device', new Set(['tap'])]]),
+      'mcp__my-device__browser_navigate',
+      { url: 'https://x' },
+    );
+    expect(outcome.hookSpecificOutput?.permissionDecision).toBe('deny');
+  });
+
+  async function stepHook(yaml: string) {
+    const p = parsePipeline(yaml);
+    let received: Record<string, unknown> = {};
+    await runAgentStep(p.steps[0] as AgentStep, {
+      ...baseCtx,
+      mcpServers: p.mcpServers,
+      queryFn: ({ options }) => {
+        received = options;
+        return (async function* (): AsyncGenerator<SDKMessage> { yield resultSuccess({ result: 'ok' }); })();
+      },
+    });
+    const hook = (received.hooks as { PreToolUse: Array<{ hooks: [Function] }> }).PreToolUse[0]!.hooks[0]!;
+    return async (tool: string, input: unknown = {}): Promise<string | undefined> => {
+      const out = await hook(
+        { hook_event_name: 'PreToolUse', tool_name: tool, tool_input: input, tool_use_id: 'x' },
+        'x',
+        { signal: new AbortController().signal },
+      );
+      return out.hookSpecificOutput?.permissionDecision;
+    };
+  }
+
+  test('runAgentStep gives the hook only the declared tools the step grants, not the whole allow', async () => {
+    const decide = await stepHook(`
+name: demo
+description: d
+version: 1
+mcp_servers:
+  my-device:
+    command: node
+    args: [srv.js]
+    kind: declared
+    allow: [screenshot, tap]
+steps:
+  - id: a
+    agent: writer
+    prompt: p.md
+    mcp_servers: [my-device]
+    tools: [mcp__my-device__screenshot]
+`);
+    expect(await decide('mcp__my-device__screenshot')).toBe('allow');
+    expect(await decide('mcp__my-device__tap')).toBe('deny'); // in allow, but the step does not grant it
+    expect(await decide('mcp__my-device__erase')).toBe('deny');
+  });
+
+  test('a step with a declared server active and no tools: grants nothing from that server', async () => {
+    const decide = await stepHook(`
+name: demo
+description: d
+version: 1
+mcp_servers:
+  my-device:
+    command: node
+    kind: declared
+    allow: [screenshot]
+steps:
+  - id: a
+    agent: writer
+    prompt: p.md
+    mcp_servers: [my-device]
+`);
+    expect(await decide('mcp__my-device__screenshot')).toBe('deny');
+  });
+
+  test('playwright and declared in the same step (including names dev and dev-x) are each decided on their own', async () => {
+    const decide = await stepHook(`
+name: demo
+description: d
+version: 1
+mcp_servers:
+  pw:
+    command: npx
+    kind: playwright
+  dev:
+    command: qa
+    kind: declared
+    allow: [screenshot, tap]
+  dev-x:
+    command: qa
+    kind: playwright
+steps:
+  - id: a
+    agent: writer
+    prompt: p.md
+    mcp_servers: [pw, dev, dev-x]
+    tools: [mcp__pw__browser_navigate, mcp__dev__screenshot, mcp__dev-x__browser_navigate]
+`);
+    expect(await decide('mcp__pw__browser_navigate', { url: 'https://x' })).toBe('allow');
+    expect(await decide('mcp__pw__browser_navigate', { url: 'file:///etc/passwd' })).toBe('deny');
+    expect(await decide('mcp__dev__browser_navigate', { url: 'https://x' })).toBe('deny');
+    expect(await decide('mcp__dev__screenshot')).toBe('allow');
+    expect(await decide('mcp__dev__tap')).toBe('deny'); // in allow, not granted
+    expect(await decide('mcp__dev-x__screenshot')).toBe('deny');
+    expect(await decide('mcp__dev-x__browser_navigate', { url: 'https://x' })).toBe('allow');
+    expect(await decide('mcp__dev__Bash')).toBe('deny');
+  });
+
   function capturingQueryFn(resultOverrides: Partial<SDKResultSuccess> = {}) {
     let receivedOptions: Record<string, unknown> | undefined;
     const fn = (args: { prompt: string; options: Record<string, unknown> }) => {
