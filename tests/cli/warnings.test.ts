@@ -28,6 +28,22 @@ function run(steps: Record<string, StepRecord>): RunRecord {
 }
 
 describe('unknownToolWarnings', () => {
+  test('a denial from a declared server suggests adding the tool to its allow, not to TOOL_FS_PROFILES', () => {
+    const withDenial = step({
+      denials: [
+        {
+          toolName: 'mcp__my-device__erase',
+          toolUseId: 't1',
+          reason: 'tool no permitida del servidor declared "my-device": la tool no está en su allow',
+          source: 'both',
+        },
+      ],
+    });
+    const [warning] = unknownToolWarnings(run({ a: withDenial }));
+    expect(warning).toContain('allow');
+    expect(warning).not.toContain('TOOL_FS_PROFILES');
+  });
+
   test('un run sin denegaciones no produce avisos', () => {
     expect(unknownToolWarnings(run({ a: step() }))).toEqual([]);
   });

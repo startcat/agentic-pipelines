@@ -538,6 +538,84 @@ describe('preflight — deriva de esquema MCP (doctor)', () => {
     expect(check?.detail).toContain('outputPath');
   });
 
+  describe('declared server', () => {
+    const DECLARED_PIPELINE = parsePipeline(`
+name: demo
+description: d
+version: 1
+mcp_servers:
+  dev:
+    command: node
+    args: []
+    kind: declared
+    allow: [screenshot, tap]
+steps:
+  - id: a
+    agent: writer
+    prompt: p.md
+    mcp_servers: [dev]
+    tools: [mcp__dev__screenshot, mcp__dev__tap]
+`);
+    const run = (real: Record<string, string[]>) =>
+      preflight(DECLARED_PIPELINE, {
+        repoRoot,
+        userClaudeDir: claudeDir,
+        processEnv: {},
+        dotEnv: {},
+        probes: { hasBinary: async () => true, listMcpTools: async () => real },
+      });
+
+    test('a declared server whose granted tools all exist in the real server passes the mcp-schema check', async () => {
+      const report = await run({ screenshot: [], tap: ['texto'] });
+      const check = report.checks.find((c) => c.kind === 'mcp-schema' && c.name === 'dev');
+      expect(check?.ok).toBe(true);
+    });
+
+    test('a granted tool of a declared server that the real server does not list is reported as drift', async () => {
+      const report = await run({ screenshot: [] });
+      const check = report.checks.find((c) => c.kind === 'mcp-schema' && c.name === 'dev');
+      expect(check?.ok).toBe(false);
+      expect(check?.detail).toContain('tap: la tool ya no existe en el servidor real');
+    });
+
+    test('a granted tool named like an inherited Object property does not count as existing', async () => {
+      const pipeline = parsePipeline(`
+name: demo
+description: d
+version: 1
+mcp_servers:
+  dev:
+    command: node
+    args: []
+    kind: declared
+    allow: [constructor]
+steps:
+  - id: a
+    agent: writer
+    prompt: p.md
+    mcp_servers: [dev]
+    tools: [mcp__dev__constructor]
+`);
+      const report = await preflight(pipeline, {
+        repoRoot,
+        userClaudeDir: claudeDir,
+        processEnv: {},
+        dotEnv: {},
+        probes: { hasBinary: async () => true, listMcpTools: async () => ({ screenshot: [] }) },
+      });
+      const check = report.checks.find((c) => c.kind === 'mcp-schema' && c.name === 'dev');
+      expect(check?.ok).toBe(false);
+      expect(check?.detail).toContain('constructor: la tool ya no existe en el servidor real');
+    });
+
+    test('fields are not compared for a declared server', async () => {
+      const report = await run({ screenshot: ['field_a', 'field_b'], tap: ['x', 'y', 'z'] });
+      const check = report.checks.find((c) => c.kind === 'mcp-schema' && c.name === 'dev');
+      expect(check?.ok).toBe(true);
+      expect(check?.detail).not.toContain('campo');
+    });
+  });
+
   test('un servidor sin kind: no genera ningún chequeo mcp-schema', async () => {
     const p = parsePipeline(`
 name: demo

@@ -283,6 +283,82 @@ steps:
 });
 
 describe('mcp_servers', () => {
+  const declaredYaml = (server: string, tools = '[Read, mcp__my-device__screenshot]') => `
+name: demo
+description: d
+version: 1
+mcp_servers:
+  my-device:
+${server}
+steps:
+  - id: a
+    agent: writer
+    prompt: p.md
+    mcp_servers: [my-device]
+    tools: ${tools}
+`;
+  const issuesOf = (yaml: string): string[] => {
+    try {
+      parsePipeline(yaml);
+    } catch (err) {
+      expect(err).toBeInstanceOf(PipelineParseError);
+      return (err as PipelineParseError).issues;
+    }
+    throw new Error('debería haber lanzado');
+  };
+
+  test('kind: declared with allow exposes exactly the listed tools', () => {
+    const p = parsePipeline(
+      declaredYaml(
+        '    command: qa\n    args: [mcp]\n    kind: declared\n    allow: [screenshot, tap]',
+        '[Read, mcp__my-device__screenshot]',
+      ),
+    );
+    expect(p.mcpServers["my-device"]!.allow).toEqual(['screenshot', 'tap']);
+  });
+
+  test('a tool of a declared server that is not in allow is rejected', () => {
+    const issues = issuesOf(
+      declaredYaml(
+        '    command: qa\n    kind: declared\n    allow: [screenshot]',
+        '[mcp__my-device__erase]',
+      ),
+    );
+    expect(issues.join('\n')).toContain('steps.0.tools.0');
+    expect(issues.join('\n')).toContain('"erase" no está en allow del servidor "my-device"');
+  });
+
+  test('kind: declared without allow is rejected', () => {
+    const text = issuesOf(declaredYaml('    command: qa\n    kind: declared', '[Read]')).join('\n');
+    expect(text).toContain('mcp_servers.my-device');
+    expect(text).toContain('allow');
+  });
+
+  test('allow on a server without kind: declared is rejected', () => {
+    for (const kindLine of ['    kind: playwright\n', '']) {
+      const text = issuesOf(
+        declaredYaml(`    command: qa\n${kindLine}    allow: [screenshot]`, '[Read]'),
+      ).join('\n');
+      expect(text).toContain('mcp_servers.my-device');
+      expect(text).toContain('allow');
+    }
+  });
+
+  test('allow containing a HARD_DENY_TOOLS tool is rejected', () => {
+    const text = issuesOf(
+      declaredYaml('    command: qa\n    kind: declared\n    allow: [browser_evaluate]', '[Read]'),
+    ).join('\n');
+    expect(text).toContain('mcp_servers.my-device.allow.0');
+    expect(text).toContain('browser_evaluate');
+  });
+
+  test('an empty allow is rejected', () => {
+    const text = issuesOf(
+      declaredYaml('    command: qa\n    kind: declared\n    allow: []', '[Read]'),
+    ).join('\n');
+    expect(text).toContain('mcp_servers.my-device.allow');
+  });
+
   test('resuelve el registro del pipeline y los nombres activados por un paso', () => {
     const p = parsePipeline(`
 name: demo
