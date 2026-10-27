@@ -1,7 +1,7 @@
 {
   "name": "agentic-pipelines",
   "version": "0.1.0",
-  "description": "Unattended agentic pipelines on macOS: YAML graphs of shell and Claude Agent SDK steps, sandboxed, scheduled with launchd.",
+  "description": "Unattended agentic pipelines on macOS and Linux: YAML graphs of shell and Claude Agent SDK steps, sandboxed, scheduled with launchd or systemd timers.",
   "license": "MIT",
   "author": "Start.cat (https://start.cat)",
   "repository": {
@@ -17,6 +17,7 @@
     "pipelines",
     "claude-agent-sdk",
     "launchd",
+    "systemd",
     "automation",
     "cron"
   ],

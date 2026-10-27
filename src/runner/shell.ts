@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { shellArgv } from './interpreter.ts';
 import { interpolate, interpolateForShell, type InterpolationScope } from '../params/resolve.ts';
 import type { OutputType, ShellStep } from '../schema/pipeline.ts';
 import { redactSecrets } from '../runs/store.ts';
@@ -20,8 +21,9 @@ export type StepContext = {
 
 /**
  * Variables del proceso que un paso necesita para funcionar. Todo lo demás se
- * descarta: sin esta lista, `sh` no encontraría ni sus propios binarios; con
- * `process.env` entero, un paso vería credenciales de pipelines vecinos.
+ * descarta: sin esta lista, el intérprete (`sh` en macOS, `bash` en Linux) no
+ * encontraría ni sus propios binarios; con `process.env` entero, un paso
+ * vería credenciales de pipelines vecinos.
  */
 const BASE_ENV_KEYS = ['PATH', 'HOME', 'SHELL', 'USER', 'TZ', 'TMPDIR'];
 
@@ -70,7 +72,7 @@ export function composeEnv(secrets: Record<string, string>): Record<string, stri
  * dado el visto bueno viendo esa misma variable en ESTE proceso.
  *
  * Por qué esta lista es distinta de `BASE_ENV_KEYS`/`composeEnv` en vez de
- * reutilizarla tal cual: `composeEnv` es correcta para `sh -c` en
+ * reutilizarla tal cual: `composeEnv` es correcta para el intérprete de shell en
  * `runShellStep`, que ejecuta el `run:` del propio YAML del pipeline — un
  * payload que no es de confianza, así que ahí no se debe aflojar la lista.
  * El subproceso del SDK, en cambio, es NUESTRO propio proceso (el CLI que
@@ -78,7 +80,7 @@ export function composeEnv(secrets: Record<string, string>): Record<string, stri
  * contra la API. La tensión real, y por eso la lista sigue siendo estrecha
  * y no un `...process.env` en bruto: el `Bash` de un paso agéntico hereda
  * este mismo entorno, así que ensancharlo aquí sería la misma fuga que
- * `composeEnv` evita para `sh -c`, solo que con un vector distinto.
+ * `composeEnv` evita para el intérprete de shell, solo que con un vector distinto.
  */
 const AGENT_AUTH_ENV_KEYS = [
   'ANTHROPIC_API_KEY',
@@ -330,12 +332,12 @@ function redactOutcome(outcome: StepOutcome, secrets: Record<string, string>): S
  *
  * El caso corriente —y el que motivó separarlo— es un `cwd` que no existe:
  * `posix_spawn` falla con ENOENT y Bun lo reporta nombrando el ejecutable
- * (`posix_spawn \'sh\'`), no el directorio. El mensaje crudo dice entonces que
- * no encuentra `sh`, que está donde siempre, y manda a quien lo lea a buscar
- * un problema de PATH inexistente. Pasó de verdad el 2026-08-31, validando el
- * canal de notify: ese texto es el que viaja en el correo de una fallada
- * nocturna, así que es lo primero que se ve y lo último que conviene que
- * mienta.
+ * (`posix_spawn \'sh\'`; en Linux, `bash`), no el directorio. El mensaje crudo
+ * dice entonces que no encuentra el intérprete, que está donde siempre, y
+ * manda a quien lo lea a buscar un problema de PATH inexistente. Pasó de
+ * verdad el 2026-08-31, validando el canal de notify: ese texto es el que
+ * viaja en el correo de una fallada nocturna, así que es lo primero que se ve
+ * y lo último que conviene que mienta.
  *
  * `cwdExists` se pasa desde fuera en vez de comprobarlo aquí para que la
  * decisión sea pura y se pueda probar sin tocar el disco.
@@ -381,16 +383,16 @@ export function stderrTail(stderr: string): string {
 const KILL_ESCALATION_GRACE_MS = 300;
 
 /**
- * Mata el GRUPO de procesos del paso, no solo el `sh` que lo encabeza.
+ * Mata el GRUPO de procesos del paso, no solo el intérprete que lo encabeza.
  *
- * `proc.kill()` a secas solo envía la señal al PID de `sh`: si el `run:` del
+ * `proc.kill()` a secas solo envía la señal al PID del intérprete: si el `run:` del
  * paso arranca algo en segundo plano (`caffeinate -i claude -p … &`, el
  * patrón headless de `aeacc-nightly`/`hub-maintenance`), ese hijo hereda la
- * tubería de stdout/stderr y sigue vivo tras matar a `sh`, así que el motor
+ * tubería de stdout/stderr y sigue vivo tras matar al intérprete, así que el motor
  * se queda esperando a que EL cierre su copia del fd — el `timeout` del
  * pipeline no interrumpe nada, solo tarda lo que tarde el huérfano.
  *
- * El grupo existe porque `runShellStep` arranca `sh` con `detached: true`
+ * El grupo existe porque `runShellStep` arranca el intérprete con `detached: true`
  * (`setsid`, `pid === pgid`): matar con PID negativo llega a todo el grupo,
  * huérfanos en segundo plano incluidos, porque heredan el mismo `pgid` salvo
  * que ellos mismos llamen a `setpgid`. Si el grupo ya no existe (el proceso
@@ -432,12 +434,12 @@ export async function runShellStep(
   // `ReadableStream`, lo que no compila más abajo.
   let proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'>;
   try {
-    proc = Bun.spawn(['sh', '-c', command], {
+    proc = Bun.spawn(shellArgv(command), {
       cwd,
       env: { ...composeEnv(ctx.secrets), ...refEnv },
       stdout: 'pipe',
       stderr: 'pipe',
-      // `setsid()`: `sh` nace como líder de su propio grupo (pid === pgid),
+      // `setsid()`: el intérprete nace como líder de su propio grupo (pid === pgid),
       // así que matar el grupo entero (ver `killProcessGroup`) es posible
       // aunque el paso arranque hijos en segundo plano.
       detached: true,

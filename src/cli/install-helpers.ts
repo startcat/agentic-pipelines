@@ -1,8 +1,17 @@
-import { homedir } from 'node:os';
 import { realpathSync } from 'node:fs';
-import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { readFile, rename, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { stableBunPath } from '../install/launchd.ts';
+import { stableBunPath } from '../install/common.ts';
+
+/**
+ * El home del usuario: `$HOME` manda (como en la shell, y como en el backend de
+ * systemd) y `homedir()` es el respaldo. Bun no sigue un `HOME` cambiado en
+ * macOS, y los tests dependen de poder cambiarlo.
+ */
+export function userHome(): string {
+  return process.env.HOME || homedir();
+}
 
 /**
  * El `bun` que va al plist de un job. `install` lo escribe y el panel
@@ -13,37 +22,6 @@ import { stableBunPath } from '../install/launchd.ts';
  */
 export function jobBunPath(): string {
   return stableBunPath(process.execPath, Bun.which('bun'), realpathSync);
-}
-
-/** Directorio de LaunchAgents del usuario actual. */
-export function launchAgentsDir(): string {
-  return join(homedir(), 'Library', 'LaunchAgents');
-}
-
-/**
- * Los plists de LaunchAgents del usuario, con su contenido crudo, para el
- * escaneo de colisiones. Un directorio inexistente no es un error: significa
- * que no hay ningún job de usuario instalado.
- */
-export async function readLaunchAgents(): Promise<{ label: string; contents: string }[]> {
-  let entries: string[];
-  try {
-    entries = await readdir(launchAgentsDir());
-  } catch {
-    return [];
-  }
-  const agents: { label: string; contents: string }[] = [];
-  for (const entry of entries) {
-    if (!entry.endsWith('.plist')) continue;
-    try {
-      const contents = await readFile(join(launchAgentsDir(), entry), 'utf8');
-      agents.push({ label: entry.slice(0, -'.plist'.length), contents });
-    } catch {
-      // Un plist ilegible (permisos) no debe tumbar la instalación: solo
-      // significa que esa red de seguridad no lo cubre.
-    }
-  }
-  return agents;
 }
 
 /**

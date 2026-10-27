@@ -53,6 +53,8 @@ async function cli(
       ...process.env,
       HOME: fakeHome,
       ANTHROPIC_API_KEY: 'sk-test',
+      // Estos tests son de launchd: en Linux el programador por defecto sería systemd.
+      PIPELINES_SCHEDULER: 'launchd',
       PIPELINES_LAUNCHCTL_BIN: opts.launchctlBin ?? writeFakeLaunchctl(),
     },
     stdout: 'pipe',

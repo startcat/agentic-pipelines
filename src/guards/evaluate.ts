@@ -1,4 +1,5 @@
 import { interpolate, interpolateForShell } from '../params/resolve.ts';
+import { shellArgv } from '../runner/interpreter.ts';
 import { composeEnv } from '../runner/shell.ts';
 import type { Guard, Pipeline } from '../schema/pipeline.ts';
 import type { RunStore } from '../runs/store.ts';
@@ -32,16 +33,16 @@ function minutesOfDay(text: string): number {
 
 /**
  * `composeEnv({})` y no `{ ...process.env }`: una guarda corre por el mismo
- * `sh -c` que un paso `run:`, así que merece el mismo entorno estrecho y
- * determinista — la base mínima y el locale fijo, sin arrastrar lo que el
- * operador tenga exportado en su shell (credenciales de otros proyectos
- * incluidas). `{}` porque una guarda nunca recibe secretos: `GuardContext`
+ * intérprete que un paso `run:` (`sh -c` en macOS, `bash --posix -c` en
+ * Linux), así que merece el mismo entorno estrecho y determinista — la base
+ * mínima y el locale fijo, sin arrastrar lo que el operador tenga exportado
+ * en su shell (credenciales de otros proyectos incluidas). `{}` porque una guarda nunca recibe secretos: `GuardContext`
  * no los lleva, y `interpolateForShell` solo resuelve `{{params.x}}`.
  * El `env` que llega como argumento son las variables `__PIPELINES_REF_n`
  * de la indirección por entorno, y va al final para que gane siempre.
  */
 async function defaultRunShell(command: string, env: Record<string, string>): Promise<number> {
-  const proc = Bun.spawn(['sh', '-c', command], {
+  const proc = Bun.spawn(shellArgv(command), {
     env: { ...composeEnv({}), ...env },
     stdout: 'ignore',
     stderr: 'ignore',

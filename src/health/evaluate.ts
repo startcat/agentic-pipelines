@@ -2,12 +2,12 @@
  * El veredicto de salud de un pipeline: dos ejes independientes que se
  * vigilan entre sí.
  *
- * Módulo PURO a propósito, igual que `install/launchd.ts` y
+ * Módulo PURO a propósito, igual que `install/common.ts` y
  * `runner/fs-guard.ts`: sin E/S, sin subprocesos y sin reloj propio — el
  * instante entra como parámetro. Así la tabla de casos se ejecuta entera sin
  * levantar un servidor ni depender de macOS.
  */
-import { cronToCalendarIntervals, stripGeneratedAt, type CalendarInterval } from '../install/launchd.ts';
+import { cronToCalendarIntervals, stripGeneratedAt, type CalendarInterval } from '../install/common.ts';
 import type { RunRecord } from '../runs/types.ts';
 import type { Pipeline } from '../schema/pipeline.ts';
 
@@ -47,10 +47,13 @@ export type TriggerHealth = 'no-trigger' | 'not-installed' | 'disabled' | 'drift
 export type JobFacts = {
   loaded: boolean;
   disabled: boolean;
-  /** Contenido del plist en disco, si existe. */
-  plistOnDisk?: string;
-  /** El plist que `install` generaría ahora mismo. */
-  plistExpected?: string;
+  /**
+   * Contenido de los ficheros del job en disco, si existen: el plist en
+   * launchd; en systemd, el `.service` y el `.timer` unidos por un salto de línea.
+   */
+  artifactOnDisk?: string;
+  /** Lo mismo, tal como `install` lo generaría ahora mismo. */
+  artifactExpected?: string;
 };
 
 /**
@@ -67,8 +70,8 @@ export function evaluateTrigger(hasTriggers: boolean, job: JobFacts): TriggerHea
   if (!job.loaded) return 'not-installed';
   // Sin los dos lados no hay comparación posible, y afirmar una desviación
   // que no se ha podido medir sería inventarse un diagnóstico.
-  if (job.plistOnDisk === undefined || job.plistExpected === undefined) return 'installed';
-  return stripGeneratedAt(job.plistOnDisk) === stripGeneratedAt(job.plistExpected)
+  if (job.artifactOnDisk === undefined || job.artifactExpected === undefined) return 'installed';
+  return stripGeneratedAt(job.artifactOnDisk) === stripGeneratedAt(job.artifactExpected)
     ? 'installed'
     : 'drifted';
 }

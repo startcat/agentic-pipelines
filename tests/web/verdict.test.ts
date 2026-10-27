@@ -47,54 +47,54 @@ describe('veredicto', () => {
   // La razón de existir de la página. Del 20 al 29 de agosto el job estaba
   // cargado y no producía nada, y ninguna de las dos fuentes lo veía sola.
   test('cargado + mudo es la alarma, y lo dice en mayúsculas', () => {
-    const v = veredicto(salud({ work: 'silent', contradiction: true }), 16);
+    const v = veredicto(salud({ work: 'silent', contradiction: true }), 16, 'launchd');
     expect(v.tono).toBe('bad');
     expect(v.line).toBe('CARGADO Y SIN PRODUCIR NADA');
   });
 
   test('un plist desviado y mudo también es la alarma', () => {
-    const v = veredicto(salud({ trigger: 'drifted', work: 'silent', contradiction: true }), 16);
+    const v = veredicto(salud({ trigger: 'drifted', work: 'silent', contradiction: true }), 16, 'launchd');
     expect(v.tono).toBe('bad');
     expect(v.line).toBe('CARGADO Y SIN PRODUCIR NADA');
   });
 
   test('la alarma manda incluso sobre un run corriendo', () => {
     const lastRun = run({ status: 'running' });
-    expect(veredicto(salud({ work: 'silent', contradiction: true, lastRun }), 16).line)
+    expect(veredicto(salud({ work: 'silent', contradiction: true, lastRun }), 16, 'launchd').line)
       .toBe('CARGADO Y SIN PRODUCIR NADA');
   });
 
   test('atascado dice cuántas noches lleva saltando', () => {
-    const v = veredicto(salud({ work: 'stuck', consecutiveSkips: 8 }), 16);
+    const v = veredicto(salud({ work: 'stuck', consecutiveSkips: 8 }), 16, 'launchd');
     expect(v.tono).toBe('warn');
     expect(v.line).toContain('8 noches');
   });
 
   test('una sola noche saltada no habla en plural', () => {
-    const linea = veredicto(salud({ work: 'stuck', consecutiveSkips: 1 }), 16).line;
+    const linea = veredicto(salud({ work: 'stuck', consecutiveSkips: 1 }), 16, 'launchd').line;
     expect(linea).toContain('1 noche');
     expect(linea).not.toContain('1 noches');
   });
 
   test('un run corriendo cuenta los pasos hechos', () => {
     const lastRun = run({ status: 'running', steps: { a: {}, b: {}, c: {} } as never });
-    const v = veredicto(salud({ lastRun }), 16);
+    const v = veredicto(salud({ lastRun }), 16, 'launchd');
     expect(v.tono).toBe('live');
     expect(v.line).toBe('Corriendo ahora — 3 de 16 pasos.');
   });
 
   test('fallando lo dice sin rodeos', () => {
-    expect(veredicto(salud({ work: 'failing' }), 16).tono).toBe('bad');
+    expect(veredicto(salud({ work: 'failing' }), 16, 'launchd').tono).toBe('bad');
   });
 
   test('un pipeline manual y al día no pinta de rojo nada', () => {
-    const v = veredicto(salud({ trigger: 'no-trigger', work: 'working' }), 3);
+    const v = veredicto(salud({ trigger: 'no-trigger', work: 'working' }), 3, 'launchd');
     expect(v.tono).toBe('ok');
     expect(v.line).toContain('mano');
   });
 
   test('un pipeline con cron y al día no menciona la mano', () => {
-    const v = veredicto(salud({ work: 'working' }), 16);
+    const v = veredicto(salud({ work: 'working' }), 16, 'launchd');
     expect(v.tono).toBe('ok');
     expect(v.line).not.toContain('mano');
   });
@@ -103,25 +103,25 @@ describe('veredicto', () => {
   // el diagnóstico accionable. El veredicto respeta ese orden: el eje de
   // disparo manda sobre el de trabajo cuando nadie lo dispara.
   test('deshabilitado manda sobre lo que diga el eje de trabajo', () => {
-    const v = veredicto(salud({ trigger: 'disabled', work: 'working' }), 16);
+    const v = veredicto(salud({ trigger: 'disabled', work: 'working' }), 16, 'launchd');
     expect(v.tono).toBe('bad');
     expect(v.line).toContain('Nadie lo dispara');
   });
 
   test('no instalado también manda', () => {
-    const v = veredicto(salud({ trigger: 'not-installed', work: 'working' }), 16);
+    const v = veredicto(salud({ trigger: 'not-installed', work: 'working' }), 16, 'launchd');
     expect(v.tono).toBe('bad');
     expect(v.line).toContain('Nadie lo dispara');
   });
 
   test('las dos etiquetas de los ejes viajan siempre con el veredicto', () => {
-    const v = veredicto(salud({ trigger: 'drifted', work: 'stuck', consecutiveSkips: 2 }), 16);
+    const v = veredicto(salud({ trigger: 'drifted', work: 'stuck', consecutiveSkips: 2 }), 16, 'launchd');
     expect(v.trigger).toBe('desviado');
     expect(v.work).toBe('atascado');
   });
 
   test('nunca ha trabajado no es una alarma', () => {
-    expect(veredicto(salud({ work: 'never-worked' }), 16).tono).toBe('neutral');
+    expect(veredicto(salud({ work: 'never-worked' }), 16, 'launchd').tono).toBe('neutral');
   });
 });
 
@@ -170,5 +170,25 @@ describe('resumenPanel', () => {
   test('un run corriendo se menciona cuando todo lo demás está bien', () => {
     const r = resumenPanel([salud({ lastRun: run({ status: 'running' }) })], 0);
     expect(r.line).toContain('corriendo');
+  });
+});
+
+describe('veredicto — nombra el programador de la máquina', () => {
+  test('en systemd dice systemd', () => {
+    expect(veredicto(salud({ trigger: 'not-installed' }), 16, 'systemd').line).toBe(
+      'No está instalado en systemd. Nadie lo dispara.',
+    );
+    expect(veredicto(salud({ trigger: 'disabled' }), 16, 'systemd').line).toBe(
+      'Deshabilitado en systemd. Nadie lo dispara.',
+    );
+  });
+
+  test('en launchd la frase sigue igual', () => {
+    expect(veredicto(salud({ trigger: 'not-installed' }), 16, 'launchd').line).toBe(
+      'No está instalado en launchd. Nadie lo dispara.',
+    );
+    expect(veredicto(salud({ trigger: 'disabled' }), 16, 'launchd').line).toBe(
+      'Deshabilitado en launchd. Nadie lo dispara.',
+    );
   });
 });

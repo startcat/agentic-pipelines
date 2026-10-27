@@ -4,11 +4,11 @@
  * poder estorbarlo (`run.json` ya se escribe con `rename`
  * atómico, así que toda lectura ve una versión completa).
  */
-import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { userHome } from '../cli/install-helpers.ts';
 import { listPipelineNames, loadPipeline, type RepoContext } from '../cli/context.ts';
 import { evaluateHealth } from '../health/evaluate.ts';
-import { logPathFor } from '../install/launchd.ts';
+import { schedulerFor } from '../install/backend.ts';
 import { RunStore } from '../runs/store.ts';
 import {
   escapeHtml,
@@ -27,7 +27,7 @@ const JOB_FACTS_TTL_MS = 30_000;
 const JOB_LOG_TAIL_BYTES = 4_000;
 
 async function tailJobLog(pipelineName: string): Promise<string> {
-  const file = Bun.file(logPathFor(homedir(), pipelineName));
+  const file = Bun.file(schedulerFor().logPath(userHome(), pipelineName));
   if (!(await file.exists()) || file.size === 0) return '';
   return file.slice(Math.max(0, file.size - JOB_LOG_TAIL_BYTES), file.size).text();
 }
@@ -174,7 +174,10 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
       // `pipeline.yaml` — justo cuando este visor es más útil —, o un
       // `run.json` truncado a media escritura). Sin este try/catch, un solo
       // pipeline roto tumbaba `GET /` con 500 para todos los demás.
+      // `schedulerFor()` va dentro por lo mismo: en una plataforma sin
+      // programador cada fila enseña el error, pero el panel no da 500.
       try {
+        const backend = schedulerFor();
         const pipeline = await loadPipeline(ctx, name);
         const runs = await store.listRuns(name);
         const facts = await jobFacts.get(pipeline, ctx, now);
@@ -184,6 +187,7 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
           description: pipeline.description,
           health,
           pasosTotales: pipeline.steps.length,
+          scheduler: { label: backend.label, logPath: backend.logPath(userHome(), name) },
           // El log del job SOLO se lee aquí. Es el único
           // rastro de un motor que muere antes de escribir `run.json`, y no es
           // una fuente general — leerlo siempre lo convertiría en una segunda
@@ -212,7 +216,7 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
           // unhandled rejection, y Bun mata el proceso entero por eso.
           try {
             // `jobFacts` cachea con TTL de 30 s, así que este tick de un segundo
-            // NO lanza un `launchctl` por segundo.
+            // NO pregunta al programador cada segundo.
             const ahora = new Date();
             const rendered = renderHealthPanel(await healthRows(ahora), ahora);
             if (rendered === last) return;
@@ -263,7 +267,7 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
           const runs = await store.listRuns(name);
           const now = new Date();
           const health = evaluateHealth(pipeline, runs, await jobFacts.get(pipeline, ctx, now), now);
-          return new Response(layout(name, renderPipelinePage(pipeline, runs, health, now)), {
+          return new Response(layout(name, renderPipelinePage(pipeline, runs, health, now, schedulerFor().label)), {
             headers: { 'content-type': 'text/html; charset=utf-8' },
           });
         },
