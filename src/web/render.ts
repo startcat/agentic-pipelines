@@ -3,9 +3,7 @@
  * lógica de dominio: quién está sano lo decide `health/evaluate.ts`; aquí solo
  * se pinta.
  */
-import { homedir } from 'node:os';
 import type { Health } from '../health/evaluate.ts';
-import { logPathFor } from '../install/launchd.ts';
 import type { RunRecord } from '../runs/store.ts';
 import type { Guard, Pipeline } from '../schema/pipeline.ts';
 import { STYLES } from './styles.ts';
@@ -85,7 +83,9 @@ export type HealthRow =
       health: Health;
       /** Pasos declarados del pipeline, para el «N de M pasos» de un run vivo. */
       pasosTotales: number;
-      /** Cola del log del job de launchd. Solo se rellena en el caso de contradicción. */
+      /** El programador de esta máquina, ya resuelto por el servidor: el renderizador es puro. */
+      scheduler: { label: string; logPath: string };
+      /** Cola del log del job programado. Solo se rellena en el caso de contradicción. */
       jobLogTail?: string;
     }
   | {
@@ -108,13 +108,13 @@ function renderAlarma(row: Extract<HealthRow, { health: Health }>, linea: string
     ? `<div class="alarmbody">Últimas líneas de su log:</div>
        <pre class="tail">${escapeHtml(row.jobLogTail)}</pre>`
     : `<div class="alarmbody">Su log
-         (<code>${escapeHtml(logPathFor(homedir(), row.name))}</code>) está vacío o no existe:
+         (<code>${escapeHtml(row.scheduler.logPath)}</code>) está vacío o no existe:
          el job no llegó ni a arrancar.</div>`;
   return `<div class="alarmbox">
     <div class="name"><a href="/p/${encodeURIComponent(row.name)}">${escapeHtml(row.name)}</a></div>
     <div class="alarmhead">${escapeHtml(linea)}</div>
     <div class="alarmbody">
-      launchd dice que dispara este pipeline y no hay ni un run en la ventana. No llegó a
+      ${escapeHtml(row.scheduler.label)} dice que dispara este pipeline y no hay ni un run en la ventana. No llegó a
       arrancar: máquina dormida a la hora del disparo, el <code>bun</code> del PATH que ya no
       está, o el motor muriendo antes de escribir <code>run.json</code>.
     </div>
@@ -149,7 +149,7 @@ export function renderHealthPanel(rows: HealthRow[], now: Date): string {
         </div>`;
       }
 
-      const v = veredicto(row.health, row.pasosTotales);
+      const v = veredicto(row.health, row.pasosTotales, row.scheduler.label);
       if (row.health.contradiction) return renderAlarma(row, v.line);
 
       const last = row.health.lastRun;
@@ -240,8 +240,9 @@ export function renderPipelinePage(
   runs: RunRecord[],
   health: Health,
   now: Date,
+  schedulerLabel: string,
 ): string {
-  const v = veredicto(health, pipeline.steps.length);
+  const v = veredicto(health, pipeline.steps.length, schedulerLabel);
   const conAgente = pipeline.steps.filter((step) => step.type === 'agent').length;
 
   const steps = pipeline.steps

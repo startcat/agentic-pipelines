@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -591,5 +591,60 @@ describe('notify: en los caminos que saltan el run', () => {
 
     await cli(['run', 'demo']);
     expect(await Bun.file(join(root, 'notify-marker.txt')).text()).toBe('success/\n');
+  });
+});
+
+describe('doctor — los checks de plataforma no bloquean', () => {
+  test('con linger en rojo (systemd forzado), doctor sale con código 0 y lo muestra', async () => {
+    writePipeline('ok', 'name: ok\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n');
+    const bin = (name: string, body: string) => {
+      const p = join(root, name);
+      writeFileSync(p, `#!/bin/sh\n${body}\n`);
+      chmodSync(p, 0o755);
+      return p;
+    };
+    const proc = Bun.spawn(['bun', CLI, 'doctor', 'ok'], {
+      cwd: root,
+      env: {
+        ...process.env,
+        ANTHROPIC_API_KEY: 'sk-test',
+        PIPELINES_SCHEDULER: 'systemd',
+        PIPELINES_SYSTEMCTL_BIN: bin('sc', 'echo running'),
+        PIPELINES_LOGINCTL_BIN: bin('lc', 'echo no'),
+        PIPELINES_TIMEDATECTL_BIN: bin('td', 'echo Europe/Madrid'),
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    expect(await proc.exited).toBe(0);
+    const out = stdout + stderr;
+    expect(out).toContain('linger');
+    expect(out).toContain('sudo loginctl enable-linger');
+    // Con un check de plataforma en rojo, «Todo listo» sería mentira.
+    expect(out).not.toContain('Todo listo');
+    expect(out).toContain('Listo para ejecutar; para instalar falta: linger.');
+  });
+
+  test('sin programador para la plataforma, doctor no lanza y se salta los checks de plataforma', async () => {
+    writePipeline('ok', 'name: ok\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n');
+    const proc = Bun.spawn(['bun', CLI, 'doctor', 'ok'], {
+      cwd: root,
+      // Un valor desconocido hace que `schedulerFor()` lance, igual que en FreeBSD.
+      env: { ...process.env, ANTHROPIC_API_KEY: 'sk-test', PIPELINES_SCHEDULER: 'freebsd' },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    expect(await proc.exited).toBe(0);
+    const out = stdout + stderr;
+    expect(out).toContain('Todo listo.');
+    expect(out).not.toContain('platform');
   });
 });

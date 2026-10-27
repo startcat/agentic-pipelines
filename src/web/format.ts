@@ -6,7 +6,7 @@
  *
  * Nada de aquí decide NADA sobre salud: solo cambia de vocabulario.
  */
-import { cronToCalendarIntervals } from '../install/launchd.ts';
+import { cronToCalendarIntervals } from '../install/common.ts';
 
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];

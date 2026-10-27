@@ -33,23 +33,24 @@ export const etiquetaTrabajo = (w: WorkHealth): string => TRABAJO[w];
 
 const noches = (n: number): string => `${n} ${n === 1 ? 'noche' : 'noches'}`;
 
-export function veredicto(health: Health, pasosTotales: number): Veredicto {
+/** `programador` es el nombre del backend ("launchd" / "systemd"): la frase lo nombra. */
+export function veredicto(health: Health, pasosTotales: number, programador: string): Veredicto {
   const trigger = etiquetaDisparo(health.trigger);
   const work = etiquetaTrabajo(health.work);
   const di = (line: string, tono: Tono): Veredicto => ({ line, tono, trigger, work });
 
   // La alarma primero, por encima incluso de un run corriendo: es la única
   // casilla que existe para verse antes que nada. `contradiction` ya cubre
-  // `installed` y `drifted` — los dos significan "launchd lo tiene cargado".
+  // `installed` y `drifted` — los dos significan "el programador lo tiene cargado".
   if (health.contradiction) return di('CARGADO Y SIN PRODUCIR NADA', 'bad');
 
   // Después el eje de disparo, cuando dice que no lo dispara nadie: da igual lo
   // bien que fuera el último trabajo si desde entonces no lo lanza nada.
   if (health.trigger === 'not-installed') {
-    return di('No está instalado en launchd. Nadie lo dispara.', 'bad');
+    return di(`No está instalado en ${programador}. Nadie lo dispara.`, 'bad');
   }
   if (health.trigger === 'disabled') {
-    return di('Deshabilitado en launchd. Nadie lo dispara.', 'bad');
+    return di(`Deshabilitado en ${programador}. Nadie lo dispara.`, 'bad');
   }
 
   const manual = health.trigger === 'no-trigger';

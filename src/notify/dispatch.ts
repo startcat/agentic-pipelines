@@ -1,4 +1,5 @@
 import { collectSecrets, type RepoContext } from '../cli/context.ts';
+import { shellArgv } from '../runner/interpreter.ts';
 import { composeEnv } from '../runner/shell.ts';
 import type { Pipeline } from '../schema/pipeline.ts';
 import { redactSecrets } from '../runs/store.ts';
@@ -46,7 +47,7 @@ async function defaultSpawnChannel(
   // stdout y stderr se capturan, no se descartan: son la única prueba de que
   // el correo salió (o de por qué no), y antes se perdían — ver
   // `NotifyRecord` en runs/types.ts.
-  const proc = Bun.spawn(['sh', '-c', command], { cwd, env, stdout: 'pipe', stderr: 'pipe' });
+  const proc = Bun.spawn(shellArgv(command), { cwd, env, stdout: 'pipe', stderr: 'pipe' });
   const timer = setTimeout(() => proc.kill(), NOTIFY_TIMEOUT_MS);
   const [stdout, stderr] = await Promise.all([
     new Response(proc.stdout).text(),

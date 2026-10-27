@@ -1,18 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  buildPlistSpec,
   computePath,
   stableBunPath,
   cronToCalendarIntervals,
   foreignJobsMentioning,
   jobsNamedAfter,
   labelFor,
-  logPathFor,
-  parseDisabledLabels,
-  renderPlist,
   stripGeneratedAt,
   unresolvedInPath,
-} from '../../src/install/launchd.ts';
+} from '../../src/install/common.ts';
+import { buildPlistSpec, logPathFor, parseDisabledLabels, renderPlist } from '../../src/install/launchd.ts';
 
 describe('cronToCalendarIntervals', () => {
   test('una hora fija omite los campos con asterisco', () => {
@@ -124,7 +121,7 @@ describe('unresolvedInPath', () => {
       if (path !== '/usr/bin:/opt/homebrew/bin') return null;
       return name === 'git' ? '/usr/bin/git' : null;
     };
-    expect(unresolvedInPath('/usr/bin:/opt/homebrew/bin', ['git'], which)).toEqual(['sh']);
+    expect(unresolvedInPath('/usr/bin:/opt/homebrew/bin', ['git'], which, 'sh')).toEqual(['sh']);
   });
 
   // Con el suelo de sistema puesto (el arreglo de computePath), "sh" resuelve
@@ -134,12 +131,12 @@ describe('unresolvedInPath', () => {
       if (path !== '/usr/bin:/opt/homebrew/bin:/bin') return null;
       return { git: '/usr/bin/git', sh: '/bin/sh' }[name] ?? null;
     };
-    expect(unresolvedInPath('/usr/bin:/opt/homebrew/bin:/bin', ['git'], which)).toEqual([]);
+    expect(unresolvedInPath('/usr/bin:/opt/homebrew/bin:/bin', ['git'], which, 'sh')).toEqual([]);
   });
 
   test('nombra también un binario declarado que no resuelve, no solo "sh"', () => {
     const which = (name: string): string | null => (name === 'sh' ? '/bin/sh' : null);
-    expect(unresolvedInPath('/bin', ['inexistente'], which)).toEqual(['inexistente']);
+    expect(unresolvedInPath('/bin', ['inexistente'], which, 'sh')).toEqual(['inexistente']);
   });
 
   // Cinturón, no solo suelo: comprueba contra el PATH que se le pasa, NUNCA

@@ -1,6 +1,8 @@
 import { access, readdir } from 'node:fs/promises';
 import { lookup } from 'node:dns/promises';
 import { join } from 'node:path';
+import { schedulerFor, type SchedulerBackend } from '../install/backend.ts';
+import { platformChecks } from '../install/platform-checks.ts';
 import type { Pipeline } from '../schema/pipeline.ts';
 import { TOOL_FS_PROFILES, type ToolFsProfile } from '../runner/fs-guard.ts';
 import type { McpServerConfig } from '../schema/pipeline.ts';
@@ -15,7 +17,7 @@ import type { McpServerConfig } from '../schema/pipeline.ts';
 const MIN_SECRET_LENGTH = 8;
 
 export type PreflightCheck = {
-  kind: 'agent' | 'skill' | 'bin' | 'env' | 'net' | 'auth' | 'mcp' | 'mcp-schema';
+  kind: 'agent' | 'skill' | 'bin' | 'env' | 'net' | 'auth' | 'mcp' | 'mcp-schema' | 'platform';
   name: string;
   ok: boolean;
   /** Explicación breve. Nunca contiene valores de secretos. */
@@ -37,7 +39,7 @@ export type PreflightReport = { ok: boolean; checks: PreflightCheck[] };
  * nunca debía bloquear nada fuera de `doctor`.
  */
 export function hasBlockingFailures(report: PreflightReport): boolean {
-  return report.checks.some((c) => !c.ok && c.kind !== 'mcp-schema');
+  return report.checks.some((c) => !c.ok && c.kind !== 'mcp-schema' && c.kind !== 'platform');
 }
 
 export type Probes = {
@@ -57,6 +59,10 @@ export type PreflightEnv = {
   processEnv: Record<string, string | undefined>;
   dotEnv: Record<string, string>;
   probes?: Partial<Probes>;
+  /** Añade los checks de la plataforma (systemd, linger, zona). Solo `doctor`: `run` no debe tardar más. */
+  includePlatform?: boolean;
+  /** El programador de esta máquina. Por defecto `schedulerFor()`; los tests lo sustituyen. */
+  scheduler?: () => SchedulerBackend;
 };
 
 async function exists(path: string): Promise<boolean> {
@@ -439,5 +445,19 @@ export async function preflight(
     checks.push({ kind: 'net', name, ok, detail: ok ? 'alcanzable' : 'no resuelve' });
   }
 
-  return { ok: checks.every((c) => c.ok), checks };
+  // Informativos: avisan, pero no hacen fallar `doctor` ni `run`.
+  // En una plataforma sin programador (FreeBSD, por ejemplo) no hay nada que
+  // comprobar: el error de plataforma es solo de `install`/`uninstall`
+  // y `doctor` sigue sirviendo para saber si se puede ejecutar.
+  if (env.includePlatform === true) {
+    let backend: SchedulerBackend | undefined;
+    try {
+      backend = (env.scheduler ?? schedulerFor)();
+    } catch {
+      backend = undefined;
+    }
+    if (backend) checks.push(...(await platformChecks(backend)));
+  }
+
+  return { ok: checks.filter((c) => c.kind !== 'platform').every((c) => c.ok), checks };
 }

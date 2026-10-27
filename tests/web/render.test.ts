@@ -68,17 +68,17 @@ describe('renderPipelinePage', () => {
   }
 
   test('la cadencia se dice en palabras', () => {
-    expect(renderPipelinePage(PIPE, [], SALUD, AHORA)).toContain('cada noche a las 3:00');
+    expect(renderPipelinePage(PIPE, [], SALUD, AHORA, 'launchd')).toContain('cada noche a las 3:00');
   });
 
   test('los pasos agent se marcan: son los que cuestan dinero', () => {
-    const html = renderPipelinePage(PIPE, [], SALUD, AHORA);
+    const html = renderPipelinePage(PIPE, [], SALUD, AHORA, 'launchd');
     expect(html).toContain('kind agent');
     expect(html).toContain('1 con agente');
   });
 
   test('una guarda se pinta como comando, no como JSON escapado', () => {
-    const html = renderPipelinePage(PIPE, [], SALUD, AHORA);
+    const html = renderPipelinePage(PIPE, [], SALUD, AHORA, 'launchd');
     expect(html).toContain('46h');
     expect(html).toContain('class="cmd"');
     expect(html).not.toContain('&quot;throttle&quot;');
@@ -87,7 +87,7 @@ describe('renderPipelinePage', () => {
   // El motivo de existir de esta página: ocho párrafos con el mismo grep.
   test('ocho saltos con la misma guarda son un bloque, no ocho filas', () => {
     const runs = ['29', '28', '27', '26', '25', '24', '23', '22'].map((d) => salto(d, GREP));
-    const html = renderPipelinePage(PIPE, runs, SALUD, AHORA);
+    const html = renderPipelinePage(PIPE, runs, SALUD, AHORA, 'launchd');
     expect(html).toContain('colapso');
     expect(html).toContain('8 noches');
     // El grep aparece UNA vez, no ocho. Eso es todo lo que se comprueba.
@@ -96,7 +96,7 @@ describe('renderPipelinePage', () => {
 
   test('las fechas del bloque siguen siendo enlaces a cada run', () => {
     const runs = ['29', '28'].map((d) => salto(d, GREP));
-    const html = renderPipelinePage(PIPE, runs, SALUD, AHORA);
+    const html = renderPipelinePage(PIPE, runs, SALUD, AHORA, 'launchd');
     expect(html).toContain('/runs/2026-08-29T01-00-00-000Z');
     expect(html).toContain('/runs/2026-08-28T01-00-00-000Z');
   });
@@ -105,14 +105,14 @@ describe('renderPipelinePage', () => {
   // en su fila: si no, la explicación se perdería justo en el caso más simple.
   test('un salto suelto conserva su motivo, escapado', () => {
     const runs = [salto('29', 'shell: <guarda> devolvió 1')];
-    const html = renderPipelinePage(PIPE, runs, SALUD, AHORA);
+    const html = renderPipelinePage(PIPE, runs, SALUD, AHORA, 'launchd');
     expect(html).toContain('&lt;guarda&gt;');
     expect(html).not.toContain('<guarda>');
   });
 
   test('el motivo agrupado también llega escapado', () => {
     const runs = ['29', '28'].map((d) => salto(d, 'shell: <guarda> devolvió 1'));
-    const html = renderPipelinePage(PIPE, runs, SALUD, AHORA);
+    const html = renderPipelinePage(PIPE, runs, SALUD, AHORA, 'launchd');
     expect(html).toContain('&lt;guarda&gt;');
     expect(html).not.toContain('<guarda>');
   });
@@ -122,12 +122,12 @@ describe('renderPipelinePage', () => {
       id: 'r', pipeline: 'demo', pipelineVersion: 1, status: 'success',
       startedAt: '2026-08-31T08:58:12.953Z', params: {}, steps: {}, forced: true,
     } as never;
-    expect(renderPipelinePage(PIPE, [forzado], SALUD, AHORA)).toContain('forzado');
+    expect(renderPipelinePage(PIPE, [forzado], SALUD, AHORA, 'launchd')).toContain('forzado');
   });
 
   test('un pipeline sin guardas lo dice, y no deja el hueco mudo', () => {
     const sinGuardas = { ...(PIPE as object), when: [] } as never;
-    expect(renderPipelinePage(sinGuardas, [], SALUD, AHORA)).toContain('Ninguna');
+    expect(renderPipelinePage(sinGuardas, [], SALUD, AHORA, 'launchd')).toContain('Ninguna');
   });
 });
 
@@ -248,7 +248,7 @@ describe('renderRunPage', () => {
 
 describe('renderHealthPanel — estabilidad del fragmento', () => {
   const FILA = {
-    name: 'demo', description: 'd', pasosTotales: 3,
+    name: 'demo', description: 'd', pasosTotales: 3, scheduler: { label: 'launchd', logPath: '/h/demo.log' },
     health: { trigger: 'installed', work: 'working', consecutiveSkips: 0, contradiction: false },
   } as never;
 
@@ -279,5 +279,22 @@ describe('renderHealthPanel — estabilidad del fragmento', () => {
     expect(hoy).not.toBe(manana);
     expect(hoy).toContain('hoy');
     expect(manana).toContain('ayer');
+  });
+});
+
+describe('renderHealthPanel — la alarma nombra el programador', () => {
+  test('usa el label y la ruta de log que le pasa el servidor', () => {
+    const health = {
+      trigger: 'installed', work: 'silent', consecutiveSkips: 0, contradiction: true,
+    } as never;
+    const html = renderHealthPanel(
+      [{
+        name: 'demo', description: 'd', health, pasosTotales: 1,
+        scheduler: { label: 'systemd', logPath: '/x/pipelines-demo.log' },
+      }],
+      new Date('2026-08-31T11:56:00.000Z'),
+    );
+    expect(html).toContain('systemd dice que dispara este pipeline');
+    expect(html).toContain('/x/pipelines-demo.log');
   });
 });

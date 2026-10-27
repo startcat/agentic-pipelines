@@ -64,7 +64,7 @@ describe('GET /', () => {
       trigger: 'installed', work: 'working', consecutiveSkips: 0, contradiction: false,
     } as never;
     const html = renderHealthPanel(
-      [{ name: 'demo', description: 'redacta <guarda> y publica', health, pasosTotales: 1 }],
+      [{ name: 'demo', description: 'redacta <guarda> y publica', health, pasosTotales: 1, scheduler: { label: 'launchd', logPath: '/h/demo.log' } }],
       new Date('2026-08-31T11:56:00.000Z'),
     );
     expect(html).toContain('&lt;guarda&gt;');
@@ -76,7 +76,7 @@ describe('GET /', () => {
       trigger: 'installed', work: 'working', consecutiveSkips: 0, contradiction: false,
     } as never;
     const html = renderHealthPanel(
-      [{ name: 'a&b', description: 'd', health, pasosTotales: 1 }],
+      [{ name: 'a&b', description: 'd', health, pasosTotales: 1, scheduler: { label: 'launchd', logPath: '/h/demo.log' } }],
       new Date('2026-08-31T11:56:00.000Z'),
     );
     expect(html).toContain('a%26b');
@@ -93,7 +93,7 @@ describe('la contradicción installed + silent', () => {
       trigger: 'installed', work: 'silent', consecutiveSkips: 0, contradiction: true,
     } as never;
     const html = renderHealthPanel(
-      [{ name: 'demo', description: 'd', health, pasosTotales: 1 }],
+      [{ name: 'demo', description: 'd', health, pasosTotales: 1, scheduler: { label: 'launchd', logPath: '/h/demo.log' } }],
       new Date('2026-08-31T11:56:00.000Z'),
     );
     expect(html).toContain('class="alarmbox"');
@@ -106,7 +106,7 @@ describe('la contradicción installed + silent', () => {
       trigger: 'installed', work: 'silent', consecutiveSkips: 0, contradiction: true,
     } as never;
     const html = renderHealthPanel(
-      [{ name: 'demo', description: 'd', health, pasosTotales: 1, jobLogTail: 'error: <bun> not found' }],
+      [{ name: 'demo', description: 'd', health, pasosTotales: 1, scheduler: { label: 'launchd', logPath: '/h/demo.log' }, jobLogTail: 'error: <bun> not found' }],
       new Date('2026-08-31T11:56:00.000Z'),
     );
     expect(html).toContain('&lt;bun&gt;');
@@ -163,6 +163,24 @@ describe('GET / — contención de errores', () => {
       expect(html).toContain('yaml-malo');
       expect(html).not.toContain('no tiene pipeline.yaml');
     } finally {
+      server.stop(true);
+    }
+  });
+
+  test('sin programador para la plataforma, el panel no da 500: cada fila enseña el error', async () => {
+    const { server, base } = await serve();
+    // Un valor desconocido hace que `schedulerFor()` lance, igual que en FreeBSD.
+    const saved = process.env.PIPELINES_SCHEDULER;
+    process.env.PIPELINES_SCHEDULER = 'freebsd';
+    try {
+      const res = await fetch(`${base}/`);
+      expect(res.status).toBe(200);
+      const html = stripStyles(await res.text());
+      expect(html).toContain('demo');
+      expect(html).toContain('no es un programador conocido');
+    } finally {
+      if (saved === undefined) delete process.env.PIPELINES_SCHEDULER;
+      else process.env.PIPELINES_SCHEDULER = saved;
       server.stop(true);
     }
   });

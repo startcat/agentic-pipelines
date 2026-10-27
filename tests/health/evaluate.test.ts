@@ -32,7 +32,7 @@ describe('triggerPeriodMs', () => {
   });
 });
 
-const loaded = { loaded: true, disabled: false, plistOnDisk: 'X', plistExpected: 'X' };
+const loaded = { loaded: true, disabled: false, artifactOnDisk: 'X', artifactExpected: 'X' };
 
 describe('evaluateTrigger', () => {
   // Un pipeline manual no está roto: pintarlo en rojo sería ruido, y el ruido
@@ -55,7 +55,7 @@ describe('evaluateTrigger', () => {
   });
 
   test('cargado pero el plist no es el que install generaría hoy: drifted', () => {
-    expect(evaluateTrigger(true, { ...loaded, plistExpected: 'OTRO' })).toBe('drifted');
+    expect(evaluateTrigger(true, { ...loaded, artifactExpected: 'OTRO' })).toBe('drifted');
   });
 
   // Solo la marca de tiempo difiere: eso NO es una desviación.
@@ -64,8 +64,8 @@ describe('evaluateTrigger', () => {
       evaluateTrigger(true, {
         loaded: true,
         disabled: false,
-        plistOnDisk: 'a\n  Generado:  2026-01-01T00:00:00.000Z\nb',
-        plistExpected: 'a\n  Generado:  2026-08-29T00:00:00.000Z\nb',
+        artifactOnDisk: 'a\n  Generado:  2026-01-01T00:00:00.000Z\nb',
+        artifactExpected: 'a\n  Generado:  2026-08-29T00:00:00.000Z\nb',
       }),
     ).toBe('installed');
   });
@@ -154,7 +154,7 @@ describe('evaluateHealth — eje de trabajo', () => {
   // el único rastro de un motor que muere antes de escribir `run.json`.
   test('drifted + silent es la misma contradicción: el plist desviado también dispara', () => {
     const runs = [run('success', hoursAgo(100))];
-    const drifted = { loaded: true, disabled: false, plistOnDisk: 'X', plistExpected: 'OTRO' };
+    const drifted = { loaded: true, disabled: false, artifactOnDisk: 'X', artifactExpected: 'OTRO' };
     const health = evaluateHealth(pipe(nightly), runs, drifted, NOW);
     expect(health.trigger).toBe('drifted');
     expect(health.work).toBe('silent');
@@ -165,7 +165,7 @@ describe('evaluateHealth — eje de trabajo', () => {
   // con normalidad es una desviación, no una contradicción.
   test('drifted y trabajando no es contradicción', () => {
     const runs = [run('success', hoursAgo(9))];
-    const drifted = { loaded: true, disabled: false, plistOnDisk: 'X', plistExpected: 'OTRO' };
+    const drifted = { loaded: true, disabled: false, artifactOnDisk: 'X', artifactExpected: 'OTRO' };
     const health = evaluateHealth(pipe(nightly), runs, drifted, NOW);
     expect(health.trigger).toBe('drifted');
     expect(health.contradiction).toBe(false);

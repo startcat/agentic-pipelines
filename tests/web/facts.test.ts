@@ -44,8 +44,17 @@ describe('collectJobFacts', () => {
     const ctx = { root: '/repo', config: { channels: {}, defaults: {} }, dotEnv: {} };
     const pipeline = { name: 'demo', triggers: [{ cron: '0 3 * * *' }], requires: { bin: [] }, mcpServers: {}, when: [] } as never;
 
-    const facts = await collectJobFacts(pipeline, ctx as never, new Date('2026-10-07T08:00:00.000Z'));
+    // Es un test de launchd: en Linux el programador por defecto sería systemd.
+    const saved = process.env.PIPELINES_SCHEDULER;
+    process.env.PIPELINES_SCHEDULER = 'launchd';
+    let facts;
+    try {
+      facts = await collectJobFacts(pipeline, ctx as never, new Date('2026-10-07T08:00:00.000Z'));
+    } finally {
+      if (saved === undefined) delete process.env.PIPELINES_SCHEDULER;
+      else process.env.PIPELINES_SCHEDULER = saved;
+    }
 
-    expect(facts.plistExpected).toContain(`<string>${jobBunPath()}</string>`);
+    expect(facts.artifactExpected).toContain(`<string>${jobBunPath()}</string>`);
   });
 });
