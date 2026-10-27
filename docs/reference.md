@@ -26,6 +26,7 @@ see the [README](../README.md).
 - [`pipelines.yaml`: data repo configuration](#pipelinesyaml-data-repo-configuration)
 - [Secrets](#secrets)
 - [Command reference](#command-reference)
+  - [Scheduling backends](#scheduling-backends)
   - [`validate`: the five rules and `--file`](#validate-the-five-rules-and---file)
   - [Exit codes](#exit-codes)
 - [`.runs/`: what is persisted](#runs-what-is-persisted)
@@ -165,7 +166,7 @@ Each entry declares **exactly one** of these four keys:
 |---|---|---|
 | `throttle` | `"46h"` (shorthand) or `{ every: "46h", since: last_success \| last_attempt }` | Passes only if `every` has elapsed since the reference point. `since` defaults to `last_success`; `last_attempt` is the last run that EXECUTED something (`success` or `failed`). Skipped runs don't count, so a pipeline can't push its own window's anchor forward with its own skips and never come due. Duration: `\d+(s\|m\|h)`. |
 | `changed` | `{ path: string, since: last_success \| last_attempt }` | Passes if `git log --since=<reference>` finds a commit in `path` since the reference run. Same `since` criterion as `throttle`. |
-| `shell` | `string` | Passes if the command (run with `sh -c`, interpolated in a shell-safe way; see [Interpolation](#interpolation)) exits with code 0. |
+| `shell` | `string` | Passes if the command (run with `sh -c` on macOS and `bash --posix -c` on Linux, interpolated in a shell-safe way; see [Interpolation](#interpolation)) exits with code 0. |
 | `between` | `"HH:MM-HH:MM"` | Passes if the current time falls inside the window (windows crossing midnight are supported, e.g. `22:00-06:00`). |
 
 ### `triggers`
@@ -178,13 +179,14 @@ triggers:
 **The engine doesn't include a scheduler**: there is no background process
 that reads `triggers.cron` and fires anything on its own. What it does have
 is [`pipelines install`](#command-reference), which **translates** this
-field into the system scheduler (launchd) and leaves the job loaded. It is
-the single source of the cadence: the generated plist doesn't duplicate it,
-it derives it.
+field into the system scheduler (launchd on macOS, systemd on Linux) and
+leaves the job loaded. It is the single source of the cadence: the generated
+plist or units don't duplicate it, they derive it.
 
 Subset supported by the translation: `*`, fixed values and lists (`0,30`).
-Ranges (`1-5`) and steps (`*/15`) are rejected with an explicit error:
-launchd can't express them, and `install` prefers failing over installing
+Ranges (`1-5`) and steps (`*/15`) are rejected with an explicit error: the
+engine accepts the same subset on launchd and on systemd, and `install`
+prefers failing over installing
 something that runs at a different time than the YAML says.
 
 ### `defaults`
@@ -260,7 +262,7 @@ Every step, `shell` or `agent`, accepts these fields:
 
 | Field | Type | Notes |
 |---|---|---|
-| `run` | string | Run with `sh -c`. **If the step declares `outputs:`, ALL of its stdout must be exactly the contract's JSON.** Any other output (`git merge`, `yarn build` talking on stdout) breaks parsing; redirect noise to stderr (`>&2`) or use `--quiet`. `{{...}}` references are replaced by safe environment variables before being handed to `sh` (never by raw text interpolated into the command), so the command itself can quote them freely. |
+| `run` | string | Run with `sh -c` on macOS and with `bash --posix -c` on Linux (Ubuntu's `/bin/sh` is dash, which rejects `set -o pipefail`; `bash --posix` reproduces the semantics of macOS's `sh`). **If the step declares `outputs:`, ALL of its stdout must be exactly the contract's JSON.** Any other output (`git merge`, `yarn build` talking on stdout) breaks parsing; redirect noise to stderr (`>&2`) or use `--quiet`. `{{...}}` references are replaced by safe environment variables before being handed to the shell (never by raw text interpolated into the command), so the command itself can quote them freely. |
 
 ### `agent` steps
 
@@ -355,10 +357,11 @@ Two different substitution mechanisms depending on the destination, for
 safety:
 
 - **An agent's prompt / non-executable fields**: direct text substitution.
-- **Anything that ends up in `sh -c`** (`run:` of a `shell`/`always` step, a
+- **Anything that ends up in the shell** (`sh -c` on macOS, `bash --posix -c`
+  on Linux: `run:` of a `shell`/`always` step, a
   `shell:` guard): each reference is replaced by the name of a safe
   environment variable, and the real value is passed separately through the
-  child process's `env`. `sh` never re-interprets the value as shell syntax,
+  child process's `env`. The shell never re-interprets the value as shell syntax,
   whatever characters it contains.
 
 ## The security model
@@ -466,22 +469,72 @@ current directory.
 | Command | Usage | What it does |
 |---|---|---|
 | `validate` | `pipelines validate [name]` | Validates the schema, the dependency graph (cycles), `{{...}}` references in prompts/`cwd`/`when` (including `when[].changed.path`)/`run`/`additional_dirs`, that `notify.channel` exists, and five fixed rules on the shell text; see [`validate`: the five rules and `--file`](#validate-the-five-rules-and---file) below. Without `name`, validates every pipeline in the repo. `--file <path>` validates a standalone YAML instead of an installed one. |
-| `doctor` | `pipelines doctor <name>` | Checks that the current machine can run the pipeline: agents, binaries, MCP servers (real start-up + live schema drift), environment variables, network resolution, and the Anthropic API key when the pipeline has `agent` steps. |
-| `install` | `pipelines install <name> [--set k=v] [--force] [--dry-run]` | Installs the pipeline as a launchd job from its `triggers.cron`. Writes the params to `.params.local.json` and a derived plist (with no values) to `~/Library/LaunchAgents/`. Computes the `PATH` from `requires.bin` and the `mcp_servers` `command`s, and checks that this `PATH` resolves everything needed (including `sh`) before writing anything. Warns about optional params without a value and the steps they affect. `--force` skips the cut-off for a red `doctor` or a suspicious foreign job, but still WARNS about both, never silently. `--dry-run` goes through those same validations, prints the plist it would write and exits without touching anything: not the plist, not `.params.local.json` even if it gets `--set`, not `launchctl`. A failing validation makes it fail all the same, so it is usable inside a script. |
-| `uninstall` | `pipelines uninstall <name>` | Unloads the job (always, even if the plist no longer exists) and deletes its plist if it finds it. Doesn't touch `.params.local.json` or the logs. Idempotent. |
+| `doctor` | `pipelines doctor <name>` | Checks that the current machine can run the pipeline: agents, binaries, MCP servers (real start-up + live schema drift), environment variables, network resolution, and the Anthropic API key when the pipeline has `agent` steps. On Linux it adds platform checks: the systemd user bus, linger, `bash` on the `PATH` and the time zone (on UTC it warns that schedules will be read in UTC). Platform checks are informational: they are shown in red when they fail but never make `doctor` or `run` fail. |
+| `install` | `pipelines install <name> [--set k=v] [--force] [--dry-run]` | Installs the pipeline as a scheduled job from its `triggers.cron`: launchd on macOS, a systemd user timer on Linux (see [Scheduling backends](#scheduling-backends)). Writes the params to `.params.local.json` and the job files, derived and with no values inside. Computes the `PATH` from `requires.bin` and the `mcp_servers` `command`s, and checks that this `PATH` resolves everything needed (including the shell steps' interpreter: `sh` on macOS, `bash` on Linux) before writing anything. Warns about optional params without a value and the steps they affect. Stops if `doctor` is red, if there's a suspicious foreign job and, on Linux, if linger is missing. `--force` skips those cut-offs, but still WARNS, never silently. `--dry-run` goes through those same validations, prints the files it would write (on Linux, each one preceded by its path) and exits without touching anything: not the job files, not `.params.local.json` even if it gets `--set`, not the scheduler. A failing validation makes it fail all the same, so it is usable inside a script; the exception is linger, which the dry run shows but doesn't stop on. |
+| `uninstall` | `pipelines uninstall <name>` | Unloads the job (always, even if its files no longer exist) and deletes its files if it finds them: the plist on macOS; the `.service` and the `.timer` on Linux. Never uses `launchctl disable` or `systemctl mask`. Doesn't touch `.params.local.json` or the logs. Idempotent. |
 | `run` | `pipelines run <name> [--set key=value ...] [--force]` | Runs the pipeline now. `--set` is repeatable, to pass/override params. Evaluates `requires` (blocking) and the `when:` guards (a `skipped` is a success, not an error) before starting. Acquires an exclusive per-pipeline lock for the duration of the run. `--force` skips the `when:` guards (policy: "not today") but NOT `requires`, which measures whether this machine can run the pipeline; it warns on stderr and marks the run with `forced: true`, which `status` shows as `(guardas omitidas)`. A forced run doesn't prove the guards would have let it through, and it does anchor the `throttle` like any other run that executed. |
 | `resume` | `pipelines resume <name> <run-id>` | Resumes a `failed` run from where it stopped, reusing its original params. |
 | `status` | `pipelines status [name] [-n, --limit <n>]` | Lists the latest runs (5 by default) of one pipeline, or of all of them if the name is omitted: id, status, cost, skip reason if any. |
 | `show` | `pipelines show <name> <run-id> [step]` | Dumps the full `RunRecord` as JSON, or the `StepRecord` of a specific step if given (including `denials` if the step had any tool denied). The `RunRecord` includes `notify` when the channel was invoked: channel, exit code, timestamp and the (redacted) tail of its output, also when the channel failed. The `error` of a failed shell step includes the last lines of its stderr. |
 | `web` | `pipelines web [-p, --port <n>]` | Starts a local, read-only server over the repo and its runs: health dashboard (with the trigger axis and the work axis), a page per pipeline, run detail and its log, live while it runs. Listens only on `127.0.0.1`, with no flag to change it: exposing it to the network is a different design, with its own conversation about auth. Default port **7717**. |
 
-**The plist freezes the path it was installed from.** `ProgramArguments`
-holds the absolute path of `index.ts` as `import.meta.dir` sees it at
+**The job freezes the path it was installed from.** On macOS the plist's
+`ProgramArguments` (on Linux, the `.service`'s `ExecStart`) holds the absolute path of `index.ts` as `import.meta.dir` sees it at
 `install` time. If that happens inside a git worktree, the job ends up
 pointing at THAT worktree, not at the main checkout. Deleting the worktree
 later leaves the job pointing at a path that no longer exists, and the next
 scheduled run will fail with no prior warning. Always install from the
 checkout that is going to persist.
+
+### Scheduling backends
+
+`install` and `uninstall` pick the backend by platform; on any other
+platform they fail with an error that says so before doing anything.
+
+| | macOS (launchd) | Linux (systemd) |
+|---|---|---|
+| Job files | `~/Library/LaunchAgents/cat.start.pipelines.<name>.plist` | `cat.start.pipelines.<name>.service` and `.timer` in `~/.config/systemd/user/` (or `$XDG_CONFIG_HOME/systemd/user/`) |
+| Log | `~/Library/Logs/pipelines-<name>.log` | `~/.local/state/pipelines/logs/pipelines-<name>.log` (or `$XDG_STATE_HOME/pipelines/logs/`) |
+| Cadence | `StartCalendarInterval` | one `OnCalendar=` line per schedule in the `.timer` |
+| Missed runs | `RunAtLoad` | `Persistent=true` |
+| Activate | loads the plist with `launchctl` | `systemctl --user daemon-reload` and `enable --now <label>.timer` |
+| Deactivate | unloads the job and deletes the plist | `disable --now <label>.timer`, deletes the `.service` and the `.timer`, `daemon-reload` |
+| Shell steps run with | `sh -c` | `bash --posix -c` |
+| Pre-install check | none | linger |
+
+- **`Persistent=true` / `RunAtLoad`: the same rule on both.** They're only
+  emitted if the pipeline has a `throttle` guard, which is what makes
+  repeating a missed run harmless. Without a `throttle`, they aren't emitted.
+  On systemd, `Persistent=true` repeats ONCE a run that was missed while the
+  machine was off.
+- **Day of month and day of week together.** Cron joins them with OR; a
+  single systemd `OnCalendar=` line joins them with AND, so the engine emits
+  two lines (for `0 8 1 * 1`: `*-*-01 08:00:00` and `Mon *-*-* 08:00:00`).
+- **The service.** `Type=oneshot`; `ExecStart` is `bun run <index.ts> --repo
+  <repo> run <name>`, with `PATH` and `HOME` set in `Environment=`; stdout and
+  stderr go to the log with `append:`. `install` creates the log directory,
+  because systemd doesn't. A log path with spaces is rejected (systemd
+  doesn't accept quotes in `append:`).
+- **Linger.** Without `loginctl enable-linger <user>`, the user timer doesn't
+  fire while you're logged out. `doctor` shows the `linger` check in red but
+  **doesn't fail** (platform checks are informational); `install` **refuses**
+  to install without linger unless you pass `--force`. `doctor` also reports
+  on the systemd user bus and on the time zone (on UTC it warns that
+  schedules will be read in UTC).
+- **The shell interpreter.** Ubuntu's `/bin/sh` is dash, which rejects
+  `set -o pipefail` (and the linter's rule R3 requires `set -euo pipefail`).
+  On Linux, `shell` steps and `shell:` guards run with `bash --posix`, which
+  reproduces the semantics of macOS's `sh`; `install` checks that `bash`
+  resolves on the job's `PATH`. On macOS nothing changes.
+- **Replacement and foreign jobs.** Reinstalling a pipeline replaces its job
+  and says so. The foreign-job scan reads the `.service` files in
+  `~/.config/systemd/user/`; to retire a predecessor, use `systemctl --user
+  disable --now <label>.timer`.
+- **`disable` without `--now` doesn't stop anything.** `systemctl --user
+  disable` without `--now` only removes the automatic start: the timer stays
+  active and keeps firing until the next boot (or an explicit `systemctl
+  --user stop`; a `daemon-reload` doesn't stop it). It's the same trap as
+  `launchctl disable` without `bootout` on macOS.
 
 ### `validate`: the five rules and `--file`
 
@@ -640,6 +693,9 @@ email through the `email` channel when it finishes.
 
 ## Requirements and environment
 
+- **macOS, or Linux with systemd**, for `install`/`uninstall`; the other
+  commands don't depend on the scheduler. On Linux, `bash` too (shell steps
+  run with `bash --posix`).
 - **Bun** (tested on 1.3.9): runtime and test runner (`bun test`).
 - A compatible **Node** (tested on 22.22.2): some dependencies expect it on
   the `PATH` even though the engine runs on Bun.
@@ -647,7 +703,8 @@ email through the `email` channel when it finishes.
 - **`commander`**, **`yaml`**, **`zod`**: CLI, YAML parsing, schema
   validation.
 - An **Anthropic API key** for `agent` steps, as `ANTHROPIC_API_KEY` in the
-  data repo's `.env` (the only place a `launchd` run can read it from) or in
+  data repo's `.env` (the only place a scheduled run, from `launchd` or
+  `systemd`, can read it from) or in
   the environment; the `.env` value wins. `doctor` and `run` check it as the
   `auth` check, only for pipelines that have `agent` steps. Only `agent`
   steps receive it: `shell` steps and notification channels never do.
@@ -659,7 +716,7 @@ notification channel receive a narrow, fixed environment (`PATH`, `HOME`,
 `SHELL`, `USER`, `TZ`, `TMPDIR` inherited, plus the declared secrets), never
 the whole `process.env`. The locale is **pinned to `C.UTF-8`**, not
 inherited: that way a pipeline behaves the same when launched by hand as
-from `launchd`/cron, which don't export `LANG`. It matters more than it
+from `launchd`, systemd or cron, which don't export `LANG`. It matters more than it
 seems: in the C locale, a regex `.` matches a byte, not a character, so any
 pattern over accented text fails only under cron. `C.UTF-8` gives UTF-8
 semantics in regexes while keeping bytewise collation, so no `sort` changes
@@ -674,8 +731,9 @@ bun x tsc --noEmit   # typecheck
 
 - **There is no `pipelines init`.** Creating a new data repo (its
   `pipelines.yaml`, `agents/`, `.env`) is still manual.
-- **launchd only.** `install`/`uninstall` know nothing about systemd or
-  crontab: the engine has only been run unattended on macOS.
+- **launchd and systemd only.** `install`/`uninstall` support macOS
+  (launchd) and Linux (systemd user timers); they know nothing about crontab
+  or other schedulers. Windows through WSL2 hasn't been verified.
 - **stdio MCP servers only.** SSE/HTTP are not supported.
 - **Only `kind: playwright` in `mcp_servers`.** Any other MCP package needs
   the engine's governance table extended first.

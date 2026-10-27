@@ -3,9 +3,9 @@
 An engine for agentic pipelines that run unattended. You declare a pipeline in
 YAML as a graph of steps: plain `shell` steps, and `agent` steps that hand the
 work to an AI agent (through the Claude Agent SDK) inside a filesystem sandbox
-enforced by the engine itself, not by the SDK. `launchd` fires each pipeline
-on schedule, the engine runs it, stores every run on disk, and notifies you
-when it finishes.
+enforced by the engine itself, not by the SDK. `launchd` (macOS) or a
+`systemd` user timer (Linux) fires each pipeline on schedule, the engine runs
+it, stores every run on disk, and notifies you when it finishes.
 
 ![Terminal recording of the pipelines CLI. It validates a data repo with two example pipelines, then runs hello-world, a shell-only pipeline whose two steps succeed. Next it runs hello-agent: a shell step writes a short notes file, and an agent step reads it inside the engine's sandbox and returns a validated JSON summary. pipelines status lists both runs, with $0.01 for the agent run. Finally, pipelines show piped to jq prints the agent step's outputs, the tools it used, and one sandbox denial: the agent first tried to read /notes.txt outside its working folder, the engine blocked it, and the run still finished green.](docs/demo.gif)
 
@@ -16,9 +16,11 @@ run time by locating its `pipelines.yaml`.
 This README is the user guide. The exhaustive reference for `pipeline.yaml`,
 the commands and what gets persisted is in [`docs/reference.md`](docs/reference.md).
 
-> **Status.** Version 0.1.0. **macOS only for now**: scheduling is done through
-> `launchd`, and there is no systemd or crontab backend yet. CLI messages and
-> code comments are currently in Spanish; the documentation is in English.
+> **Status.** Version 0.1.0. Runs on **macOS** (scheduled with `launchd`) and
+> on **Linux with systemd** (scheduled with user timers; see
+> [Install on Linux](#install-on-linux)). There is no crontab backend, and
+> Windows through WSL2 hasn't been verified. CLI messages and code comments
+> are currently in Spanish; the documentation is in English.
 
 > **Want something that works today?** [pipelines-starter](https://github.com/startcat/pipelines-starter)
 > has seven ready-to-use pipelines (website checks, stale pull requests, a
@@ -32,6 +34,7 @@ the commands and what gets persisted is in [`docs/reference.md`](docs/reference.
 - [What an `agent` step does](#what-an-agent-step-does)
 - [The dashboard](#the-dashboard)
 - [Installation](#installation)
+- [Install on Linux](#install-on-linux)
 - [Your first pipeline in ten minutes](#your-first-pipeline-in-ten-minutes)
 - [Operating day to day](#operating-day-to-day)
 - [Putting a pipeline on a schedule](#putting-a-pipeline-on-a-schedule)
@@ -54,7 +57,7 @@ your head:
 |---|---|---|
 | **The engine** (this repo) | Schema, runner, CLI, filesystem guard, linter | Whoever adds a capability to the engine |
 | **The data repo** (yours) | One directory per pipeline with its `pipeline.yaml`, the prompts for its `agent` steps, the agents, and the notification channel scripts | Whoever adds or changes a pipeline |
-| **Outside both** | The `launchd` plists, each pipeline's workspaces, the `.runs/` history | The engine, when installing and running |
+| **Outside both** | The `launchd` plists or `systemd` units, each pipeline's workspaces, the `.runs/` history | The engine, when installing and running |
 
 The third one is what you won't see by reading code, and it's where to look
 when something doesn't add up. See [Operating day to day](#operating-day-to-day).
@@ -71,7 +74,7 @@ decides whether the run starts at all.
 
 *Interactive version: [`docs/diagramas/ciclo-de-un-run.html`](docs/diagramas/ciclo-de-un-run.html).*
 
-1. **Trigger.** `launchd` at the cron time, or someone running `pipelines run`.
+1. **Trigger.** `launchd` or the `systemd` timer at the cron time, or someone running `pipelines run`.
 2. **Preflight.** Three checks, in this order:
    - `requires` checks whether **this machine** can run the pipeline
      (binaries, agents, secrets, network). If anything is missing, the run
@@ -83,7 +86,7 @@ decides whether the run starts at all.
      as `skipped`, with exit code 0. That's not an error: it's the normal
      outcome on half the nights of a pipeline with a `throttle`.
 3. **Steps.** In the order the graph dictates. A `shell` step runs with
-   `sh -c` in a narrow, fixed environment; an `agent` step opens a governed
+   `sh -c` (`bash --posix -c` on Linux) in a narrow, fixed environment; an `agent` step opens a governed
    session (see the next section). A step with `outputs:` must write exactly
    the JSON of its contract to stdout.
 4. **Wrap-up.** The steps under `always:` run every time, on success or
@@ -128,7 +131,7 @@ Full details in [The security model](docs/reference.md#the-security-model).
 `http://127.0.0.1:7717` with every pipeline in the data repo. It answers
 "did last night work?" in three seconds:
 
-- **Overview.** Which pipelines are scheduled in `launchd`, which failed
+- **Overview.** Which pipelines are scheduled in `launchd` or `systemd`, which failed
   their last run, what the last run cost and when it was. A pipeline that
   isn't installed, is disabled, or is loaded but hasn't produced a single run
   shows up in red even when there's no error to report: the silent failure
@@ -146,6 +149,9 @@ The dashboard updates live while a run is in progress. Like the CLI messages,
 it's in Spanish for now.
 
 ## Installation
+
+Supported platforms: **macOS (launchd) and Linux (systemd)**. On Linux, see
+also [Install on Linux](#install-on-linux).
 
 You need **Bun** (tested with 1.3.9), a compatible **Node** on the `PATH` and
 `git`. Pipelines with `agent` steps also need an **Anthropic API key**: create
@@ -169,8 +175,57 @@ alias pipelines="bun run /path/to/agentic-pipelines/src/cli/index.ts"
 ```
 
 Always install from the checkout you intend to keep: the `launchd` plists
-freeze the absolute path of `index.ts` at the moment you run
-`pipelines install`.
+(and the `systemd` units) freeze the absolute path of `index.ts` at the moment
+you run `pipelines install`.
+
+## Install on Linux
+
+On Linux the engine schedules pipelines with **`systemd` user timers**
+(`systemctl --user`): no root, nothing written under `/etc`. On a clean Debian
+or Ubuntu machine, in this order:
+
+```bash
+sudo apt install unzip                       # the Bun installer needs it
+curl -fsSL https://bun.sh/install | bash     # installs Bun in ~/.bun
+# open a new shell (or `source ~/.bashrc`) so that `bun` is on the PATH
+git clone https://github.com/startcat/agentic-pipelines.git
+cd agentic-pipelines
+bun install
+bun link                                     # puts `pipelines` on the PATH
+sudo timedatectl set-timezone <your timezone> # e.g. Europe/Madrid
+sudo loginctl enable-linger $USER
+```
+
+- **Time zone.** `triggers.cron` schedules are read in the machine's local
+  time, and servers usually come set to UTC: without the `timedatectl` above,
+  a pipeline meant for 03:00 would run at 03:00 UTC. `doctor` and `install`
+  show the zone they see.
+- **Linger.** Without `enable-linger`, systemd doesn't keep your user session
+  around once you close SSH, and user timers don't fire. `pipelines doctor`
+  shows this check in red when it's missing, **without failing** (it's
+  informational), and `install` **refuses to install** without linger unless
+  you pass `--force`. `--dry-run` shows it but doesn't stop.
+- **Bash.** On Linux, `shell` steps and `shell:` guards run with
+  `bash --posix` instead of `sh`: Ubuntu's `/bin/sh` is dash, which doesn't
+  support `set -o pipefail`. `bash` must be installed (it is on any standard
+  Debian or Ubuntu); `doctor` checks it.
+- **Notifications.** Channel scripts (`notify.channel`) belong to the data
+  repo, not the engine. A server has no desktop notifications, so use a
+  channel that goes out over the network: for example, a script that posts
+  to [ntfy](https://ntfy.sh) with the topic in the data repo's `.env`
+  (`NTFY_TOPIC=a-long-hard-to-guess-name`). The topic works like a secret:
+  don't put it in the YAML or in a repo.
+- **Dashboard.** `pipelines web` listens only on `127.0.0.1`. To see it from
+  your laptop, open an SSH tunnel and browse to `http://127.0.0.1:7717`:
+
+  ```bash
+  ssh -L 7717:127.0.0.1:7717 <server>   # from your laptop
+  pipelines web                         # on the server, inside the data repo
+  ```
+
+From there, `pipelines install <name>` works just as on macOS (see
+[Putting a pipeline on a schedule](#putting-a-pipeline-on-a-schedule)), and
+writes two units to `~/.config/systemd/user/` instead of a plist.
 
 ## Your first pipeline in ten minutes
 
@@ -400,8 +455,9 @@ us. That's why every pipeline with `triggers` and `notify` must declare
 `notify.stale_after` (the linter enforces it, rule R4): it turns that silence
 into an email. Note that `stale_after` covers the silence of a pipeline that
 DOES run and then skips or fails; it does NOT cover a `launchd` job that has
-stopped firing, because with no run there's nothing to evaluate. For that,
-today you only have `pipelines web` (its health panel) or `launchctl print`.
+stopped firing, because with no run there's nothing to evaluate (the same
+goes for a `systemd` timer). For that, today you only have `pipelines web`
+(its health panel), `launchctl print` or `systemctl --user list-timers`.
 
 ### Reading a `failed`
 
@@ -429,8 +485,8 @@ pipeline. A `repo-audit` pipeline, for example, might have its final
 | Installed params | `.params.local.json` in the data repo | Gitignored. Written by `install --set`. |
 | Secrets | `.env` in the data repo | Gitignored. Only names go in the YAML, never values. |
 | Workspaces | By convention, `~/Library/Application Support/pipelines/workspaces/<pipeline>/` (passed in through a param) | Each pipeline's own clones. **Pipelines shouldn't work in the operator's checkouts**: to see what they produce, `git fetch` in your checkout. |
-| Scheduled jobs | `~/Library/LaunchAgents/cat.start.pipelines.<name>.plist` | Derived from `triggers.cron`. No param values inside. |
-| `launchd` logs | The path set in the plist (`StandardOutPath` / `StandardErrorPath`), by default `~/Library/Logs/pipelines-<name>.log` | What happened **before** the engine got as far as writing to `.runs/`. |
+| Scheduled jobs | macOS: `~/Library/LaunchAgents/cat.start.pipelines.<name>.plist`. Linux: `~/.config/systemd/user/cat.start.pipelines.<name>.{service,timer}` | Derived from `triggers.cron`. No param values inside. |
+| Job logs | macOS: the path set in the plist (`StandardOutPath` / `StandardErrorPath`), by default `~/Library/Logs/pipelines-<name>.log`. Linux: `~/.local/state/pipelines/logs/pipelines-<name>.log` | What happened **before** the engine got as far as writing to `.runs/`. |
 
 ### Checking state under `launchd`
 
@@ -453,10 +509,25 @@ expired, you'll see a `skipped`, which is information too. (From the CLI,
 `pipelines run <name> --force` skips the `when` guards, but not the preflight
 checks.)
 
+### Checking state under `systemd`
+
+```bash
+systemctl --user list-timers 'cat.start.pipelines.*'              # next firings
+systemctl --user status cat.start.pipelines.<name>.timer
+journalctl --user -u cat.start.pipelines.<name>.service           # service start-up
+tail -f ~/.local/state/pipelines/logs/pipelines-<name>.log        # the job's output
+systemctl --user start cat.start.pipelines.<name>.service         # fire it now
+```
+
+If `systemctl --user` says it can't connect to the bus, open a real session
+(SSH as that user, not `su` or `sudo -u`) or set
+`XDG_RUNTIME_DIR=/run/user/$(id -u)`.
+
 ## Putting a pipeline on a schedule
 
 The engine **has no scheduler**. `pipelines install` translates
-`triggers.cron` into a `launchd` plist and loads it. The YAML is the single
+`triggers.cron` into a `launchd` plist (macOS) or a `.service` + `.timer`
+pair for `systemd` (Linux) and loads it. The YAML is the single
 source of truth for the cadence: the plist doesn't duplicate it, it derives
 from it.
 
@@ -517,21 +588,23 @@ channels:
 
 ```bash
 pipelines doctor <name>
-pipelines install <name> --set key=value --dry-run   # prints the plist, touches nothing
+pipelines install <name> --set key=value --dry-run   # prints the plist (or units), touches nothing
 pipelines install <name> --set key=value
-launchctl print gui/$(id -u)/cat.start.pipelines.<name>
+launchctl print gui/$(id -u)/cat.start.pipelines.<name>      # on Linux: systemctl --user status cat.start.pipelines.<name>.timer
 ```
 
-`install` writes the params to `.params.local.json`, generates the plist with
-no values inside, computes the `PATH` from `requires.bin` and from the
+`install` writes the params to `.params.local.json`, generates the plist (or
+the units) with no values inside, computes the `PATH` from `requires.bin` and from the
 `command` of any `mcp_servers`, and checks that this `PATH` resolves
 everything before writing anything. It stops if `doctor` is red or if it
 detects someone else's job that seems to do the same thing; `--force`
 overrides the stop, but still warns.
 
-Only the subset of cron that `launchd` can express is translated: `*`, fixed
-values and lists (`0,30`). Ranges and steps (`*/15`) are rejected with an
-explicit error.
+Only the subset of cron that `launchd` and `systemd` can both express is
+translated: `*`, fixed values and lists (`0,30`). Ranges and steps (`*/15`)
+are rejected with an explicit error, on Linux too: the subset is the same on
+both. On Linux, `install` also stops if linger is off (see
+[Install on Linux](#install-on-linux)).
 
 ### Taking over from an old cron job
 
@@ -545,6 +618,11 @@ launchctl bootout gui/$(id -u)/<old-label>
 launchctl disable gui/$(id -u)/<old-label>
 launchctl print-disabled gui/$(id -u) | grep <old-label>    # must say "disabled"
 ```
+
+On Linux the equivalent is `systemctl --user disable --now <old-unit>.timer`.
+Don't leave out `--now`:
+`disable` alone only removes the automatic start, and the timer keeps firing
+until the next boot.
 
 If you have anything that watches your list of scheduled jobs, remove the old
 label from it too, or it will report a "missing" job that you retired on
@@ -565,7 +643,7 @@ for a few nights: they're your way back.
 ### Uninstalling
 
 ```bash
-pipelines uninstall <name>     # unloads the job and deletes its plist; keeps .params.local.json and the logs
+pipelines uninstall <name>     # unloads the job and deletes its plist (or .service and .timer); keeps .params.local.json and the logs
 ```
 
 ## Writing pipelines that survive the night
@@ -616,7 +694,7 @@ bun x tsc --noEmit    # typecheck
 `src/` is organized by responsibility: `schema/` (Zod, strict mode),
 `graph/` (dependencies and cycles), `guards/` (`when`), `runner/`
 (orchestration, `shell` and `agent` steps, the filesystem guard), `lint/`
-(the five rules), `install/` (launchd), `notify/`, `runs/` (persistence),
+(the five rules), `install/` (launchd and systemd), `notify/`, `runs/` (persistence),
 `web/` (the dashboard) and `cli/`. Every lint rule and every engine
 capability started life as a failing test.
 
