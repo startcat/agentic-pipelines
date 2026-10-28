@@ -128,21 +128,35 @@ Full details in [The security model](docs/reference.md#the-security-model).
 
 `pipelines web` opens a local, read-only dashboard at
 `http://127.0.0.1:7717` with every pipeline in the data repo. It answers
-"did last night work?" in three seconds:
+"did last night work?" in three seconds. It follows the system's light or dark
+mode and serves its fonts locally, so it works offline.
 
-- **Overview.** Which pipelines are scheduled in `launchd` or `systemd`, which failed
-  their last run, what the last run cost and when it was. A pipeline that
-  isn't installed, is disabled, or is loaded but hasn't produced a single run
-  shows up in red even when there's no error to report: the silent failure
-  that `stale_after` can't see, because with no run there's nothing to
-  evaluate.
+- **Overview.** Which pipelines are scheduled (in `launchd` or `systemd`),
+  which failed their last run, when it was and what it cost, when the next
+  run is due and, at the top, how much has been spent this month. A pipeline
+  that isn't installed or is disabled shows up in red with the reason, and the
+  headline counts it. One that is loaded but hasn't produced a single run also
+  gets an alarm of its own, even when there's no error to report: the silent
+  failure that `stale_after` can't see, because with no run there's nothing to
+  evaluate. One that is running right now carries a step-by-step progress
+  bar. If the repo has no pipelines yet, the dashboard says how to start.
+- **Costs** (`/costs`). This month's spend, the pace to month end, the last 6
+  months, spend day by day, the split by pipeline and the most expensive runs.
+  It only counts what `agent` steps measure; a `shell` step costs nothing
+  here.
 - **Pipeline page.** Its steps (`shell` or `agent`), its guards, its params
-  with their descriptions, and its run history with the cost of each run.
-- **Run page.** How long each step took, what it cost, which tools the agent
-  used and, above all, the **sandbox denials**: every action the engine
-  refused the agent, with the path and the reason. In one of our test runs an
-  agent tried to read a file outside its working folder; the engine blocked
-  it, recorded it, and the run still finished green.
+  with their descriptions, the next run, this month's spend, the spending cap
+  (`max_cost_usd`) of each agent step, and its run history with the cost of
+  each run.
+- **Run page.** How long each step took, what it cost against its cap, which
+  tools the agent used, what it returned (its `outputs`) and, above all, the
+  **sandbox denials**: every action the engine refused the agent, with the
+  path and the reason. In one of our test runs an agent tried to read a file
+  outside its working folder; the engine blocked it, recorded it, and the run
+  still finished green.
+- **Step log.** Numbered lines, warnings (`warning:`) in amber and errors in
+  red, arrows to the previous or next step, and a link to the full plain
+  text.
 
 The dashboard updates live while a run is in progress.
 
@@ -433,7 +447,7 @@ pipelines status                     # latest runs of every pipeline
 pipelines status nightly-report -n 10
 pipelines show nightly-report <run-id>           # the full run.json
 pipelines show nightly-report <run-id> collect   # a single step, with its denials if any
-pipelines web                        # local read-only dashboard at http://127.0.0.1:7717
+pipelines web                        # local read-only dashboard at http://127.0.0.1:7717 (overview, /costs, pipelines, runs and logs)
 ```
 
 The `RunRecord` includes a `notify` entry whenever the channel was invoked:

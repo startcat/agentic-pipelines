@@ -4,22 +4,32 @@
  * without being able to get in its way (`run.json` is already written with an
  * atomic `rename`, so every read sees a complete version).
  */
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { userHome } from '../cli/install-helpers.ts';
 import { listPipelineNames, loadPipeline, type RepoContext } from '../cli/context.ts';
-import { evaluateHealth } from '../health/evaluate.ts';
+import { evaluateHealth, type JobFacts } from '../health/evaluate.ts';
 import { schedulerFor } from '../install/backend.ts';
 import { RunStore } from '../runs/store.ts';
+import type { RunRecord } from '../runs/types.ts';
+import type { Pipeline } from '../schema/pipeline.ts';
 import {
-  escapeHtml,
   layout,
   renderHealthPanel,
   renderPipelinePage,
   renderRunPage,
   renderRunLive,
+  renderUnreadableRun,
+  type Chrome,
   type HealthRow,
+  type RunInfo,
+  type UnreadableRun,
 } from './render.ts';
+import { costReport, costRunsOf, spendOf, type CostRun } from './costs.ts';
 import { createJobFactsCache } from './facts.ts';
+import { renderCostsPage } from './render-costs.ts';
+import { MAX_LOG_CHARS, renderStepLogPage } from './render-log.ts';
+import { nextRun } from './schedule.ts';
 
 const JOB_FACTS_TTL_MS = 30_000;
 
@@ -44,6 +54,116 @@ async function resolvePipelineName(ctx: RepoContext, raw: string): Promise<strin
 }
 
 const notFound = (): Response => new Response('No such page.', { status: 404 });
+
+const reasonOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/**
+ * The run ids of a pipeline: the directory names under `.runs/<name>/`.
+ * Read here and not through `RunStore.listRuns`, because that one parses every
+ * `run.json` and throws on the first broken one — right for the CLI, which
+ * must not act on a history it can't read, but on these pages one truncated
+ * file would take the whole pipeline down with a 500. The names are only ever
+ * compared against a URL, never joined from it.
+ *
+ * Only directories (or links to them) are runs: a stray file such as Finder's
+ * `.DS_Store` is not a run that failed to read, and counting it as one hid a
+ * whole pipeline's spend.
+ */
+async function runIds(ctx: RepoContext, name: string): Promise<string[]> {
+  try {
+    const entries = await readdir(join(ctx.root, '.runs', name), { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
+      .map((entry) => entry.name)
+      .sort()
+      .reverse();
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
+  }
+}
+
+/**
+ * `JSON.parse` of a `run.json` can give anything: `null`, a number, an array.
+ * Only an object can be drawn as a run; the rest is unreadable, with a reason.
+ */
+const isRunObject = (run: unknown): run is RunRecord =>
+  typeof run === 'object' && run !== null && !Array.isArray(run);
+
+/**
+ * Every run of a pipeline that can be read, newest first, and the ones that
+ * can't with the reason — one at a time, so a single broken `run.json` costs
+ * its own row and not the page. Same order as `RunStore.listRuns`. `ids` runs
+ * parallel to `runs`: the directory each one was read from.
+ */
+async function readRuns(
+  ctx: RepoContext,
+  store: RunStore,
+  name: string,
+): Promise<{ runs: RunRecord[]; ids: string[]; unreadable: UnreadableRun[] }> {
+  const runs: RunRecord[] = [];
+  const ids: string[] = [];
+  const unreadable: UnreadableRun[] = [];
+  let entries: string[];
+  try {
+    entries = await runIds(ctx, name);
+  } catch (err) {
+    return { runs, ids, unreadable: [{ reason: reasonOf(err) }] };
+  }
+  for (const id of entries) {
+    try {
+      const run = await store.readRun(name, id);
+      if (run === undefined) continue;
+      if (isRunObject(run)) {
+        runs.push(run);
+        ids.push(id);
+      } else unreadable.push({ id, reason: 'run.json is not a run record' });
+    } catch (err) {
+      unreadable.push({ id, reason: reasonOf(err) });
+    }
+  }
+  return { runs, ids, unreadable };
+}
+
+/**
+ * A pipeline's runs as the costs see them. Named by their DIRECTORIES, not by
+ * what the file says: those are what the links are built from, so a run.json
+ * with a missing or stale `id` or `pipeline` still links to its own page.
+ */
+const costRunsFor = (name: string, runs: RunRecord[], ids: string[]): CostRun[] =>
+  costRunsOf(runs.map((run, i) => ({ ...run, pipeline: name, id: ids[i]! })));
+
+/**
+ * One run, by LOOKUP of the URL's id among the directory names, then read
+ * on its own: a broken sibling does not hide it, and a broken
+ * run says why instead of turning into a 500.
+ */
+async function findRun(
+  ctx: RepoContext,
+  store: RunStore,
+  name: string,
+  raw: string,
+): Promise<{ kind: 'run'; run: RunRecord } | { kind: 'missing' } | { kind: 'unreadable'; id: string; reason: string }> {
+  let id: string | undefined;
+  try {
+    id = (await runIds(ctx, name)).find((candidate) => candidate === raw);
+  } catch (err) {
+    return { kind: 'unreadable', id: raw, reason: reasonOf(err) };
+  }
+  if (id === undefined) return { kind: 'missing' };
+  try {
+    const run = await store.readRun(name, id);
+    if (run === undefined) return { kind: 'missing' };
+    if (!isRunObject(run)) return { kind: 'unreadable', id, reason: 'run.json is not a run record' };
+    return { kind: 'run', run };
+  } catch (err) {
+    return { kind: 'unreadable', id, reason: reasonOf(err) };
+  }
+}
+
+/** A run's steps, or none when a malformed `run.json` has no object there. */
+const stepsOf = (run: RunRecord): Record<string, unknown> =>
+  typeof run.steps === 'object' && run.steps !== null ? run.steps : {};
 
 /**
  * Why a pipeline couldn't be read, said for THIS surface.
@@ -82,11 +202,33 @@ function sseEvent(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
+/**
+ * What a run's page takes from the pipeline's current YAML (see `RunInfo`).
+ * In a `try`: the YAML may have broken since the run, and the run is still
+ * worth showing — without chips and caps, not as a 500.
+ */
+export async function runInfo(ctx: RepoContext, name: string): Promise<RunInfo | undefined> {
+  let pipeline: Pipeline;
+  try {
+    pipeline = await loadPipeline(ctx, name);
+  } catch {
+    return undefined;
+  }
+  const types: Record<string, string> = {};
+  const caps: Record<string, number> = {};
+  for (const step of pipeline.steps) {
+    types[step.id] = step.type;
+    if (step.type === 'agent' && step.maxCostUsd !== undefined) caps[step.id] = step.maxCostUsd;
+  }
+  return { types, caps, totalSteps: pipeline.steps.length };
+}
+
 export function createRunStream(
   ctx: RepoContext,
   store: RunStore,
   name: string,
   runId: string,
+  info?: RunInfo,
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const logDir = join(ctx.root, '.runs', name, runId);
@@ -112,13 +254,13 @@ export function createRunStream(
           // it with `innerHTML`, so sending `renderRunPage` would nest a second
           // copy of the breadcrumb and of the container itself inside itself on
           // every tick.
-          const rendered = renderRunLive(run);
+          const rendered = renderRunLive(run, info);
           if (rendered !== lastRunJson) {
             lastRunJson = rendered;
             controller.enqueue(encoder.encode(sseEvent('panel', rendered)));
           }
 
-          for (const step of Object.values(run.steps)) {
+          for (const step of Object.values(stepsOf(run)) as RunRecord['steps'][string][]) {
             const file = Bun.file(join(logDir, `${step.id}.log`));
             if (!(await file.exists())) continue;
             const size = file.size;
@@ -158,34 +300,89 @@ export function createRunStream(
   });
 }
 
-/** Cap of a log's HTML view. Above it, a link to `?raw=1`. */
-const MAX_LOG_CHARS = 200_000;
+/**
+ * The fonts the stylesheet names, BY LOOKUP in a fixed table: the URL's
+ * `:file` is a key, never a piece of a path: /fonts/:file only serves the
+ * files of a fixed list. Anything else in the folder — the licence, a
+ * stray file — is not served. The paths are built from `import.meta.dir`, so
+ * they point at the engine's own copy whatever directory `pipelines web` was
+ * started from.
+ */
+const FONT_FILES: Record<string, string> = {
+  'young-serif-400.woff2': join(import.meta.dir, 'fonts', 'young-serif-400.woff2'),
+  'lexend-var.woff2': join(import.meta.dir, 'fonts', 'lexend-var.woff2'),
+  'azeret-mono-var.woff2': join(import.meta.dir, 'fonts', 'azeret-mono-var.woff2'),
+};
+
+/**
+ * The scheduler's name for the footer. `schedulerFor()` throws on a platform
+ * it doesn't support; the rows of the dashboard already say so one by one, so
+ * the footer just says it doesn't know instead of turning every page into a 500.
+ */
+function schedulerLabel(): string {
+  try {
+    return schedulerFor().label;
+  } catch {
+    return '—';
+  }
+}
 
 export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Server<undefined> {
   const store = new RunStore(ctx.root);
   const jobFacts = createJobFactsCache(JOB_FACTS_TTL_MS);
 
-  async function healthRows(now: Date): Promise<HealthRow[]> {
+  // Per request and not once at start-up: the port is the one Bun really bound
+  // (`port: 0` in the tests picks a free one), and the scheduler label reads
+  // the environment, which can change under a running server in the tests.
+  const chrome = (nav?: Chrome['nav']): Chrome => ({
+    nav,
+    port: server.port ?? opts.port,
+    repoRoot: ctx.root,
+    home: userHome(),
+    scheduler: schedulerLabel(),
+  });
+
+  /**
+   * The dashboard's rows and, from the very same reads, the runs the spend
+   * strip adds up: `.runs/` is walked once per tick, not once for the rows and
+   * again for the money.
+   */
+  async function healthRows(
+    now: Date,
+  ): Promise<{ rows: HealthRow[]; costRuns: CostRun[]; unreadableRuns: number }> {
     const rows: HealthRow[] = [];
+    const costRuns: CostRun[] = [];
+    let unreadableRuns = 0;
     for (const name of await listPipelineNames(ctx)) {
-      // Per-pipeline containment: `loadPipeline` and `store.listRuns` throw under
-      // ORDINARY conditions (a half-authored `pipelines/<x>/` with no
-      // `pipeline.yaml` — exactly when this viewer is most useful —, or a
-      // `run.json` truncated mid-write). Without this try/catch, a single
+      // Per-pipeline containment: `loadPipeline` throws under ORDINARY
+      // conditions (a half-authored `pipelines/<x>/` with no `pipeline.yaml`
+      // — exactly when this viewer is most useful), and so does a history with
+      // a `run.json` truncated mid-write. Without this try/catch, a single
       // broken pipeline took down `GET /` with a 500 for all the others.
       // `schedulerFor()` is inside for the same reason: on a platform without a
       // scheduler each row shows the error, but the dashboard doesn't 500.
       try {
+        // The runs first, read one at a time (`readRuns`, as /costs does): a
+        // pipeline whose YAML broke after it ran, or with one unreadable run,
+        // still spent the money of the runs that can be read, and the strip
+        // has to agree with the page it links to.
+        const { runs, ids, unreadable } = await readRuns(ctx, store, name);
+        for (const run of costRunsFor(name, runs, ids)) costRuns.push(run);
+        unreadableRuns += unreadable.length;
+        // Health, though, is not judged on a partial history: the CLI's
+        // `status` refuses one (`RunStore.listRuns` throws), and the row says
+        // why with the same message instead of a verdict on what is left.
+        if (unreadable.length > 0) throw new Error(unreadable[0]!.reason);
         const backend = schedulerFor();
         const pipeline = await loadPipeline(ctx, name);
-        const runs = await store.listRuns(name);
         const facts = await jobFacts.get(pipeline, ctx, now);
         const health = evaluateHealth(pipeline, runs, facts, now);
         rows.push({
           name,
           description: pipeline.description,
           health,
-          totalSteps: pipeline.steps.length,
+          steps: pipeline.steps.map((step) => step.id),
+          next: nextRun(health.trigger, pipeline.triggers.map((t) => t.cron), now),
           scheduler: { label: backend.label, logPath: backend.logPath(userHome(), name) },
           // The job's log is read ONLY here. It is the only trace of an engine
           // that dies before writing `run.json`, and it is not a general source
@@ -197,7 +394,43 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
         rows.push({ name, error: await unreadableReason(ctx, name, err) });
       }
     }
-    return rows;
+    return { rows, costRuns, unreadableRuns };
+  }
+
+  /**
+   * What goes inside `#live` on `/`, for the page and for every tick of its
+   * stream alike. The strip only exists with at least one pipeline: an empty
+   * repo has nothing to spend on.
+   */
+  async function renderOverview(now: Date): Promise<string> {
+    const { rows, costRuns, unreadableRuns } = await healthRows(now);
+    // `spendOf`, not `costReport`: this runs on every tick of every open tab,
+    // and the strip only needs two months' sums.
+    const spend =
+      rows.length > 0
+        ? { ...spendOf(costRuns, now), ...(unreadableRuns > 0 ? { unreadable: unreadableRuns } : {}) }
+        : undefined;
+    return renderHealthPanel(rows, now, spend);
+  }
+
+  /**
+   * The runs of every pipeline, for the costs page. Same read as `healthRows`
+   * (`readRuns`, one run at a time): a truncated `run.json` costs its own
+   * run, not the pipeline's whole spend, and `unreadable` names the pipelines
+   * that lost one so the page can say so. It does not need `loadPipeline`: a
+   * half-authored pipeline that already ran has real costs.
+   */
+  async function costRows(): Promise<{ runs: CostRun[]; pipelines: string[]; unreadable: string[] }> {
+    const runs: CostRun[] = [];
+    const pipelines: string[] = [];
+    const unreadable: string[] = [];
+    for (const name of await listPipelineNames(ctx)) {
+      const read = await readRuns(ctx, store, name);
+      for (const run of costRunsFor(name, read.runs, read.ids)) runs.push(run);
+      pipelines.push(name);
+      if (read.unreadable.length > 0) unreadable.push(name);
+    }
+    return { runs, pipelines, unreadable };
   }
 
   function createHealthStream(): ReadableStream<Uint8Array> {
@@ -216,8 +449,7 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
           try {
             // `jobFacts` caches with a 30 s TTL, so this one-second tick does NOT
             // ask the scheduler every second.
-            const now = new Date();
-            const rendered = renderHealthPanel(await healthRows(now), now);
+            const rendered = await renderOverview(new Date());
             if (rendered === last) return;
             last = rendered;
             controller.enqueue(encoder.encode(sseEvent('panel', rendered)));
@@ -236,7 +468,7 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
     });
   }
 
-  return Bun.serve({
+  const server: Bun.Server<undefined> = Bun.serve({
     // Fixed and with no flag: exposing this to the network is a different
     // design, with its own conversation about auth.
     hostname: '127.0.0.1',
@@ -249,11 +481,20 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
       // non-GET verb on a route that does exist.
       '/': {
         GET: async () => {
-          const now = new Date();
           return new Response(
-            layout('pipelines', `<div id="live">${renderHealthPanel(await healthRows(now), now)}</div>`, {
+            layout('pipelines', `<div id="live">${await renderOverview(new Date())}</div>`, chrome('overview'), {
               sse: '/sse/health',
             }),
+            { headers: { 'content-type': 'text/html; charset=utf-8' } },
+          );
+        },
+      },
+      '/costs': {
+        GET: async () => {
+          const now = new Date();
+          const { runs, pipelines, unreadable } = await costRows();
+          return new Response(
+            layout('Costs', renderCostsPage(costReport(runs, pipelines, now), now, unreadable), chrome('costs')),
             { headers: { 'content-type': 'text/html; charset=utf-8' } },
           );
         },
@@ -263,22 +504,61 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
           const name = await resolvePipelineName(ctx, req.params.name);
           if (name === undefined) return notFound();
           const pipeline = await loadPipeline(ctx, name);
-          const runs = await store.listRuns(name);
+          const { runs, ids, unreadable } = await readRuns(ctx, store, name);
           const now = new Date();
-          const health = evaluateHealth(pipeline, runs, await jobFacts.get(pipeline, ctx, now), now);
-          return new Response(layout(name, renderPipelinePage(pipeline, runs, health, now, schedulerFor().label)), {
-            headers: { 'content-type': 'text/html; charset=utf-8' },
-          });
+          // `schedulerFor()` throws on a platform without a scheduler. The
+          // page is still worth drawing — steps, guards, history — and the
+          // verdict says what could not be asked instead of a 500. The facts
+          // it falls back to are never shown as such: with `schedulerError`
+          // the renderer prints a dash for the trigger and for NEXT.
+          let facts: JobFacts = { loaded: false, disabled: false };
+          let schedulerError: string | undefined;
+          try {
+            facts = await jobFacts.get(pipeline, ctx, now);
+          } catch (err) {
+            schedulerError = reasonOf(err);
+          }
+          const health = evaluateHealth(pipeline, runs, facts, now);
+          const next = nextRun(health.trigger, pipeline.triggers.map((t) => t.cron), now);
+          // The month from the same read (`readRuns`), the same reduction
+          // (`costRunsFor`) and the same in-order sum as /costs and the
+          // overview's strip, so the three can't disagree.
+          const month = spendOf(costRunsFor(name, runs, ids), now).month;
+          const extra = {
+            ...(next.kind === 'at' && next.at !== '' && schedulerError === undefined ? { next: new Date(next.at) } : {}),
+            monthLabel: month.label,
+            monthTotal: month.total,
+            monthRuns: month.runs,
+            ...(schedulerError !== undefined ? { schedulerError } : {}),
+            ...(unreadable.length > 0 ? { unreadable } : {}),
+          };
+          // `schedulerLabel()` and not `schedulerFor().label`: on a platform
+          // without a scheduler the verdict says "—" instead of a 500.
+          // No nav item is marked under /p/: the crumb says where you are.
+          return new Response(
+            layout(name, renderPipelinePage(pipeline, runs, health, now, schedulerLabel(), extra), chrome()),
+            { headers: { 'content-type': 'text/html; charset=utf-8' } },
+          );
         },
       },
       '/p/:name/runs/:runId': {
         GET: async (req) => {
           const name = await resolvePipelineName(ctx, req.params.name);
           if (name === undefined) return notFound();
-          const run = (await store.listRuns(name)).find((r) => r.id === req.params.runId);
-          if (run === undefined) return notFound();
+          const found = await findRun(ctx, store, name, req.params.runId);
+          if (found.kind === 'missing') return notFound();
+          // A 500 with the viewer's own page: the request was fine, the file on
+          // disk is not, and the page says which and why.
+          if (found.kind === 'unreadable') {
+            return new Response(
+              layout(`${name} / ${found.id}`, renderUnreadableRun(name, found.id, found.reason), chrome()),
+              { status: 500, headers: { 'content-type': 'text/html; charset=utf-8' } },
+            );
+          }
+          const run = found.run;
+          const info = await runInfo(ctx, name);
           return new Response(
-            layout(`${name} / ${run.id}`, renderRunPage(name, run), {
+            layout(`${name} / ${run.id}`, renderRunPage(name, run, info), chrome(), {
               // The live view only makes sense while the run is running.
               ...(run.status === 'running'
                 ? { sse: `/sse/${encodeURIComponent(name)}/${encodeURIComponent(run.id)}` }
@@ -292,46 +572,80 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
         GET: async (req) => {
           const name = await resolvePipelineName(ctx, req.params.name);
           if (name === undefined) return notFound();
-          const run = (await store.listRuns(name)).find((r) => r.id === req.params.runId);
+          const found = await findRun(ctx, store, name, req.params.runId);
+          // Same as the run's page: a run.json on disk that can't be read is
+          // said, with the reason, and not passed off as a missing page.
+          if (found.kind === 'unreadable') {
+            return new Response(
+              layout(`${name} / ${found.id}`, renderUnreadableRun(name, found.id, found.reason), chrome()),
+              { status: 500, headers: { 'content-type': 'text/html; charset=utf-8' } },
+            );
+          }
+          const run = found.kind === 'run' ? found.run : undefined;
           // The step is validated against the run's OWN keys, not against the disk
           // nor the prototype chain: that way the URL's `:stepId` never becomes
           // part of a path unfiltered. With a bare `run.steps[id] === undefined`,
           // `constructor`, `toString` or `__proto__` returned 200 — they are not
           // own keys, but they are not `undefined` either. `Object.hasOwn` closes
           // that.
-          if (run === undefined || !Object.hasOwn(run.steps, req.params.stepId)) return notFound();
+          if (run === undefined || !Object.hasOwn(stepsOf(run), req.params.stepId)) return notFound();
+          const stepId = req.params.stepId;
 
-          const path = join(ctx.root, '.runs', name, run.id, `${req.params.stepId}.log`);
+          const path = join(ctx.root, '.runs', name, run.id, `${stepId}.log`);
           const file = Bun.file(path);
-          const text = (await file.exists()) ? await file.text() : '(this step left no log)';
+          const exists = await file.exists();
+          const text = exists ? await file.text() : '';
 
           if (new URL(req.url).searchParams.get('raw') === '1') {
-            return new Response(text, { headers: { 'content-type': 'text/plain; charset=utf-8' } });
+            return new Response(exists ? text : '(this step left no log)', {
+              headers: { 'content-type': 'text/plain; charset=utf-8' },
+            });
           }
-          const truncated = text.length > MAX_LOG_CHARS;
-          const shown = truncated ? text.slice(-MAX_LOG_CHARS) : text;
-          const rawUrl = `/p/${encodeURIComponent(name)}/runs/${encodeURIComponent(run.id)}/${encodeURIComponent(req.params.stepId)}?raw=1`;
+          // The run's steps in the order the YAML declares them, so "previous"
+          // and "next" walk the pipeline as written. Steps the run has and the
+          // YAML no longer declares go after, in the run's order; with no
+          // readable YAML that is all of them.
+          const info = await runInfo(ctx, name);
+          const recorded = Object.keys(stepsOf(run));
+          const declared = info === undefined ? [] : Object.keys(info.types).filter((id) => recorded.includes(id));
+          const order = [...declared, ...recorded.filter((id) => !declared.includes(id))];
+          const type = info !== undefined && Object.hasOwn(info.types, stepId) ? info.types[stepId] : undefined;
+          const body = renderStepLogPage({
+            pipeline: name,
+            run,
+            stepId,
+            ...(type !== undefined ? { type } : {}),
+            order,
+            text,
+            truncated: text.length > MAX_LOG_CHARS,
+          });
           return new Response(
-            layout(
-              `${name} / ${run.id} / ${req.params.stepId}`,
-              `<h2>${escapeHtml(req.params.stepId)}</h2>
-               ${truncated ? `<p>Showing the tail. <a href="${rawUrl}">Full log as plain text</a>.</p>` : ''}
-               <pre id="log">${escapeHtml(shown)}</pre>`,
-              {
-                // The live view only makes sense while the run is running, same
-                // as on the run's page. It is passed its own stepId so the
-                // client picks only its portion of the `log` event (see
-                // `SSE_CLIENT` in render.ts).
-                ...(run.status === 'running'
-                  ? {
-                      sse: `/sse/${encodeURIComponent(name)}/${encodeURIComponent(run.id)}`,
-                      stepId: req.params.stepId,
-                    }
-                  : {}),
-              },
-            ),
+            layout(`${name} / ${run.id} / ${stepId}`, body, chrome(), {
+              // The live view only makes sense while the run is running, same
+              // as on the run's page. It is passed its own stepId so the
+              // client picks only its portion of the `log` event (see
+              // `SSE_CLIENT` in render.ts).
+              ...(run.status === 'running'
+                ? { sse: `/sse/${encodeURIComponent(name)}/${encodeURIComponent(run.id)}`, stepId }
+                : {}),
+            }),
             { headers: { 'content-type': 'text/html; charset=utf-8' } },
           );
+        },
+      },
+      '/fonts/:file': {
+        GET: (req) => {
+          const path = Object.hasOwn(FONT_FILES, req.params.file) ? FONT_FILES[req.params.file] : undefined;
+          if (path === undefined) return notFound();
+          return new Response(Bun.file(path), {
+            headers: {
+              'content-type': 'font/woff2',
+              // A font file never changes under the same name: replacing a
+              // face means a new file name in FONT_FILES and in the sheet. So
+              // the browser can keep it for good and not ask on every page.
+              'cache-control': 'public, max-age=31536000, immutable',
+            },
+          });
         },
       },
       '/sse/health': {
@@ -348,9 +662,10 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
         GET: async (req) => {
           const name = await resolvePipelineName(ctx, req.params.name);
           if (name === undefined) return notFound();
-          const run = (await store.listRuns(name)).find((r) => r.id === req.params.runId);
-          if (run === undefined) return notFound();
-          return new Response(createRunStream(ctx, store, name, run.id), {
+          const found = await findRun(ctx, store, name, req.params.runId);
+          if (found.kind !== 'run') return notFound();
+          const run = found.run;
+          return new Response(createRunStream(ctx, store, name, run.id, await runInfo(ctx, name)), {
             headers: {
               'content-type': 'text/event-stream',
               'cache-control': 'no-cache',
@@ -362,4 +677,5 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
     },
     fetch: () => new Response('No such page.', { status: 404 }),
   });
+  return server;
 }
