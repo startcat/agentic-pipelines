@@ -212,6 +212,43 @@ describe('preflight', () => {
     expect(report.checks.find((c) => c.kind === 'auth')!.ok).toBe(true);
   });
 
+  // A session file whose refresh token has expired is not a credential: the
+  // agent step fails with "OAuth session expired and could not be refreshed".
+  // Seen on a Linux server, where `doctor` said "All set" and the run failed.
+  test('rejects a Claude Code session that can no longer be refreshed', async () => {
+    writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
+    mkdirSync(claudeDir, { recursive: true });
+    writeFileSync(
+      join(claudeDir, '.credentials.json'),
+      JSON.stringify({ claudeAiOauth: { expiresAt: 0, refreshTokenExpiresAt: Date.parse('2026-10-24T12:00:00Z') } }),
+    );
+    const report = await preflight(AGENT_PIPELINE, {
+      repoRoot, userClaudeDir: claudeDir,
+      processEnv: {}, dotEnv: { MY_TOKEN: 's' }, probes: okProbes,
+      now: new Date('2026-10-28T12:00:00Z'),
+    });
+    const auth = report.checks.find((c) => c.kind === 'auth');
+    expect(auth!.ok).toBe(false);
+    expect(auth!.detail).toBe(
+      "Claude Code session expired on 2026-10-24: put ANTHROPIC_API_KEY in the data repo's .env, or sign in again with `claude`",
+    );
+  });
+
+  test('accepts a Claude Code session whose access token expired but can still be refreshed', async () => {
+    writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
+    mkdirSync(claudeDir, { recursive: true });
+    writeFileSync(
+      join(claudeDir, '.credentials.json'),
+      JSON.stringify({ claudeAiOauth: { expiresAt: 0, refreshTokenExpiresAt: Date.parse('2026-11-30T12:00:00Z') } }),
+    );
+    const report = await preflight(AGENT_PIPELINE, {
+      repoRoot, userClaudeDir: claudeDir,
+      processEnv: {}, dotEnv: { MY_TOKEN: 's' }, probes: okProbes,
+      now: new Date('2026-10-28T12:00:00Z'),
+    });
+    expect(report.checks.find((c) => c.kind === 'auth')!.ok).toBe(true);
+  });
+
   // The documented route: an API key in the data repo's `.env`, which is the
   // only thing that reaches a run launched by launchd.
   test('accepts ANTHROPIC_API_KEY in the .env of the data repo', async () => {

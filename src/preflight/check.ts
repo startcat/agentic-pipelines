@@ -1,4 +1,4 @@
-import { access, readdir } from 'node:fs/promises';
+import { access, readdir, readFile } from 'node:fs/promises';
 import { lookup } from 'node:dns/promises';
 import { join } from 'node:path';
 import { schedulerFor, type SchedulerBackend } from '../install/backend.ts';
@@ -62,6 +62,8 @@ export type PreflightEnv = {
   includePlatform?: boolean;
   /** This machine's scheduler. `schedulerFor()` by default; tests replace it. */
   scheduler?: () => SchedulerBackend;
+  /** The current time, to tell whether the Claude Code session has expired. `new Date()` by default. */
+  now?: Date;
 };
 
 async function exists(path: string): Promise<boolean> {
@@ -71,6 +73,25 @@ async function exists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * The day the Claude Code session in `.credentials.json` stopped being
+ * usable, or undefined if it still is or the file can't tell. A session is
+ * dead when both its access token and its refresh token have expired: an
+ * expired access token alone is renewed on the next call.
+ */
+async function sessionExpiredOn(path: string, now: Date): Promise<string | undefined> {
+  let oauth: { expiresAt?: unknown; refreshTokenExpiresAt?: unknown } | undefined;
+  try {
+    oauth = JSON.parse(await readFile(path, 'utf8'))?.claudeAiOauth;
+  } catch {
+    return undefined;
+  }
+  const { expiresAt, refreshTokenExpiresAt } = oauth ?? {};
+  if (typeof expiresAt !== 'number' || typeof refreshTokenExpiresAt !== 'number') return undefined;
+  if (expiresAt > now.getTime() || refreshTokenExpiresAt > now.getTime()) return undefined;
+  return new Date(refreshTokenExpiresAt).toISOString().slice(0, 10);
 }
 
 /** File names of the .md files in a directory, without the extension. */
@@ -268,19 +289,23 @@ export async function preflight(
       : env.processEnv.ANTHROPIC_API_KEY
         ? 'environment'
         : undefined;
-    const hasSessionFile = apiKeySource ? false : await exists(join(env.userClaudeDir, '.credentials.json'));
+    const sessionFile = join(env.userClaudeDir, '.credentials.json');
+    const hasSessionFile = apiKeySource ? false : await exists(sessionFile);
+    const expiredOn = hasSessionFile ? await sessionExpiredOn(sessionFile, env.now ?? new Date()) : undefined;
     const hasKeychain = apiKeySource || hasSessionFile ? false : await probes.hasKeychainSession();
     checks.push({
       kind: 'auth',
       name: 'claude',
-      ok: Boolean(apiKeySource) || hasSessionFile || hasKeychain,
+      ok: Boolean(apiKeySource) || (hasSessionFile && !expiredOn) || hasKeychain,
       detail: apiKeySource
         ? `ANTHROPIC_API_KEY present (${apiKeySource})`
-        : hasSessionFile
-          ? 'Claude Code session signed in'
-          : hasKeychain
-            ? 'Claude Code session in the keychain'
-            : "no credentials: put ANTHROPIC_API_KEY in the data repo's .env",
+        : expiredOn
+          ? `Claude Code session expired on ${expiredOn}: put ANTHROPIC_API_KEY in the data repo's .env, or sign in again with \`claude\``
+          : hasSessionFile
+            ? 'Claude Code session signed in'
+            : hasKeychain
+              ? 'Claude Code session in the keychain'
+              : "no credentials: put ANTHROPIC_API_KEY in the data repo's .env",
     });
   }
 
