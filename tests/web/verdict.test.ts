@@ -171,6 +171,57 @@ describe('panelSummary', () => {
     const r = panelSummary([health({ lastRun: run({ status: 'running' }) })], 0);
     expect(r.line).toContain('in progress');
   });
+
+  // The rows under the headline are red when nothing triggers the pipeline;
+  // "All in order." above them was a contradiction.
+  test('a pipeline that is not installed or disabled is never "All in order"', () => {
+    const one = panelSummary([health(), health({ trigger: 'not-installed' })], 0);
+    expect(one.line).toBe('One pipeline is not triggered by anything.');
+    expect(one.tone).toBe('bad');
+    expect(one.sub).toBe('2 pipelines · 1 not triggered');
+
+    const two = panelSummary([health({ trigger: 'disabled' }), health({ trigger: 'not-installed' })], 0);
+    expect(two.line).toBe('2 pipelines are not triggered by anything.');
+  });
+
+  test('not triggered comes after the alarm and before a failed run', () => {
+    const alarm = health({ work: 'silent', contradiction: true });
+    const untriggered = health({ trigger: 'not-installed', work: 'failing' });
+    expect(panelSummary([alarm, untriggered], 0).line).toMatch(/produces? nothing/);
+    expect(panelSummary([health({ work: 'failing' }), untriggered], 0).line).toBe(
+      'One pipeline is not triggered by anything.',
+    );
+    expect(panelSummary([health({ work: 'stuck', consecutiveSkips: 4 }), untriggered], 0).tone).toBe('bad');
+  });
+
+  // Each pipeline counts once, in the category its own row shows first.
+  test('the subhead counts every category present', () => {
+    const r = panelSummary(
+      [
+        health(),
+        health(),
+        health(),
+        health({ work: 'failing' }),
+        health({ trigger: 'not-installed' }),
+        health({ trigger: 'disabled', work: 'failing' }),
+        health({ work: 'stuck', consecutiveSkips: 3 }),
+      ],
+      1,
+    );
+    expect(r.sub).toBe('8 pipelines · 1 unreadable · 2 not triggered · 1 stuck · 1 failing');
+  });
+
+  test('the alarm count stays in the subhead with the rest', () => {
+    const r = panelSummary(
+      [health({ work: 'silent', contradiction: true }), health({ work: 'failing' })],
+      0,
+    );
+    expect(r.sub).toBe('2 pipelines · 1 in alarm · 1 failing');
+  });
+
+  test('one pipeline is "1 pipeline"', () => {
+    expect(panelSummary([health()], 0).sub).toBe('1 pipeline · none silent');
+  });
 });
 
 describe('verdict — names the scheduler of the machine', () => {

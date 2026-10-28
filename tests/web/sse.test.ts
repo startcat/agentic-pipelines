@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { layout, type Chrome } from '../../src/web/render.ts';
 import { serve, RUNNING_RUN_ID } from './fixture.ts';
+
+const CHROME: Chrome = { port: 7717, repoRoot: '/home/u/repo', home: '/home/u', scheduler: 'launchd' };
 
 describe('GET /sse/:name/:runId', () => {
   test('sends only the new piece of the log, not the whole file', async () => {
@@ -154,4 +157,98 @@ describe('GET /sse/health', () => {
       server.stop(true);
     }
   }, 15_000);
+
+  // The other half of the comparison `rendered === last`: with nothing running
+  // nothing on the dashboard depends on the second, so after the first event
+  // the stream stays quiet. A dashboard re-emitted every second hides the one
+  // signal that says "something happened".
+  test('with nothing running it does not re-emit every second', async () => {
+    const { server, base, root } = await serve();
+    // The fixture's run in progress, finished: nothing runs any more.
+    const runJson = join(root, '.runs', 'demo', RUNNING_RUN_ID, 'run.json');
+    await writeFile(runJson, (await Bun.file(runJson).text()).replace('"running"', '"success"'));
+    const res = await fetch(`${base}/sse/health`);
+    const reader = res.body!.getReader();
+    try {
+      const first = new TextDecoder().decode((await reader.read()).value);
+      expect(first).toContain('event: panel');
+      expect(first).not.toContain('Running now');
+
+      const quiet = Symbol('quiet');
+      const next = await Promise.race([
+        reader.read(),
+        new Promise<typeof quiet>((resolve) => setTimeout(() => resolve(quiet), 2_500)),
+      ]);
+      expect(next).toBe(quiet);
+    } finally {
+      await reader.cancel();
+      server.stop(true);
+    }
+  }, 15_000);
+});
+
+/**
+ * The step page's live client, run against a stand-in for the few DOM calls it
+ * makes. Bun has no DOM, and what is worth pinning here is the arithmetic of
+ * the lines (a delta that ends mid-line, the next one that finishes it), not
+ * the browser. `innerHTML` is not on the stand-in at all: if the client ever
+ * wrote the log through it, the text would land nowhere and these fail.
+ */
+describe('the live client on a step page', () => {
+  type Node = { tag: string; textContent: string; className: string; children: Node[]; dataset: Record<string, string> };
+  const node = (tag: string, text = '', className = ''): Node => ({ tag, textContent: text, className, children: [], dataset: {} });
+
+  function boot(initial: Node[], open: boolean, lines: number, bytes: number) {
+    const log = {
+      ...node('pre'),
+      children: initial,
+      dataset: { open: open ? '1' : '0' },
+      get lastElementChild(): Node | null { return this.children.at(-1) ?? null; },
+      append(n: Node) { this.children.push(n); },
+    };
+    const count = { ...node('span'), dataset: { lines: String(lines), bytes: String(bytes) } };
+    const listeners: Record<string, (e: { data: string }) => void> = {};
+    class FakeEventSource {
+      constructor(public url: string) {}
+      addEventListener(name: string, fn: (e: { data: string }) => void) { listeners[name] = fn; }
+      close() {}
+    }
+    const document = {
+      getElementById: (id: string) => (id === 'log' ? log : id === 'logcount' ? count : null),
+      createElement: (tag: string) => node(tag),
+    };
+    const html = layout('t', '', CHROME, { sse: '/sse/demo/r', stepId: 'one' });
+    const script = /<script>([\s\S]*)<\/script>/.exec(html)![1]!;
+    new Function('document', 'EventSource', script)(document, FakeEventSource);
+    const send = (stepId: string, delta: string) => listeners.log!({ data: JSON.stringify({ stepId, delta }) });
+    return { log, count, send };
+  }
+
+  test('a delta becomes one element per line, toned like the server tones them', () => {
+    const { log, count, send } = boot([node('span', 'first')], false, 1, 6);
+    send('one', 'warning: careful\nerror: broke\nplain\n');
+    expect(log.children.map((n) => [n.textContent, n.className])).toEqual([
+      ['first', ''], ['warning: careful', 'warn'], ['error: broke', 'bad'], ['plain', ''],
+    ]);
+    expect(log.dataset.open).toBe('0');
+    expect(count.textContent).toBe('4 lines · 42 B');
+  });
+
+  test('a line cut between two deltas is finished in place, not drawn twice', () => {
+    const { log, send } = boot([node('span', 'done'), node('span', 'warn')], true, 2, 9);
+    send('one', 'ing: half\nnext');
+    expect(log.children.map((n) => [n.textContent, n.className])).toEqual([
+      ['done', ''], ['warning: half', 'warn'], ['next', ''],
+    ]);
+    expect(log.dataset.open).toBe('1');
+    send('one', ' and the rest\n');
+    expect(log.children.map((n) => n.textContent)).toEqual(['done', 'warning: half', 'next and the rest']);
+    expect(log.dataset.open).toBe('0');
+  });
+
+  test('another step\'s delta is ignored', () => {
+    const { log, send } = boot([], false, 0, 0);
+    send('two', 'not mine\n');
+    expect(log.children).toEqual([]);
+  });
 });

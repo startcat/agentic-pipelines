@@ -84,14 +84,42 @@ export function verdict(health: Health, totalSteps: number, scheduler: string): 
 }
 
 /**
+ * Which headline a pipeline answers to, in the order `verdict` reads a row:
+ * the alarm, then nobody triggering it, then the work. One category each, so
+ * the counts under the headline add up to the rows that are not fine.
+ */
+type Category = 'alarm' | 'untriggered' | 'silent' | 'stuck' | 'failing' | 'fine';
+
+function categoryOf(h: Health): Category {
+  if (h.contradiction) return 'alarm';
+  if (h.trigger === 'not-installed' || h.trigger === 'disabled') return 'untriggered';
+  if (h.work === 'silent' || h.work === 'stuck' || h.work === 'failing') return h.work;
+  return 'fine';
+}
+
+const pipelines = (n: number): string => `${n} ${n === 1 ? 'pipeline' : 'pipelines'}`;
+
+/**
  * The three-second answer, at the very top. It goes INSIDE `#live`: the health
  * stream replaces that whole node, and a headline outside it would be stale
  * from the first tick.
+ *
+ * The headline names the worst category present; the line under it counts
+ * every one present, so a second problem is never hidden behind the first
+ * ("7 pipelines · 1 not triggered · 2 failing").
  */
 export function panelSummary(healths: readonly Health[], broken: number): Summary {
+  const count = { alarm: 0, untriggered: 0, silent: 0, stuck: 0, failing: 0, fine: 0 };
+  for (const h of healths) count[categoryOf(h)]++;
+
   const sub = [
-    `${healths.length + broken} pipelines`,
+    pipelines(healths.length + broken),
     ...(broken > 0 ? [`${broken} unreadable`] : []),
+    ...(count.alarm > 0 ? [`${count.alarm} in alarm`] : []),
+    ...(count.untriggered > 0 ? [`${count.untriggered} not triggered`] : []),
+    ...(count.silent > 0 ? [`${count.silent} silent`] : []),
+    ...(count.stuck > 0 ? [`${count.stuck} stuck`] : []),
+    ...(count.failing > 0 ? [`${count.failing} failing`] : []),
   ].join(' · ');
 
   if (healths.length === 0 && broken === 0) {
@@ -99,21 +127,35 @@ export function panelSummary(healths: readonly Health[], broken: number): Summar
   }
   if (healths.length === 0) return { line: 'No pipeline can be read.', tone: 'bad', sub };
 
-  const alarms = healths.filter((h) => h.contradiction).length;
-  if (alarms > 0) {
+  const { alarm, untriggered, failing } = count;
+  if (alarm > 0) {
     return {
       line:
-        alarms === 1
+        alarm === 1
           ? 'One pipeline is loaded and produces nothing.'
-          : `${alarms} pipelines are loaded and produce nothing.`,
+          : `${alarm} pipelines are loaded and produce nothing.`,
       tone: 'bad',
-      sub: `${sub} · ${alarms} in alarm`,
+      sub,
+    };
+  }
+
+  // Right after the alarm, as in each row's verdict: however well the last
+  // run went, nothing will launch the next one. The rows below already say it
+  // in red; a headline of "All in order." above them contradicted them.
+  if (untriggered > 0) {
+    return {
+      line:
+        untriggered === 1
+          ? 'One pipeline is not triggered by anything.'
+          : `${untriggered} pipelines are not triggered by anything.`,
+      tone: 'bad',
+      sub,
     };
   }
 
   // `stuck` is not an alarm, but ten nights of skipping is not "all in order"
   // either: it is the neighbor of the box this dashboard exists to catch.
-  const halted = healths.filter((h) => h.work === 'silent' || h.work === 'stuck').length;
+  const halted = count.silent + count.stuck;
   if (halted > 0) {
     return {
       line:
@@ -125,7 +167,6 @@ export function panelSummary(healths: readonly Health[], broken: number): Summar
     };
   }
 
-  const failing = healths.filter((h) => h.work === 'failing').length;
   if (failing > 0) {
     return {
       line:

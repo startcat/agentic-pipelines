@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { formatWhen, formatDuration, money, describeCron } from '../../src/web/format.ts';
+import { formatWhen, formatDuration, formatBytes, money, usd, describeCron, formatNext, formatFull } from '../../src/web/format.ts';
 
 /**
  * Dates are built in LOCAL time, not as UTC strings: `formatWhen` speaks in
@@ -66,6 +66,12 @@ describe('formatDuration', () => {
   test('a negative duration does not print a minus', () => {
     expect(formatDuration(-5)).toBe('0s');
   });
+
+  // A run stuck in "running" since last week would otherwise read "10081m 0s".
+  test('from an hour up, hours and minutes; from a day up, days and hours', () => {
+    expect(formatDuration(3_600_000 + 5 * 60_000 + 9_000)).toBe('1h 5m');
+    expect(formatDuration(7 * 86_400_000 + 3 * 3_600_000)).toBe('7d 3h');
+  });
 });
 
 describe('money', () => {
@@ -77,6 +83,16 @@ describe('money', () => {
   test('no cost is the empty string', () => {
     expect(money(undefined)).toBe('');
     expect(money(0)).toBe('');
+  });
+
+  // `run.json` is read with no validation: a hand-edited cost reached
+  // `toFixed` and took down every page that lists the run.
+  test('a cost that is not a finite number is empty, never a throw', () => {
+    for (const bad of ['x', '1.5', null, NaN, Infinity, {}, []]) {
+      expect(money(bad)).toBe('');
+      expect(usd(bad)).toBe('');
+    }
+    expect(usd(0)).toBe('$0.00');
   });
 });
 
@@ -91,6 +107,36 @@ describe('describeCron', () => {
 
   test('with a weekday it says so', () => {
     expect(describeCron(['0 9 * * 1'])).toBe('every Monday at 09:00');
+  });
+
+  test('Monday to Friday at one time is "every weekday", as a range or as a list', () => {
+    expect(describeCron(['0 7 * * 1-5'])).toBe('every weekday at 07:00');
+    expect(describeCron(['0 7 * * 1,2,3,4,5'])).toBe('every weekday at 07:00');
+  });
+
+  test('Saturday and Sunday at one time is "every weekend"', () => {
+    expect(describeCron(['30 10 * * 6,0'])).toBe('every weekend at 10:30');
+    expect(describeCron(['30 10 * * 0,6'])).toBe('every weekend at 10:30');
+    expect(describeCron(['30 10 * * 6,7'])).toBe('every weekend at 10:30');
+  });
+
+  test('any other set of weekdays is listed, Monday first', () => {
+    expect(describeCron(['0 7 * * 5,1,3'])).toBe('every Mon, Wed and Fri at 07:00');
+    expect(describeCron(['0 7 * * 0,2'])).toBe('every Tue and Sun at 07:00');
+  });
+
+  test('all seven weekdays is every day, with the same night rule', () => {
+    expect(describeCron(['0 3 * * 0-6'])).toBe('every night at 03:00');
+    expect(describeCron(['0 9 * * 1-7'])).toBe('every day at 09:00');
+  });
+
+  // Several times of day, or a weekday set with a day of the month, are not
+  // "every X at HH:MM": the cron is the only true sentence.
+  test('weekdays at several times, or with a day of the month, stay raw', () => {
+    expect(describeCron(['0 7,19 * * 1-5'])).toBe('0 7,19 * * 1-5');
+    expect(describeCron(['0 7 1 * 1,3'])).toBe('0 7 1 * 1,3');
+    expect(describeCron(['0 7 * * 5-1'])).toBe('0 7 * * 5-1');
+    expect(describeCron(['0 7 * * */2'])).toBe('0 7 * * */2');
   });
 
   test('with no triggers there is no cadence', () => {
@@ -110,5 +156,28 @@ describe('describeCron', () => {
 
   test('several triggers are listed raw', () => {
     expect(describeCron(['0 3 * * *', '0 15 * * *'])).toBe('0 3 * * * · 0 15 * * *');
+  });
+});
+
+describe('formatNext / formatFull', () => {
+  // 2026-10-28 is a Wednesday.
+  const now = local(2026, 10, 28, 9, 0);
+  test('today, tomorrow, weekday, date', () => {
+    expect(formatNext(local(2026, 10, 28, 18, 0), now)).toBe('today 18:00');
+    expect(formatNext(local(2026, 10, 29, 8, 0), now)).toBe('tomorrow 08:00');
+    expect(formatNext(local(2026, 11, 2, 7, 0), now)).toBe('Mon 07:00');
+    expect(formatNext(local(2026, 11, 4, 7, 0), now)).toBe('Nov 4 07:00');
+  });
+  test('formatFull', () => {
+    expect(formatFull(local(2026, 11, 2, 7, 0))).toBe('Mon Nov 2 · 07:00');
+  });
+});
+
+describe('formatBytes', () => {
+  test('bytes stay whole; from KB up, one decimal', () => {
+    expect(formatBytes(0)).toBe('0 B');
+    expect(formatBytes(1_023)).toBe('1023 B');
+    expect(formatBytes(1_126)).toBe('1.1 KB');
+    expect(formatBytes(3 * 1024 * 1024 + 200_000)).toBe('3.2 MB');
   });
 });
