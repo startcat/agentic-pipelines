@@ -14,9 +14,9 @@ async function fakeLaunchctl(stdout: string, code: number): Promise<string> {
 }
 
 describe('createJobFactsCache', () => {
-  // Decisión 8: launchctl no se consulta por tick. Un subproceso por pipeline
-  // y por segundo es abusivo para un dato que cambia cuando tú lo cambias.
-  test('dentro del TTL no vuelve a preguntar a launchctl', async () => {
+  // Decision 8: launchctl is not queried per tick. A subprocess per pipeline
+  // per second is abusive for a datum that changes when you change it.
+  test('within the TTL it does not ask launchctl again', async () => {
     process.env.PIPELINES_LAUNCHCTL_BIN = await fakeLaunchctl('', 0);
     const cache = createJobFactsCache(30_000);
     const ctx = { root: '/repo', config: { channels: {}, defaults: {} }, dotEnv: {} };
@@ -24,27 +24,27 @@ describe('createJobFactsCache', () => {
 
     const t0 = new Date('2026-08-29T12:00:00.000Z');
     const first = await cache.get(pipeline, ctx as never, t0);
-    // A los 10 s el dato debe ser literalmente el mismo objeto: no hubo consulta.
+    // At 10 s the datum must be literally the same object: there was no query.
     const second = await cache.get(pipeline, ctx as never, new Date(t0.getTime() + 10_000));
     expect(second).toBe(first);
 
-    // Pasado el TTL, sí vuelve a preguntar: objeto nuevo.
+    // Past the TTL, it does ask again: a new object.
     const third = await cache.get(pipeline, ctx as never, new Date(t0.getTime() + 31_000));
     expect(third).not.toBe(first);
   });
 });
 
 describe('collectJobFacts', () => {
-  // Con Homebrew, `process.execPath` es la ruta versionada de la Cellar e
-  // `install` escribe el enlace estable (`stableBunPath`). Si el panel generara
-  // su plist esperado con la otra ruta, todo job recién instalado saldría como
-  // `drifted`.
-  test('el plist esperado usa el mismo bun que escribe install', async () => {
+  // With Homebrew, `process.execPath` is the versioned Cellar path and
+  // `install` writes the stable link (`stableBunPath`). If the dashboard
+  // generated its expected plist with the other path, every freshly installed
+  // job would come out as `drifted`.
+  test('the expected plist uses the same bun that install writes', async () => {
     process.env.PIPELINES_LAUNCHCTL_BIN = await fakeLaunchctl('', 0);
     const ctx = { root: '/repo', config: { channels: {}, defaults: {} }, dotEnv: {} };
     const pipeline = { name: 'demo', triggers: [{ cron: '0 3 * * *' }], requires: { bin: [] }, mcpServers: {}, when: [] } as never;
 
-    // Es un test de launchd: en Linux el programador por defecto sería systemd.
+    // This is a launchd test: on Linux the default scheduler would be systemd.
     const saved = process.env.PIPELINES_SCHEDULER;
     process.env.PIPELINES_SCHEDULER = 'launchd';
     let facts;

@@ -49,21 +49,21 @@ steps:
 `);
 
 describe('dispatchNotify', () => {
-  test('no hace nada si el pipeline no declara notify', async () => {
+  test('does nothing if the pipeline does not declare notify', async () => {
     let called = false;
     const ctx = repoCtx('channels: {}\n');
     await dispatchNotify(PIPELINE_NO_NOTIFY, run(), ctx, { spawnChannel: async () => { called = true; return { code: 0, log: '' }; } });
     expect(called).toBe(false);
   });
 
-  test('no hace nada si run.status no está en notify.on', async () => {
+  test('does nothing if run.status is not in notify.on', async () => {
     let called = false;
     const ctx = repoCtx('channels:\n  email:\n    type: shell\n    run: notify.sh\n');
     await dispatchNotify(PIPELINE_WITH_NOTIFY, run({ status: 'skipped' }), ctx, { spawnChannel: async () => { called = true; return { code: 0, log: '' }; } });
     expect(called).toBe(false);
   });
 
-  test('invoca el canal cuando run.status está en notify.on', async () => {
+  test('invokes the channel when run.status is in notify.on', async () => {
     let receivedCommand = '';
     const ctx = repoCtx('channels:\n  email:\n    type: shell\n    run: notify.sh\n');
     await dispatchNotify(PIPELINE_WITH_NOTIFY, run({ status: 'success' }), ctx, {
@@ -75,7 +75,7 @@ describe('dispatchNotify', () => {
     expect(receivedCommand).toBe('notify.sh');
   });
 
-  test('pasa nombre, run-id, status y motivo como variables de entorno', async () => {
+  test('passes name, run-id, status and reason as environment variables', async () => {
     let receivedEnv: Record<string, string> = {};
     const ctx = repoCtx('channels:\n  email:\n    type: shell\n    run: notify.sh\n');
     await dispatchNotify(
@@ -90,7 +90,7 @@ describe('dispatchNotify', () => {
     expect(receivedEnv.PIPELINES_NOTIFY_REASON).toBe('');
   });
 
-  test('un run skipped con motivo lo pasa en PIPELINES_NOTIFY_REASON', async () => {
+  test('a skipped run with a reason passes it in PIPELINES_NOTIFY_REASON', async () => {
     let receivedEnv: Record<string, string> = {};
     const pipeline = parsePipeline(`
 name: demo
@@ -114,7 +114,7 @@ steps:
     expect(receivedEnv.PIPELINES_NOTIFY_REASON).toBe('throttle: 4h');
   });
 
-  test('resuelve los secretos declarados en env: del canal', async () => {
+  test('resolves the secrets declared in the env: of the channel', async () => {
     let receivedEnv: Record<string, string> = {};
     const ctx = repoCtx(
       'channels:\n  email:\n    type: shell\n    run: notify.sh\n    env: [RESEND_API_KEY]\n',
@@ -129,14 +129,14 @@ steps:
     expect(receivedEnv.RESEND_API_KEY).toBe('re_test_123');
   });
 
-  test('lanza si el canal declarado en notify.channel no existe en pipelines.yaml', async () => {
+  test('throws if the channel declared in notify.channel does not exist in pipelines.yaml', async () => {
     const ctx = repoCtx('channels: {}\n');
     await expect(
       dispatchNotify(PIPELINE_WITH_NOTIFY, run({ status: 'success' }), ctx, { spawnChannel: async () => ({ code: 0, log: '' }) }),
     ).rejects.toThrow(/email/);
   });
 
-  test('lanza si el canal sale con código distinto de 0', async () => {
+  test('throws if the channel exits with a non-zero code', async () => {
     const ctx = repoCtx('channels:\n  email:\n    type: shell\n    run: notify.sh\n');
     await expect(
       dispatchNotify(PIPELINE_WITH_NOTIFY, run({ status: 'success' }), ctx, { spawnChannel: async () => ({ code: 1, log: '' }) }),
@@ -144,11 +144,11 @@ steps:
   });
 });
 
-// `stale_after`: la señal que faltaba. Un `notify.on: [skipped]` a secas es
-// ruido — con `throttle: 46h` sobre un cron diario, la mitad de las noches
-// salta por diseño. Lo que hay que saber no es "ha saltado", es "lleva
-// demasiado sin ejecutarse de verdad", que es lo que pasó desapercibido diez
-// noches con docs-review.
+// `stale_after`: the signal that was missing. A bare `notify.on: [skipped]` is
+// noise — with `throttle: 46h` on a daily cron, half the nights skip by
+// design. What you need to know is not "it skipped", it is "it has gone too
+// long without really running", which is what went unnoticed for ten nights
+// with docs-review.
 const PIPELINE_STALE = parsePipeline(`
 name: demo
 description: d
@@ -166,7 +166,7 @@ steps:
 const CHANNEL_CONFIG = 'channels:\n  email:\n    type: shell\n    run: "true"\n';
 
 describe('dispatchNotify — stale_after', () => {
-  test('un run saltado dispara el canal si no hay ningún éxito dentro de la ventana', async () => {
+  test('a skipped run fires the channel if there is no success within the window', async () => {
     let called = false;
     const ctx = repoCtx(CHANNEL_CONFIG);
     await dispatchNotify(
@@ -174,14 +174,14 @@ describe('dispatchNotify — stale_after', () => {
       run({ status: 'skipped', skipReason: 'throttle: 46h' }),
       ctx,
       {
-        lastSuccessAt: '2026-08-10T00:00:00.000Z', // 7 días antes del run
+        lastSuccessAt: '2026-08-10T00:00:00.000Z', // 7 days before the run
         spawnChannel: async () => { called = true; return { code: 0, log: '' }; },
       },
     );
     expect(called).toBe(true);
   });
 
-  test('un run saltado NO dispara el canal si hubo un éxito dentro de la ventana', async () => {
+  test('a skipped run does NOT fire the channel if there was a success within the window', async () => {
     let called = false;
     const ctx = repoCtx(CHANNEL_CONFIG);
     await dispatchNotify(
@@ -189,14 +189,14 @@ describe('dispatchNotify — stale_after', () => {
       run({ status: 'skipped', skipReason: 'throttle: 46h' }),
       ctx,
       {
-        lastSuccessAt: '2026-08-16T12:00:00.000Z', // 12 h antes del run
+        lastSuccessAt: '2026-08-16T12:00:00.000Z', // 12 h before the run
         spawnChannel: async () => { called = true; return { code: 0, log: '' }; },
       },
     );
     expect(called).toBe(false);
   });
 
-  test('un run saltado dispara el canal si el pipeline no ha tenido nunca un éxito', async () => {
+  test('a skipped run fires the channel if the pipeline has never had a success', async () => {
     let called = false;
     const ctx = repoCtx(CHANNEL_CONFIG);
     await dispatchNotify(
@@ -208,7 +208,7 @@ describe('dispatchNotify — stale_after', () => {
     expect(called).toBe(true);
   });
 
-  test('sin stale_after declarado, un run saltado nunca dispara el canal', async () => {
+  test('without a declared stale_after, a skipped run never fires the channel', async () => {
     let called = false;
     const ctx = repoCtx(CHANNEL_CONFIG);
     await dispatchNotify(
@@ -220,7 +220,7 @@ describe('dispatchNotify — stale_after', () => {
     expect(called).toBe(false);
   });
 
-  test('el canal recibe STALE y LAST_SUCCESS para poder redactar el aviso', async () => {
+  test('the channel receives STALE and LAST_SUCCESS so it can write the warning', async () => {
     let received: Record<string, string> = {};
     const ctx = repoCtx(CHANNEL_CONFIG);
     await dispatchNotify(
@@ -236,7 +236,7 @@ describe('dispatchNotify — stale_after', () => {
     expect(received.PIPELINES_NOTIFY_LAST_SUCCESS).toBe('2026-08-10T00:00:00.000Z');
   });
 
-  test('un run correcto normal lleva STALE vacío y su propio éxito como LAST_SUCCESS', async () => {
+  test('a normal successful run carries an empty STALE and its own success as LAST_SUCCESS', async () => {
     let received: Record<string, string> = {};
     const ctx = repoCtx(CHANNEL_CONFIG);
     await dispatchNotify(
@@ -244,7 +244,7 @@ describe('dispatchNotify — stale_after', () => {
       run({ status: 'success' }),
       ctx,
       {
-        lastSuccessAt: '2026-08-17T00:00:00.000Z', // el run mismo
+        lastSuccessAt: '2026-08-17T00:00:00.000Z', // the run itself
         spawnChannel: async (_cmd, env) => { received = env; return { code: 0, log: '' }; },
       },
     );
@@ -253,15 +253,15 @@ describe('dispatchNotify — stale_after', () => {
   });
 });
 
-// Hasta ahora, un correo de un run fallido decía "(sense motiu registrat)": el
-// motor solo rellenaba REASON para los saltos por guarda, y el canal intentaba
-// derivar el motivo llamando a `pipelines show`, que no está instalado como
-// binario. El aviso llegaba, pero no decía lo suficiente para actuar sin ir a
-// mirar `.runs/` a mano.
-describe('dispatchNotify: rastro del canal', () => {
+// Until now, an email for a failed run said "(sense motiu registrat)" ("no
+// reason recorded", in Catalan): the engine only filled in REASON for guard
+// skips, and the channel tried to derive the reason by calling `pipelines
+// show`, which is not installed as a binary. The warning arrived, but it did
+// not say enough to act without going to look at `.runs/` by hand.
+describe('dispatchNotify: channel trace', () => {
   const CTX_YAML = 'channels:\n  email:\n    type: shell\n    run: ./notify.sh\n    env: [RESEND_API_KEY]\n';
 
-  test('devuelve canal, código, instante y la salida del canal', async () => {
+  test('returns channel, code, instant and the channel output', async () => {
     const ctx = repoCtx(CTX_YAML);
     const result = await dispatchNotify(PIPELINE_WITH_NOTIFY, run(), ctx, {
       spawnChannel: async () => ({ code: 0, log: 'notify-resend: enviat (200): [pipelines] demo OK\n' }),
@@ -275,24 +275,24 @@ describe('dispatchNotify: rastro del canal', () => {
     expect(Number.isNaN(Date.parse(result!.at))).toBe(false);
   });
 
-  test('devuelve undefined cuando el canal no se invoca', async () => {
+  test('returns undefined when the channel is not invoked', async () => {
     const ctx = repoCtx('channels: {}\n');
     const result = await dispatchNotify(PIPELINE_NO_NOTIFY, run(), ctx, {
-      spawnChannel: async () => ({ code: 0, log: 'no debería llegar' }),
+      spawnChannel: async () => ({ code: 0, log: 'should not get here' }),
     });
     expect(result).toBeUndefined();
   });
 
-  test('redacta los secretos del canal en la salida guardada', async () => {
-    const ctx = repoCtx(CTX_YAML, { RESEND_API_KEY: 're_muy_secreta' });
+  test('redacts the channel secrets in the stored output', async () => {
+    const ctx = repoCtx(CTX_YAML, { RESEND_API_KEY: 're_very_secret' });
     const result = await dispatchNotify(PIPELINE_WITH_NOTIFY, run(), ctx, {
-      spawnChannel: async () => ({ code: 0, log: 'curl -H Bearer re_muy_secreta\n' }),
+      spawnChannel: async () => ({ code: 0, log: 'curl -H Bearer re_very_secret\n' }),
     });
-    expect(result!.log).not.toContain('re_muy_secreta');
-    expect(result!.log).toContain('«redactado»');
+    expect(result!.log).not.toContain('re_very_secret');
+    expect(result!.log).toContain('[redacted]');
   });
 
-  test('guarda solo la cola de una salida desmesurada', async () => {
+  test('keeps only the tail of an oversized output', async () => {
     const ctx = repoCtx(CTX_YAML);
     const result = await dispatchNotify(PIPELINE_WITH_NOTIFY, run(), ctx, {
       spawnChannel: async () => ({ code: 0, log: 'x'.repeat(5000) + 'FINAL' }),
@@ -301,7 +301,7 @@ describe('dispatchNotify: rastro del canal', () => {
     expect(result!.log.endsWith('FINAL')).toBe(true);
   });
 
-  test('un canal que sale con error lanza, pero la excepción lleva el rastro', async () => {
+  test('a channel that exits with an error throws, but the exception carries the trace', async () => {
     const ctx = repoCtx(CTX_YAML);
     let thrown: unknown;
     try {
@@ -312,7 +312,7 @@ describe('dispatchNotify: rastro del canal', () => {
       thrown = err;
     }
     expect(thrown).toBeInstanceOf(Error);
-    expect((thrown as Error).message).toContain('código 1');
+    expect((thrown as Error).message).toContain('code 1');
     expect((thrown as { notify?: { code: number; log: string } }).notify).toMatchObject({
       code: 1,
       log: 'notify-resend: FALLIT (422)',
@@ -323,16 +323,16 @@ describe('dispatchNotify: rastro del canal', () => {
 describe('failureReason', () => {
   const withSteps = (steps: RunRecord['steps']): RunRecord => run({ status: 'failed', steps });
 
-  test('nombra el paso que falló y su error', () => {
+  test('names the step that failed and its error', () => {
     const reason = failureReason(
       withSteps({
-        build: { id: 'build', status: 'failed', startedAt: '', durationMs: 0, outputs: {}, effects: [], attempts: 1, error: 'yarn build falló' },
+        build: { id: 'build', status: 'failed', startedAt: '', durationMs: 0, outputs: {}, effects: [], attempts: 1, error: 'yarn build failed' },
       }),
     );
-    expect(reason).toBe('build: yarn build falló');
+    expect(reason).toBe('build: yarn build failed');
   });
 
-  test('con varios pasos fallidos los nombra todos', () => {
+  test('with several failed steps it names them all', () => {
     const reason = failureReason(
       withSteps({
         build: { id: 'build', status: 'failed', startedAt: '', durationMs: 0, outputs: {}, effects: [], attempts: 1, error: 'a' },
@@ -342,29 +342,29 @@ describe('failureReason', () => {
     expect(reason).toBe('build: a; push: b');
   });
 
-  test('ignora los pasos correctos y los saltados', () => {
+  test('ignores the successful and skipped steps', () => {
     const reason = failureReason(
       withSteps({
         ok: { id: 'ok', status: 'success', startedAt: '', durationMs: 0, outputs: {}, effects: [], attempts: 1 },
-        saltado: { id: 'saltado', status: 'skipped', startedAt: '', durationMs: 0, outputs: {}, effects: [], attempts: 0 },
+        skipped_step: { id: 'skipped_step', status: 'skipped', startedAt: '', durationMs: 0, outputs: {}, effects: [], attempts: 0 },
         build: { id: 'build', status: 'failed', startedAt: '', durationMs: 0, outputs: {}, effects: [], attempts: 1, error: 'x' },
       }),
     );
     expect(reason).toBe('build: x');
   });
 
-  test('un paso fallido sin mensaje de error se nombra igualmente', () => {
+  test('a failed step with no error message is named anyway', () => {
     const reason = failureReason(
       withSteps({
         build: { id: 'build', status: 'failed', startedAt: '', durationMs: 0, outputs: {}, effects: [], attempts: 1 },
       }),
     );
-    expect(reason).toBe('build: (sin mensaje de error)');
+    expect(reason).toBe('build: (no error message)');
   });
 
-  // Un error de un paso agent puede ocupar miles de caracteres. Un correo que
-  // no se puede leer no informa de nada.
-  test('trunca un motivo desmesurado en vez de mandarlo entero', () => {
+  // An error from an agent step can take thousands of characters. An email that
+  // can't be read informs of nothing.
+  test('truncates an oversized reason instead of sending it whole', () => {
     const reason = failureReason(
       withSteps({
         redact: { id: 'redact', status: 'failed', startedAt: '', durationMs: 0, outputs: {}, effects: [], attempts: 1, error: 'x'.repeat(2000) },
@@ -374,16 +374,16 @@ describe('failureReason', () => {
     expect(reason.endsWith('…')).toBe(true);
   });
 
-  // Un run puede acabar `failed` sin ningún paso en `failed` (algo que revienta
-  // antes o entre pasos). Devolver cadena vacía deja que el canal caiga a su
-  // propio fallback en vez de inventar un motivo.
-  test('sin ningún paso fallido devuelve cadena vacía', () => {
+  // A run can end `failed` with no step in `failed` (something that blows up
+  // before or between steps). Returning an empty string lets the channel fall
+  // back to its own fallback instead of inventing a reason.
+  test('with no failed step returns an empty string', () => {
     expect(failureReason(withSteps({}))).toBe('');
   });
 });
 
-describe('dispatchNotify — motivo de un run fallido', () => {
-  test('el canal recibe el paso que falló en REASON', async () => {
+describe('dispatchNotify — reason of a failed run', () => {
+  test('the channel receives the step that failed in REASON', async () => {
     let received: Record<string, string> = {};
     const ctx = repoCtx(CHANNEL_CONFIG);
     await dispatchNotify(
@@ -391,18 +391,18 @@ describe('dispatchNotify — motivo de un run fallido', () => {
       run({
         status: 'failed',
         steps: {
-          build: { id: 'build', status: 'failed', startedAt: '', durationMs: 0, outputs: {}, effects: [], attempts: 1, error: 'yarn build falló' },
+          build: { id: 'build', status: 'failed', startedAt: '', durationMs: 0, outputs: {}, effects: [], attempts: 1, error: 'yarn build failed' },
         },
       }),
       ctx,
       { spawnChannel: async (_cmd, env) => { received = env; return { code: 0, log: '' }; } },
     );
-    expect(received.PIPELINES_NOTIFY_REASON).toBe('build: yarn build falló');
+    expect(received.PIPELINES_NOTIFY_REASON).toBe('build: yarn build failed');
   });
 
-  // El motivo de una guarda sigue mandando: un run saltado no tiene pasos
-  // fallidos que mirar, y su motivo real es la guarda.
-  test('un skipReason existente tiene precedencia sobre los pasos', async () => {
+  // The guard's reason still wins: a skipped run has no failed steps to look
+  // at, and its real reason is the guard.
+  test('an existing skipReason takes precedence over the steps', async () => {
     let received: Record<string, string> = {};
     const ctx = repoCtx(CHANNEL_CONFIG);
     await dispatchNotify(

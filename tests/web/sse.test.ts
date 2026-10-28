@@ -4,45 +4,45 @@ import { join } from 'node:path';
 import { serve, RUNNING_RUN_ID } from './fixture.ts';
 
 describe('GET /sse/:name/:runId', () => {
-  test('manda solo el trozo nuevo del log, no el fichero entero', async () => {
+  test('sends only the new piece of the log, not the whole file', async () => {
     const { server, base, root } = await serve();
     const runId = RUNNING_RUN_ID;
     const res = await fetch(`${base}/sse/demo/${runId}`);
     const reader = res.body!.getReader();
     try {
-      await appendFile(join(root, '.runs', 'demo', runId, 'uno.log'), 'NUEVO\n');
+      await appendFile(join(root, '.runs', 'demo', runId, 'one.log'), 'NEW\n');
 
       let received = '';
-      // El servidor compara mtime cada segundo: dos lecturas bastan.
-      for (let i = 0; i < 4 && !received.includes('NUEVO'); i += 1) {
+      // The server compares mtime every second: two reads are enough.
+      for (let i = 0; i < 4 && !received.includes('NEW'); i += 1) {
         const { value } = await reader.read();
         received += new TextDecoder().decode(value);
       }
-      expect(received).toContain('NUEVO');
+      expect(received).toContain('NEW');
       expect(received).toContain('event: log');
-      // Lo que ya estaba en el fichero antes de abrir el stream (fixture.ts,
-      // uno.log) NO se reenvía: solo el delta posterior a la apertura.
-      expect(received).not.toContain('arrancando el paso');
+      // What was already in the file before opening the stream (fixture.ts,
+      // one.log) is NOT resent: only the delta after the opening.
+      expect(received).not.toContain('starting the step');
     } finally {
       await reader.cancel();
       server.stop(true);
     }
   }, 15_000);
 
-  // El evento `log` no tenía consumidor: la página que se suscribe (el run
-  // detail) no tiene `#log`, y la que lo tiene (el paso) no se suscribía.
-  // Arreglado dándole ámbito: el dato ahora es `{ stepId, delta }`, no solo
-  // el delta. Esta aserción SOLO puede pasar si el servidor manda el id del
-  // paso junto al delta — con la forma antigua (`data: delta` a secas)
-  // `JSON.parse` habría devuelto la cadena del delta, no un objeto, y
-  // `payload.stepId` sería `undefined`, no `'uno'`.
-  test('el evento log lleva el id del paso, para poder escogerse en el cliente', async () => {
+  // The `log` event had no consumer: the page that subscribes (the run detail)
+  // has no `#log`, and the one that has it (the step) didn't subscribe. Fixed
+  // by giving it scope: the datum is now `{ stepId, delta }`, not just the
+  // delta. This assertion can ONLY pass if the server sends the step's id along
+  // with the delta — with the old shape (a bare `data: delta`) `JSON.parse`
+  // would have returned the delta string, not an object, and `payload.stepId`
+  // would be `undefined`, not `'one'`.
+  test('the log event carries the step id, so it can be picked on the client', async () => {
     const { server, base, root } = await serve();
     const runId = RUNNING_RUN_ID;
     const res = await fetch(`${base}/sse/demo/${runId}`);
     const reader = res.body!.getReader();
     try {
-      await appendFile(join(root, '.runs', 'demo', runId, 'uno.log'), 'NUEVO\n');
+      await appendFile(join(root, '.runs', 'demo', runId, 'one.log'), 'NEW\n');
 
       let raw = '';
       let dataLine: string | undefined;
@@ -53,27 +53,27 @@ describe('GET /sse/:name/:runId', () => {
       }
       expect(dataLine).toBeDefined();
       const payload = JSON.parse(dataLine!) as { stepId: string; delta: string };
-      expect(payload.stepId).toBe('uno');
-      expect(payload.delta).toContain('NUEVO');
+      expect(payload.stepId).toBe('one');
+      expect(payload.delta).toContain('NEW');
     } finally {
       await reader.cancel();
       server.stop(true);
     }
   }, 15_000);
 
-  test('el evento panel manda solo la tabla de pasos, no la página entera', async () => {
+  test('the panel event sends only the steps table, not the whole page', async () => {
     const { server, base } = await serve();
     const runId = RUNNING_RUN_ID;
     const res = await fetch(`${base}/sse/demo/${runId}`);
     const reader = res.body!.getReader();
     try {
-      // El primer evento es el panel inicial. `sseEvent` deja el HTML en una
-      // sola línea `data: "..."` (los saltos de línea del fragmento van
-      // escapados dentro del JSON), así que basta con juntar lecturas hasta
-      // ver la línea completa y parsear con JSON.parse — igual que hace el
-      // cliente real (`SSE_CLIENT`, render.ts) — para comparar HTML contra
-      // HTML y no contra el texto crudo del stream (que lleva las comillas
-      // escapadas y no coincidiría con un `toContain` literal).
+      // The first event is the initial panel. `sseEvent` leaves the HTML on a
+      // single `data: "..."` line (the fragment's newlines are escaped inside
+      // the JSON), so it is enough to gather reads until the whole line is seen
+      // and parse it with JSON.parse — just like the real client (`SSE_CLIENT`,
+      // render.ts) — to compare HTML against HTML and not against the stream's
+      // raw text (which carries escaped quotes and wouldn't match a literal
+      // `toContain`).
       let raw = '';
       let dataLine: string | undefined;
       for (let i = 0; i < 4 && dataLine === undefined; i += 1) {
@@ -84,20 +84,20 @@ describe('GET /sse/:name/:runId', () => {
       expect(dataLine).toBeDefined();
       const html = JSON.parse(dataLine!) as string;
 
-      // Es el vivo del run: la cabecera de estado —que también se refresca— y
-      // el paso de la fixture, `uno`.
+      // It is the run's live view: the status header —which is also refreshed—
+      // and the fixture's step, `one`.
       expect(html).toContain('class="bigline');
-      expect(html).toContain('>uno<');
+      expect(html).toContain('>one<');
 
-      // Y SOLO la tabla — nada de lo que la envuelve en la página inicial.
-      // Si esta prueba corriera contra la página entera (`renderRunPage` en
-      // vez de `renderRunLive`), su propio `<div id="live">` y su `<h2>`
-      // de título vendrían dentro del fragmento, y el cliente los anidaría
-      // una segunda vez sobre sí mismos al hacer `#live.innerHTML = html`.
-      // Se fija la FORMA, no la ausencia de marcadores conocidos: una lista de
-      // ausencias no cubriría un envoltorio nuevo que se colara mañana.
-      // `renderRunLive` empieza literalmente por `<div class="bigline` — es
-      // justo lo que "solo lo que va dentro de #live" significa.
+      // And ONLY the table — nothing of what wraps it on the initial page.
+      // If this test ran against the whole page (`renderRunPage` instead of
+      // `renderRunLive`), its own `<div id="live">` and its title `<h2>` would
+      // come inside the fragment, and the client would nest them a second time
+      // inside themselves when doing `#live.innerHTML = html`. The SHAPE is
+      // pinned, not the absence of known markers: a list of absences wouldn't
+      // cover a new wrapper that slipped in tomorrow. `renderRunLive` literally
+      // starts with `<div class="bigline` — which is exactly what "only what
+      // goes inside #live" means.
       expect(html.startsWith('<div class="bigline')).toBe(true);
       expect(html).not.toContain('id="live"');
     } finally {
@@ -106,7 +106,7 @@ describe('GET /sse/:name/:runId', () => {
     }
   });
 
-  test('el content-type es text/event-stream', async () => {
+  test('the content-type is text/event-stream', async () => {
     const { server, base } = await serve();
     const runId = RUNNING_RUN_ID;
     const res = await fetch(`${base}/sse/demo/${runId}`);
@@ -120,16 +120,16 @@ describe('GET /sse/:name/:runId', () => {
 });
 
 describe('GET /sse/health', () => {
-  test('reemite el panel cuando aparece un run nuevo', async () => {
+  test('it re-emits the dashboard when a new run appears', async () => {
     const { server, base, root } = await serve();
     const res = await fetch(`${base}/sse/health`);
     const reader = res.body!.getReader();
     try {
-      // Primer evento: el panel tal como está.
+      // First event: the dashboard as it is.
       const first = new TextDecoder().decode((await reader.read()).value);
       expect(first).toContain('event: panel');
 
-      // Aparece un run nuevo en disco; el panel debe volver a emitirse.
+      // A new run appears on disk; the dashboard must be emitted again.
       const dir = join(root, '.runs', 'demo', '2026-08-30T01-00-00-000Z');
       await mkdir(dir, { recursive: true });
       await writeFile(join(dir, 'run.json'), JSON.stringify({
@@ -137,18 +137,18 @@ describe('GET /sse/health', () => {
         status: 'success', startedAt: '2026-08-30T01:00:00.000Z', params: {}, steps: {},
       }));
 
-      // Antes se buscaba la cadena "2026-08-30" porque el panel imprimía el
-      // `startedAt` en crudo. Ahora dice "ayer" / "30 ago", que depende del día
-      // en que se ejecute la suite. Se busca el VEREDICTO, que es lo que
-      // cambia: la fixture venía con un run en curso ("Corriendo ahora") y el
-      // run nuevo, con éxito y más reciente, lo deja al día.
-      expect(first).toContain('Corriendo ahora');
+      // It used to look for the string "2026-08-30" because the dashboard printed
+      // `startedAt` raw. Now it says "yesterday" / "Aug 30", which depends on the
+      // day the suite runs. It looks for the VERDICT, which is what changes: the
+      // fixture came with a run in progress ("Running now") and the new run,
+      // successful and more recent, leaves it up to date.
+      expect(first).toContain('Running now');
       let received = '';
-      for (let i = 0; i < 4 && !received.includes('Al día'); i += 1) {
+      for (let i = 0; i < 4 && !received.includes('Up to date'); i += 1) {
         received += new TextDecoder().decode((await reader.read()).value);
       }
-      expect(received).toContain('Al día');
-      expect(received).not.toContain('Corriendo ahora');
+      expect(received).toContain('Up to date');
+      expect(received).not.toContain('Running now');
     } finally {
       await reader.cancel();
       server.stop(true);

@@ -1,114 +1,114 @@
 import { describe, expect, test } from 'bun:test';
-import { cuando, duracion, dinero, describeCron } from '../../src/web/format.ts';
+import { formatWhen, formatDuration, money, describeCron } from '../../src/web/format.ts';
 
 /**
- * Las fechas se construyen en hora LOCAL, no como cadenas UTC: `cuando` habla
- * en la hora del que mira la pantalla, y fijar "13:42" para un ISO en Z ataría
- * esta tabla al huso de esta máquina.
+ * Dates are built in LOCAL time, not as UTC strings: `formatWhen` speaks in
+ * the time of whoever is looking at the screen, and pinning "13:42" for an ISO
+ * in Z would tie this table to this machine's timezone.
  */
 const local = (y: number, m: number, d: number, h: number, min = 0): Date => new Date(y, m - 1, d, h, min);
-const AHORA = local(2026, 8, 31, 13, 56);
+const NOW = local(2026, 8, 31, 13, 56);
 
-describe('cuando', () => {
-  test('el mismo día es "hoy" y la hora local', () => {
-    expect(cuando(local(2026, 8, 31, 13, 42).toISOString(), AHORA)).toEqual({ day: 'hoy', time: '13:42' });
+describe('formatWhen', () => {
+  test('the same day is "today" and the local time', () => {
+    expect(formatWhen(local(2026, 8, 31, 13, 42).toISOString(), NOW)).toEqual({ day: 'today', time: '13:42' });
   });
 
-  test('la hora lleva dos dígitos siempre', () => {
-    expect(cuando(local(2026, 8, 31, 3, 0).toISOString(), AHORA).time).toBe('03:00');
+  test('the time always has two digits', () => {
+    expect(formatWhen(local(2026, 8, 31, 3, 0).toISOString(), NOW).time).toBe('03:00');
   });
 
-  test('el día anterior es "ayer"', () => {
-    expect(cuando(local(2026, 8, 30, 1, 0).toISOString(), AHORA).day).toBe('ayer');
+  test('the previous day is "yesterday"', () => {
+    expect(formatWhen(local(2026, 8, 30, 1, 0).toISOString(), NOW).day).toBe('yesterday');
   });
 
-  // Dentro de la semana se dice el día; más atrás, la fecha. Un panel que se
-  // mira treinta segundos no obliga a contar días hacia atrás.
-  test('dentro de la semana da el día de la semana', () => {
-    expect(cuando(local(2026, 8, 27, 1, 0).toISOString(), AHORA).day).toBe('jueves');
+  // Within the week the weekday is said; further back, the date. A dashboard
+  // looked at for thirty seconds shouldn't make you count days backwards.
+  test('within the week it gives the weekday', () => {
+    expect(formatWhen(local(2026, 8, 27, 1, 0).toISOString(), NOW).day).toBe('Thu');
   });
 
-  test('más atrás da día y mes', () => {
-    expect(cuando(local(2026, 8, 19, 12, 9).toISOString(), AHORA).day).toBe('19 ago');
+  test('further back it gives day and month', () => {
+    expect(formatWhen(local(2026, 8, 19, 12, 9).toISOString(), NOW).day).toBe('Aug 19');
   });
 
-  // 23 h antes puede caer en el mismo día natural, y 25 h antes en "ayer": el
-  // corte es por día del calendario, no por división de milisegundos.
-  test('el corte es por día natural, no por 24 horas', () => {
-    expect(cuando(local(2026, 8, 31, 0, 30).toISOString(), AHORA).day).toBe('hoy');
-    expect(cuando(local(2026, 8, 30, 23, 30).toISOString(), AHORA).day).toBe('ayer');
+  // 23 h earlier can fall on the same calendar day, and 25 h earlier on
+  // "yesterday": the cut is by calendar day, not by dividing milliseconds.
+  test('the cut is by calendar day, not by 24 hours', () => {
+    expect(formatWhen(local(2026, 8, 31, 0, 30).toISOString(), NOW).day).toBe('today');
+    expect(formatWhen(local(2026, 8, 30, 23, 30).toISOString(), NOW).day).toBe('yesterday');
   });
 
-  test('sin fecha no inventa nada', () => {
-    expect(cuando(undefined, AHORA)).toEqual({ day: '—', time: '' });
+  test('with no date it makes nothing up', () => {
+    expect(formatWhen(undefined, NOW)).toEqual({ day: '—', time: '' });
   });
 
-  // `run.json` no se valida al leerlo (RunStore.readRun hace un `as`), así que
-  // una fecha corrupta es E/S ordinaria, no un imposible.
-  test('una fecha ilegible no revienta', () => {
-    expect(cuando('no-es-una-fecha', AHORA)).toEqual({ day: '—', time: '' });
-  });
-});
-
-describe('duracion', () => {
-  test('menos de un minuto va en segundos', () => {
-    expect(duracion(14_000)).toBe('14s');
-  });
-
-  test('a partir del minuto, minutos y segundos', () => {
-    expect(duracion(470_000)).toBe('7m 50s');
-  });
-
-  test('cero es cero, no vacío', () => {
-    expect(duracion(0)).toBe('0s');
-  });
-
-  test('una duración negativa no imprime un menos', () => {
-    expect(duracion(-5)).toBe('0s');
+  // `run.json` is not validated when read (RunStore.readRun does an `as`), so
+  // a corrupt date is ordinary I/O, not an impossibility.
+  test('an unreadable date does not blow up', () => {
+    expect(formatWhen('not-a-date', NOW)).toEqual({ day: '—', time: '' });
   });
 });
 
-describe('dinero', () => {
-  test('dos decimales con dólar', () => {
-    expect(dinero(4.492596500000001)).toBe('$4.49');
+describe('formatDuration', () => {
+  test('under a minute goes in seconds', () => {
+    expect(formatDuration(14_000)).toBe('14s');
   });
 
-  // Un paso `shell` no cuesta nada: la celda se queda vacía, no pone "$0.00".
-  test('sin coste es la cadena vacía', () => {
-    expect(dinero(undefined)).toBe('');
-    expect(dinero(0)).toBe('');
+  test('from a minute up, minutes and seconds', () => {
+    expect(formatDuration(470_000)).toBe('7m 50s');
+  });
+
+  test('zero is zero, not empty', () => {
+    expect(formatDuration(0)).toBe('0s');
+  });
+
+  test('a negative duration does not print a minus', () => {
+    expect(formatDuration(-5)).toBe('0s');
+  });
+});
+
+describe('money', () => {
+  test('two decimals with a dollar sign', () => {
+    expect(money(4.492596500000001)).toBe('$4.49');
+  });
+
+  // A `shell` step costs nothing: the cell stays empty, it doesn't say "$0.00".
+  test('no cost is the empty string', () => {
+    expect(money(undefined)).toBe('');
+    expect(money(0)).toBe('');
   });
 });
 
 describe('describeCron', () => {
-  test('la cadencia real de docs se dice en palabras', () => {
-    expect(describeCron(['0 3 * * *'])).toBe('cada noche a las 3:00');
+  test('the real cadence of docs is said in words', () => {
+    expect(describeCron(['0 3 * * *'])).toBe('every night at 03:00');
   });
 
-  test('una hora diurna no es "noche"', () => {
-    expect(describeCron(['30 14 * * *'])).toBe('cada día a las 14:30');
+  test('a daytime hour is not "night"', () => {
+    expect(describeCron(['30 14 * * *'])).toBe('every day at 14:30');
   });
 
-  test('con día de la semana lo dice', () => {
-    expect(describeCron(['0 9 * * 1'])).toBe('cada lunes a las 9:00');
+  test('with a weekday it says so', () => {
+    expect(describeCron(['0 9 * * 1'])).toBe('every Monday at 09:00');
   });
 
-  test('sin triggers no hay cadencia', () => {
-    expect(describeCron([])).toBe('ninguna, es manual');
+  test('with no triggers there is no cadence', () => {
+    expect(describeCron([])).toBe('none, run by hand');
   });
 
-  // `cronToCalendarIntervals` lanza con rangos y pasos. Un cron así no se puede
-  // INSTALAR, pero sí puede estar escrito en un pipeline.yaml del repo, y el
-  // panel es el único sitio pensado para que nada falle en silencio.
-  test('un cron que no se sabe traducir se devuelve crudo', () => {
+  // `cronToCalendarIntervals` throws on ranges and steps. Such a cron can't be
+  // INSTALLED, but it can be written in a repo's pipeline.yaml, and the
+  // dashboard is the one place meant so that nothing fails silently.
+  test('a cron that cannot be translated is returned raw', () => {
     expect(describeCron(['*/5 * * * *'])).toBe('*/5 * * * *');
   });
 
-  test('un cron con día del mes se devuelve crudo, sin inventar una frase', () => {
+  test('a cron with a day of the month is returned raw, without inventing a sentence', () => {
     expect(describeCron(['0 3 1 * *'])).toBe('0 3 1 * *');
   });
 
-  test('varios triggers se listan crudos', () => {
+  test('several triggers are listed raw', () => {
     expect(describeCron(['0 3 * * *', '0 15 * * *'])).toBe('0 3 * * * · 0 15 * * *');
   });
 });

@@ -26,7 +26,7 @@ function fake(name: string, body: string): string {
 }
 
 describe('systemctlUser', () => {
-  test('antepone --user y devuelve código, stdout y stderr', async () => {
+  test('prepends --user and returns code, stdout and stderr', async () => {
     process.env.PIPELINES_SYSTEMCTL_BIN = fake('sc', 'echo "$@"; echo err >&2; exit 3');
     expect(await systemctlUser(['is-active', 'x.timer'])).toEqual({
       code: 3,
@@ -35,8 +35,8 @@ describe('systemctlUser', () => {
     });
   });
 
-  test('un binario inexistente no lanza: código distinto de 0 y mensaje en español', async () => {
-    process.env.PIPELINES_SYSTEMCTL_BIN = join(dir, 'no-existe');
+  test('a missing binary does not throw: non-zero code and a message', async () => {
+    process.env.PIPELINES_SYSTEMCTL_BIN = join(dir, 'does-not-exist');
     const result = await systemctlUser(['daemon-reload']);
     expect(result.code).not.toBe(0);
     expect(result.stderr).toContain('systemctl');
@@ -46,25 +46,25 @@ describe('systemctlUser', () => {
 describe('lingerEnabled', () => {
   test('yes → true, no → false', async () => {
     process.env.PIPELINES_LOGINCTL_BIN = fake('lc', 'echo yes');
-    expect(await lingerEnabled('usuario')).toBe(true);
+    expect(await lingerEnabled('user')).toBe(true);
     process.env.PIPELINES_LOGINCTL_BIN = fake('lc2', 'echo no');
-    expect(await lingerEnabled('usuario')).toBe(false);
+    expect(await lingerEnabled('user')).toBe(false);
   });
 
-  test('si el comando falla → null', async () => {
+  test('if the command fails → null', async () => {
     process.env.PIPELINES_LOGINCTL_BIN = fake('lc', 'exit 1');
-    expect(await lingerEnabled('usuario')).toBeNull();
-    process.env.PIPELINES_LOGINCTL_BIN = join(dir, 'no-existe');
-    expect(await lingerEnabled('usuario')).toBeNull();
+    expect(await lingerEnabled('user')).toBeNull();
+    process.env.PIPELINES_LOGINCTL_BIN = join(dir, 'does-not-exist');
+    expect(await lingerEnabled('user')).toBeNull();
   });
 });
 
 describe('userBusError', () => {
-  test('reconoce los dos síntomas del bus ausente', () => {
+  test('recognizes the two symptoms of a missing bus', () => {
     expect(userBusError('Failed to connect to bus: No medium found')).toContain('sudo -u');
     expect(userBusError('... $DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR ...')).toContain('sudo -u');
   });
-  test('otro error → null', () => {
+  test('another error → null', () => {
     expect(userBusError('Unit not found')).toBeNull();
   });
 });

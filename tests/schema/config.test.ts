@@ -1,41 +1,41 @@
 import { describe, expect, test } from 'bun:test';
 import { parseRepoConfig } from '../../src/schema/config.ts';
 
-// config.ts recibió el renombrado de clave (onError -> on_error) pero nunca
-// el `.strict()` que ya tenía su hermano `pipeline.ts`, así que `pipelines.yaml` seguía
-// tragándose en silencio el mismo typo que on_error existe para atrapar.
+// config.ts got the key rename (onError -> on_error) but never the
+// `.strict()` that its sibling `pipeline.ts` already had, so `pipelines.yaml`
+// kept silently swallowing the same typo that on_error exists to catch.
 describe('parseRepoConfig', () => {
-  test('acepta on_error y lo expone como onError', () => {
+  test('accepts on_error and exposes it as onError', () => {
     const config = parseRepoConfig('defaults:\n  on_error: continue\n');
     expect(config.defaults.onError).toBe('continue');
   });
 
-  test('rechaza el typo camelCase onError nombrando la clave', () => {
+  test('rejects the camelCase typo onError naming the key', () => {
     expect(() => parseRepoConfig('defaults:\n  onError: continue\n')).toThrow(/onError/);
   });
 
-  test('rechaza una clave desconocida a nivel de pipeline nombrándola', () => {
-    expect(() => parseRepoConfig('claveInventada: 1\n')).toThrow(/claveInventada/);
+  test('rejects an unknown key at pipeline level naming it', () => {
+    expect(() => parseRepoConfig('inventedKey: 1\n')).toThrow(/inventedKey/);
   });
 
-  test('rechaza una clave desconocida en defaults nombrándola', () => {
+  test('rejects an unknown key in defaults naming it', () => {
     expect(() => parseRepoConfig('defaults:\n  retires: 2\n')).toThrow(/retires/);
   });
 
-  test('acepta defaults.notify.on con failed y lo expone tal cual', () => {
+  test('accepts defaults.notify.on with failed and exposes it as is', () => {
     const config = parseRepoConfig('defaults:\n  notify:\n    on: [failed, success]\n    channel: telegram\n');
     expect(config.defaults.notify).toEqual({ on: ['failed', 'success'], channel: 'telegram' });
   });
 
-  // cli/context.ts depende de esto: loadRepoContext acepta un
-  // pipelines.yaml vacío (touch pipelines.yaml basta) porque todo campo de
-  // este esquema tiene un valor por defecto.
-  test('un config vacío parsea con éxito', () => {
+  // cli/context.ts depends on this: loadRepoContext accepts an empty
+  // pipelines.yaml (touch pipelines.yaml is enough) because every field of
+  // this schema has a default value.
+  test('an empty config parses successfully', () => {
     const config = parseRepoConfig('');
     expect(config).toEqual({ channels: {}, defaults: {} });
   });
 
-  test('un canal acepta env: opcional y expone los nombres declarados', () => {
+  test('a channel accepts an optional env: and exposes the declared names', () => {
     const config = parseRepoConfig(
       'channels:\n  email:\n    type: shell\n    run: scripts/notify.sh\n    env: [RESEND_API_KEY]\n',
     );
@@ -46,14 +46,14 @@ describe('parseRepoConfig', () => {
     });
   });
 
-  test('un canal sin env: declarado expone una lista vacía', () => {
+  test('a channel without env: declared exposes an empty list', () => {
     const config = parseRepoConfig('channels:\n  telegram:\n    type: shell\n    run: relay.sh\n');
     expect(config.channels['telegram']!.env).toEqual([]);
   });
 
-  test('rechaza una clave desconocida dentro de un canal nombrándola', () => {
+  test('rejects an unknown key inside a channel naming it', () => {
     expect(() =>
-      parseRepoConfig('channels:\n  x:\n    type: shell\n    run: r.sh\n    secretos: [A]\n'),
-    ).toThrow(/secretos/);
+      parseRepoConfig('channels:\n  x:\n    type: shell\n    run: r.sh\n    secrets: [A]\n'),
+    ).toThrow(/secrets/);
   });
 });

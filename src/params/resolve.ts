@@ -4,8 +4,8 @@ export class MissingParamsError extends Error {
   readonly missing: string[];
   constructor(missing: string[]) {
     super(
-      `Faltan params obligatorios: ${missing.join(', ')}.\n` +
-        `Indícalos al instalar o al ejecutar: --set ${missing[0]}=<valor>`,
+      `Missing required params: ${missing.join(', ')}.\n` +
+        `Pass them when installing or running: --set ${missing[0]}=<value>`,
     );
     this.name = 'MissingParamsError';
     this.missing = missing;
@@ -13,9 +13,9 @@ export class MissingParamsError extends Error {
 }
 
 export type ParamSources = {
-  /** Leído de .params.local.json, escrito por `pipelines install`. */
+  /** Read from .params.local.json, written by `pipelines install`. */
   local?: Record<string, string>;
-  /** Flags --set de la invocación actual. */
+  /** --set flags of the current invocation. */
   overrides?: Record<string, string>;
 };
 
@@ -28,10 +28,10 @@ export type InterpolationScope = {
   params: Record<string, string>;
   steps: Record<string, Record<string, unknown>>;
   /**
-   * Solo se rellena para la interpolación del prompt de un paso `agent`
-   * (ver `runAgentStep`) — el resto del sistema (`run:`/`cwd:`/guarda
-   * `shell:`) construye el scope sin este campo a propósito, así que
-   * `{{secrets.X}}` nunca resuelve ahí.
+   * Only filled in for interpolating the prompt of an `agent` step
+   * (see `runAgentStep`) — the rest of the system (`run:`/`cwd:`/`shell:`
+   * guard) builds the scope without this field on purpose, so
+   * `{{secrets.X}}` never resolves there.
    */
   secrets?: Record<string, string>;
 };
@@ -39,9 +39,9 @@ export type InterpolationScope = {
 const REFERENCE_RE = /\{\{\s*([a-zA-Z0-9_-]+)\.([a-zA-Z0-9_-]+)\s*\}\}/g;
 
 /**
- * Resuelve los params con la precedencia default < local < override.
- * Todos los valores se normalizan a string: el YAML puede traer números o
- * booleanos, pero la interpolación siempre produce texto.
+ * Resolves the params with the precedence default < local < override.
+ * All values are normalized to string: the YAML may bring numbers or
+ * booleans, but interpolation always produces text.
  */
 export function resolveParams(
   pipeline: Pipeline,
@@ -52,7 +52,7 @@ export function resolveParams(
   for (const key of Object.keys(sources.overrides ?? {})) {
     if (!declared.has(key)) {
       throw new Error(
-        `El param "${key}" no está declarado en el pipeline. Declarados: ${[...declared].join(', ') || '(ninguno)'}`,
+        `Param "${key}" is not declared in the pipeline. Declared: ${[...declared].join(', ') || '(none)'}`,
       );
     }
   }
@@ -74,7 +74,7 @@ export function resolveParams(
   return resolved;
 }
 
-/** Extrae todas las referencias `{{x.y}}` de un texto, en orden de aparición. */
+/** Extracts all `{{x.y}}` references from a text, in order of appearance. */
 export function findReferences(text: string): Reference[] {
   const refs: Reference[] = [];
   for (const match of text.matchAll(REFERENCE_RE)) {
@@ -92,29 +92,29 @@ export function findReferences(text: string): Reference[] {
 }
 
 /**
- * Sustituye las referencias `{{x.y}}` por sus valores. Una referencia que no
- * se puede resolver es un error: sustituirla por cadena vacía convertiría un
- * fallo de configuración en un comando silenciosamente incorrecto.
+ * Replaces `{{x.y}}` references with their values. A reference that cannot
+ * be resolved is an error: replacing it with an empty string would turn a
+ * configuration failure into a silently wrong command.
  */
 export function interpolate(text: string, scope: InterpolationScope): string {
   return text.replace(REFERENCE_RE, (_full, left: string, right: string) => {
     if (left === 'params') {
       const value = scope.params[right];
-      if (value === undefined) throw new Error(`Referencia sin resolver: params.${right}`);
+      if (value === undefined) throw new Error(`Unresolved reference: params.${right}`);
       return value;
     }
     if (left === 'secrets') {
       const value = scope.secrets?.[right];
-      if (value === undefined) throw new Error(`Referencia sin resolver: secrets.${right}`);
+      if (value === undefined) throw new Error(`Unresolved reference: secrets.${right}`);
       return value;
     }
     const step = scope.steps[left];
     if (step === undefined || !(right in step)) {
-      throw new Error(`Referencia sin resolver: ${left}.${right}`);
+      throw new Error(`Unresolved reference: ${left}.${right}`);
     }
     const value = step[right];
     if (value === null || value === undefined) {
-      throw new Error(`Referencia sin resolver: ${left}.${right}`);
+      throw new Error(`Unresolved reference: ${left}.${right}`);
     }
     return typeof value === 'object' ? JSON.stringify(value) : String(value);
   });
@@ -123,37 +123,36 @@ export function interpolate(text: string, scope: InterpolationScope): string {
 export type ShellInterpolation = { command: string; env: Record<string, string> };
 
 /**
- * Como `interpolate()`, pero para texto que se va a ejecutar con `sh -c`
- * (un `run:` de paso `shell`/`always:`, o una guarda `shell:`). En vez de
- * sustituir cada referencia por su valor DENTRO del texto del comando, la
- * sustituye por el nombre de una variable de entorno segura y devuelve el
- * valor real aparte, para pasarlo por `env` del proceso hijo. Así `sh`
- * nunca vuelve a parsear el valor como sintaxis de shell, sin importar qué
- * caracteres contenga — cierra la vía de inyección real de `interpolate()`
- * seguido de `sh -c`.
+ * Like `interpolate()`, but for text that will be run with `sh -c`
+ * (a `run:` of a `shell` step/`always:`, or a `shell:` guard). Instead of
+ * substituting each reference with its value INSIDE the command text, it
+ * replaces it with the name of a safe environment variable and returns the
+ * real value separately, to pass through the child process `env`. That way
+ * `sh` never parses the value again as shell syntax, whatever characters it
+ * contains — it closes the real injection route of `interpolate()` followed
+ * by `sh -c`.
  *
- * El token se inserta SIN comillas añadidas por esta función: respeta el
- * entrecomillado que ya tenga el propio YAML. Una referencia citada en el
- * YAML (`"{{x.y}}"`) queda citada (`"${__PIPELINES_REF_0}"`, correcto); una
- * sin citar queda sin citar (mismo comportamiento de división de palabras
- * que ya existía con sustitución cruda, no una regresión nueva) — lo único
- * que desaparece es la reinterpretación de metacaracteres como sintaxis.
+ * The token is inserted WITHOUT quotes added by this function: it respects
+ * whatever quoting the YAML itself already has. A reference quoted in the
+ * YAML (`"{{x.y}}"`) stays quoted (`"${__PIPELINES_REF_0}"`, correct); an
+ * unquoted one stays unquoted (same word-splitting behavior that already
+ * existed with raw substitution, not a new regression) — the only thing
+ * that goes away is reinterpreting metacharacters as syntax.
  *
- * El token usa SIEMPRE la forma con llaves (`${__PIPELINES_REF_0}`), nunca
- * `$__PIPELINES_REF_0` a secas: en `sh`, una expansión sin llaves se
- * extiende hasta el primer carácter no alfanumérico/no `_`, así que una
- * referencia pegada a texto sin separador (`run: echo {{params.x}}_final`)
- * generaría `$__PIPELINES_REF_0_final` — un nombre de variable DISTINTO
- * (inexistente), que se expande a vacío en silencio, sin error. Las llaves
- * no son comillas: `${VAR}` sin comillas divide palabras y expande rutas
- * exactamente igual que `$VAR` sin comillas, así que esto no contradice la
- * restricción de "sin comillas añadidas" de más arriba — solo delimita el
- * nombre de variable de forma inequívoca.
+ * The token ALWAYS uses the braced form (`${__PIPELINES_REF_0}`), never a
+ * bare `$__PIPELINES_REF_0`: in `sh`, an unbraced expansion extends up to
+ * the first non-alphanumeric/non-`_` character, so a reference stuck to
+ * text with no separator (`run: echo {{params.x}}_final`) would generate
+ * `$__PIPELINES_REF_0_final` — a DIFFERENT variable name (nonexistent),
+ * which silently expands to empty, with no error. Braces are not quotes:
+ * an unquoted `${VAR}` splits words and expands paths exactly like an
+ * unquoted `$VAR`, so this does not contradict the "no added quotes"
+ * restriction above — it only delimits the variable name unambiguously.
  *
- * Reutiliza `interpolate()` sobre cada coincidencia (`full`, la cadena
- * `{{x.y}}` completa) para resolver el valor: `full` contiene exactamente
- * una referencia, así que `interpolate(full, scope)` la resuelve con la
- * misma lógica de errores que el resto del sistema, sin duplicarla.
+ * Reuses `interpolate()` on each match (`full`, the whole `{{x.y}}`
+ * string) to resolve the value: `full` contains exactly one reference, so
+ * `interpolate(full, scope)` resolves it with the same error logic as the
+ * rest of the system, without duplicating it.
  */
 export function interpolateForShell(text: string, scope: InterpolationScope): ShellInterpolation {
   const env: Record<string, string> = {};

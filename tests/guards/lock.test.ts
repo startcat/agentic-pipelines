@@ -9,42 +9,42 @@ beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'ap-lock-')); });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe('lock', () => {
-  test('adquiere el lock cuando está libre', async () => {
+  test('acquires the lock when it is free', async () => {
     expect(await acquireLock(root, 'demo')).toBeDefined();
   });
 
-  test('un segundo intento sobre el mismo pipeline falla', async () => {
+  test('a second attempt on the same pipeline fails', async () => {
     const first = await acquireLock(root, 'demo');
     expect(first).toBeDefined();
     expect(await acquireLock(root, 'demo')).toBeUndefined();
   });
 
-  test('tras liberarlo se puede volver a adquirir', async () => {
+  test('after releasing it, it can be acquired again', async () => {
     const first = await acquireLock(root, 'demo');
     await releaseLock(first!);
     expect(await acquireLock(root, 'demo')).toBeDefined();
   });
 
-  test('pipelines distintos no se bloquean entre sí', async () => {
+  test('different pipelines do not block each other', async () => {
     expect(await acquireLock(root, 'a')).toBeDefined();
     expect(await acquireLock(root, 'b')).toBeDefined();
   });
 
-  test('un lock de un proceso muerto se reclama', async () => {
+  test('a lock from a dead process is reclaimed', async () => {
     const handle = await acquireLock(root, 'demo');
-    // Sobrescribe el lock con un PID que seguro no existe.
+    // Overwrite the lock with a PID that surely does not exist.
     await Bun.write(handle!.path, JSON.stringify({ pid: 999_999, startedAt: new Date().toISOString() }));
     expect(await acquireLock(root, 'demo')).toBeDefined();
   });
 
-  // --- Exclusión mutua, robo de locks ajenos y liberación ---
+  // --- Mutual exclusion, stealing of other people's locks, and release ---
 
-  test('dos adquisiciones simultáneas del mismo pipeline dejan un único dueño (carrera TOCTOU)', async () => {
-    // Antes del arreglo, el chequeo (leer + comprobar vida) y la escritura no
-    // eran atómicos: las dos llamadas podían leer "no hay lock" antes de que
-    // ninguna escribiera, y las dos terminaban "adquiriendo". La ausencia de
-    // un test así es justo lo que dejó pasar el defecto en una versión anterior
-    // — aquí sí se lanzan de verdad en paralelo con Promise.all.
+  test('two simultaneous acquisitions of the same pipeline leave a single owner (TOCTOU race)', async () => {
+    // Before the fix, the check (read + liveness check) and the write were
+    // not atomic: both calls could read "no lock" before either one wrote,
+    // and both ended up "acquiring". The absence of a test like this is
+    // exactly what let the defect through in an earlier version — here they
+    // really are launched in parallel with Promise.all.
     const [a, b] = await Promise.all([
       acquireLock(root, 'demo'),
       acquireLock(root, 'demo'),
@@ -53,10 +53,10 @@ describe('lock', () => {
     expect(holders.length).toBe(1);
   });
 
-  test('un lock vivo de otro usuario (EPERM) no se puede robar', async () => {
+  test('a live lock of another user (EPERM) cannot be stolen', async () => {
     const handle = await acquireLock(root, 'demo');
-    // Simula un dueño que sigue vivo pero pertenece a otro usuario: no
-    // podemos señalizarlo, pero tampoco debemos robarle el lock.
+    // Simulates an owner that is still alive but belongs to another user: we
+    // cannot signal it, but we must not steal its lock either.
     await Bun.write(
       handle!.path,
       JSON.stringify({ pid: 4_242, startedAt: new Date().toISOString() }),
@@ -77,10 +77,10 @@ describe('lock', () => {
     }
   });
 
-  test('releaseLock no borra un lock que pertenece a otro pid', async () => {
+  test('releaseLock does not delete a lock that belongs to another pid', async () => {
     const handle = await acquireLock(root, 'demo');
-    // Alguien más reclamó este mismo fichero de lock entretanto (o el
-    // handle quedó obsoleto): releaseLock no debe tocarlo.
+    // Someone else reclaimed this same lock file in the meantime (or the
+    // handle went stale): releaseLock must not touch it.
     await Bun.write(
       handle!.path,
       JSON.stringify({ pid: 123_456, startedAt: new Date().toISOString() }),
@@ -89,47 +89,44 @@ describe('lock', () => {
     expect(await Bun.file(handle!.path).exists()).toBe(true);
   });
 
-  // --- Lectura sin efectos y locks corruptos ---
+  // --- Side-effect-free reads and corrupt locks ---
 
-  test('readLock expone quién sostiene el lock sin adquirirlo ni modificarlo', async () => {
+  test('readLock exposes who holds the lock without acquiring or modifying it', async () => {
     const handle = await acquireLock(root, 'demo');
     const info = await readLock(root, 'demo');
     expect(info?.pid).toBe(process.pid);
-    // No adquirió nada por su cuenta: el lock sigue siendo el mismo.
+    // It acquired nothing on its own: the lock is still the same one.
     expect(await acquireLock(root, 'demo')).toBeUndefined();
     await releaseLock(handle!);
     expect(await readLock(root, 'demo')).toBeUndefined();
   });
 
-  test('un lock corrupto no se adquiere en silencio (fail-safe, no fail-open)', async () => {
+  test('a corrupt lock is not acquired silently (fail-safe, not fail-open)', async () => {
     const handle = await acquireLock(root, 'demo');
-    await Bun.write(handle!.path, 'esto no es JSON válido');
+    await Bun.write(handle!.path, 'this is not valid JSON');
     await expect(acquireLock(root, 'demo')).rejects.toThrow();
   });
 
-  // --- Reclamación atómica de un lock huérfano y lecturas entrecortadas
-  // (creación con wx) ---
+  // --- Atomic reclaim of an orphaned lock and torn reads (creation with wx) ---
 
-  test('adquisiciones concurrentes sobre un lock huérfano dejan un único dueño', async () => {
-    // Reproduce lo que dejó pasar una versión anterior: un lock huérfano (dueño
-    // muerto) y varias llamadas concurrentes sobre el MISMO pipeline. Se
-    // repite muchas veces porque una sola iteración de un test de carrera
-    // prueba poco. Cada iteración usa su propio pipeline para no depender
-    // de limpiar estado entre iteraciones.
+  test('concurrent acquisitions on an orphaned lock leave a single owner', async () => {
+    // Reproduces what an earlier version let through: an orphaned lock (dead
+    // owner) and several concurrent calls on the SAME pipeline. It is repeated
+    // many times because a single iteration of a race test proves little. Each
+    // iteration uses its own pipeline so as not to depend on cleaning up
+    // state between iterations.
     //
-    // Concurrencia deliberadamente moderada: las
-    // versiones anteriores de este test lanzaban 30 llamadas a la vez —
-    // la misma escala a la que aparece el riesgo residual ya medido y
-    // aceptado (ver el comentario en `acquireLock`, justo antes de
-    // `claimMarker`). Con esa escala, el test
-    // terminó afirmando una garantía que se decidió explícitamente NO
-    // dar, y sus fallos ocasionales (~1 de cada 200-400 ejecuciones) eran
-    // ruido, no una señal de regresión real. Aquí se prueba la exclusión
-    // mutua a la concurrencia que de verdad le importa a esta
-    // herramienta — un puñado de llamadas solapadas (p. ej. un cron que
-    // dispara durante una ejecución manual), no un tropel — donde la
-    // garantía SÍ es absoluta: exactamente un dueño, siempre, en las 30
-    // repeticiones.
+    // Deliberately moderate concurrency: earlier versions of this test
+    // launched 30 calls at once — the same scale at which the already
+    // measured and accepted residual risk appears (see the comment in
+    // `acquireLock`, right before `claimMarker`). At that scale, the test
+    // ended up asserting a guarantee that was explicitly decided NOT to give,
+    // and its occasional failures (~1 in 200-400 runs) were noise, not a sign
+    // of a real regression. Here mutual exclusion is tested at the
+    // concurrency this tool actually cares about — a handful of overlapping
+    // calls (e.g. a cron firing during a manual run), not a herd — where the
+    // guarantee IS absolute: exactly one owner, always, in all 30
+    // repetitions.
     for (let iteration = 0; iteration < 30; iteration++) {
       const pipeline = `race-${iteration}`;
       const seedPath = join(root, '.runs', '.locks', `${pipeline}.lock`);
@@ -146,12 +143,11 @@ describe('lock', () => {
     }
   });
 
-  test('adquisiciones y lecturas concurrentes nunca observan un fichero de lock a medio escribir', async () => {
-    // Con `writeFile(..., {flag:'wx'})` la creación no era atómica en su
-    // CONTENIDO: el fichero podía existir vacío un instante antes de
-    // rellenarse, y una lectura concurrente en esa ventana lanzaba
-    // SyntaxError al parsear. Ninguna de las llamadas de abajo debe
-    // lanzar por ese motivo.
+  test('concurrent acquisitions and reads never observe a half-written lock file', async () => {
+    // With `writeFile(..., {flag:'wx'})` creation was not atomic in its
+    // CONTENT: the file could exist empty for an instant before being
+    // filled, and a concurrent read in that window threw SyntaxError when
+    // parsing. None of the calls below must throw for that reason.
     const pipeline = 'hammer';
     const acquireCalls = Array.from({ length: 15 }, () => acquireLock(root, pipeline));
     const readCalls = Array.from({ length: 15 }, () => readLock(root, pipeline));
@@ -165,25 +161,25 @@ describe('lock', () => {
     expect(holders.length).toBe(1);
   });
 
-  test('un lock vacío se trata como ausente, no como corrupto', async () => {
+  test('an empty lock is treated as absent, not as corrupt', async () => {
     const handle = await acquireLock(root, 'demo');
     await Bun.write(handle!.path, '');
-    // Un fichero vacío es un estado benigno (alcanzable en una ventana de
-    // concurrencia estrecha), no corrupción: debe poder reclamarse sin
-    // lanzar, igual que un lock de un proceso muerto.
+    // An empty file is a benign state (reachable in a narrow concurrency
+    // window), not corruption: it must be reclaimable without throwing, just
+    // like a lock from a dead process.
     expect(await acquireLock(root, 'demo')).toBeDefined();
   });
 
-  // --- El marcador de reclamación no tenía información de vida y podía
-  // quedar huérfano para siempre ---
+  // --- The reclaim marker had no liveness information and could be left
+  // orphaned forever ---
 
-  test('un lock muerto con un marcador huérfano se recupera solo', async () => {
-    // Reproduce el fallo crítico: un proceso que muere a media
-    // reclamación (señal, OOM, corte de luz) deja el marcador huérfano.
-    // Antes el marcador no llevaba pid, así que
-    // `acquireLock` lo rechazaba para siempre aunque tanto el lock como el
-    // marcador tuvieran, ambos, un dueño muerto — el pipeline quedaba
-    // inadquirible pese a que nadie vivo lo sostenía.
+  test('a dead lock with an orphaned marker recovers on its own', async () => {
+    // Reproduces the critical failure: a process that dies midway through a
+    // reclaim (signal, OOM, power cut) leaves the marker orphaned. Before
+    // the fix the marker carried no pid, so `acquireLock` rejected it
+    // forever even though both the lock and the marker had a dead owner —
+    // the pipeline became impossible to acquire even though nobody alive
+    // held it.
     const lockFilePath = join(root, '.runs', '.locks', 'demo.lock');
     await Bun.write(
       lockFilePath,
@@ -200,15 +196,15 @@ describe('lock', () => {
     expect(info?.pid).toBe(process.pid);
   });
 
-  test('un marcador con dueño vivo no se roba', async () => {
+  test('a marker with a live owner is not stolen', async () => {
     const lockFilePath = join(root, '.runs', '.locks', 'demo.lock');
     await Bun.write(
       lockFilePath,
       JSON.stringify({ pid: 999_999, startedAt: new Date().toISOString() }),
     );
-    // El marcador lo sostiene un proceso vivo de verdad (el propio proceso
-    // de test): no debe robársele el privilegio de reclamar, aunque el
-    // lock en sí esté muerto.
+    // The marker is held by a genuinely live process (the test process
+    // itself): its reclaim privilege must not be stolen, even though the
+    // lock itself is dead.
     await Bun.write(
       `${lockFilePath}.reclaim`,
       JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }),
@@ -217,7 +213,7 @@ describe('lock', () => {
     expect(await acquireLock(root, 'demo')).toBeUndefined();
   });
 
-  test('un marcador vacío se trata como huérfano, no como corrupto', async () => {
+  test('an empty marker is treated as orphaned, not as corrupt', async () => {
     const lockFilePath = join(root, '.runs', '.locks', 'demo.lock');
     await Bun.write(
       lockFilePath,

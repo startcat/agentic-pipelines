@@ -1,8 +1,8 @@
 /**
- * La superficie de lectura. Solo `GET`, nada muta y no se escribe un byte
- * fuera de la respuesta: por eso puede estar abierta mientras corre un run sin
- * poder estorbarlo (`run.json` ya se escribe con `rename`
- * atómico, así que toda lectura ve una versión completa).
+ * The read surface. `GET` only, nothing mutates and not a byte is written
+ * outside the response: that is why it can stay open while a run is running
+ * without being able to get in its way (`run.json` is already written with an
+ * atomic `rename`, so every read sees a complete version).
  */
 import { join } from 'node:path';
 import { userHome } from '../cli/install-helpers.ts';
@@ -23,7 +23,7 @@ import { createJobFactsCache } from './facts.ts';
 
 const JOB_FACTS_TTL_MS = 30_000;
 
-/** Últimas líneas del log del job. Cadena vacía si no existe o está vacío. */
+/** Last lines of the job's log. Empty string if it doesn't exist or is empty. */
 const JOB_LOG_TAIL_BYTES = 4_000;
 
 async function tailJobLog(pipelineName: string): Promise<string> {
@@ -33,50 +33,50 @@ async function tailJobLog(pipelineName: string): Promise<string> {
 }
 
 /**
- * Resuelve un nombre de pipeline que viene de la URL. POR BÚSQUEDA en la lista
- * real: lo que no esté, es 404. Nunca se concatena la cadena de la URL en una
- * ruta de fichero — `loadPipeline` sí construye una ruta
- * con el nombre, así que pasarle lo que llegue sin filtrar sería el bug.
+ * Resolves a pipeline name that comes from the URL. BY LOOKUP in the real list:
+ * anything not there is a 404. The URL string is never concatenated into a
+ * file path — `loadPipeline` does build a path from the name, so passing it
+ * whatever arrives unfiltered would be the bug.
  */
 async function resolvePipelineName(ctx: RepoContext, raw: string): Promise<string | undefined> {
   const names = await listPipelineNames(ctx);
   return names.find((name) => name === raw);
 }
 
-const notFound = (): Response => new Response('No existe esa página.', { status: 404 });
+const notFound = (): Response => new Response('No such page.', { status: 404 });
 
 /**
- * Por qué un pipeline no se pudo leer, dicho para ESTA superficie.
+ * Why a pipeline couldn't be read, said for THIS surface.
  *
- * `loadPipeline` está escrito para el CLI, donde el nombre lo teclea una
- * persona y equivocarse es el caso normal: «No existe el pipeline "roto".
- * Disponibles: bueno, roto» es útil ahí. Aquí el nombre sale de recorrer el
- * disco, así que la frase se contradice —nombra a `roto` como ausente y como
- * disponible a la vez— y se lee como que la herramienta está rota.
+ * `loadPipeline` is written for the CLI, where a person types the name and
+ * getting it wrong is the normal case: "Pipeline "broken" does not exist.
+ * Available: good, broken" is useful there. Here the name comes from walking
+ * the disk, so the sentence contradicts itself —it names `broken` as absent
+ * and as available at once— and reads as if the tool is broken.
  *
- * En la web el hecho es otro y es simple: la carpeta está, el fichero no.
- * Cualquier otro fallo (un YAML ilegible, un `name` que no cuadra con su
- * directorio) conserva su mensaje: ahí el texto original es lo único que dice
- * qué hay que corregir.
+ * On the web the fact is different and simple: the folder is there, the file
+ * is not. Any other failure (an unreadable YAML, a `name` that doesn't match
+ * its directory) keeps its message: there the original text is the only thing
+ * that says what needs fixing.
  *
- * Devuelve TEXTO PLANO, sin etiquetas: `renderHealthPanel` lo pasa por
- * `escapeHtml` como todo lo demás.
+ * Returns PLAIN TEXT, no tags: `renderHealthPanel` runs it through
+ * `escapeHtml` like everything else.
  */
-async function motivoIlegible(ctx: RepoContext, name: string, err: unknown): Promise<string> {
+async function unreadableReason(ctx: RepoContext, name: string, err: unknown): Promise<string> {
   const yaml = join(ctx.root, 'pipelines', name, 'pipeline.yaml');
-  if (!(await Bun.file(yaml).exists())) return 'la carpeta no tiene pipeline.yaml';
+  if (!(await Bun.file(yaml).exists())) return 'the folder has no pipeline.yaml';
   return err instanceof Error ? err.message : String(err);
 }
 
 const POLL_MS = 1_000;
 
 /**
- * Un evento SSE. El dato va con `JSON.stringify` porque un fragmento de HTML
- * (o un delta de log) lleva saltos de línea, y en SSE una línea en blanco
- * TERMINA el evento: sin envolverlo, un dato multilínea partiría el stream.
- * Acepta `unknown` porque el evento `log` manda un objeto (`{ stepId, delta
- * }`, ver `createRunStream`), no una cadena suelta. El cliente hace el
- * `JSON.parse` correspondiente (ver `SSE_CLIENT` en render.ts).
+ * An SSE event. The data goes through `JSON.stringify` because an HTML
+ * fragment (or a log delta) contains newlines, and in SSE a blank line ENDS
+ * the event: without wrapping it, multi-line data would split the stream.
+ * It accepts `unknown` because the `log` event sends an object (`{ stepId,
+ * delta }`, see `createRunStream`), not a bare string. The client does the
+ * matching `JSON.parse` (see `SSE_CLIENT` in render.ts).
  */
 function sseEvent(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -90,9 +90,8 @@ export function createRunStream(
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const logDir = join(ctx.root, '.runs', name, runId);
-  // Desplazamiento por paso: solo se manda lo NUEVO. Un
-  // `.log` de un paso `agent` puede ser grande; reenviarlo entero cada
-  // segundo no es una opción.
+  // Offset per step: only what is NEW is sent. An `agent` step's `.log` can
+  // be large; resending it whole every second is not an option.
   const offsets = new Map<string, number>();
   let lastRunJson = '';
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -100,19 +99,19 @@ export function createRunStream(
   return new ReadableStream({
     start(controller) {
       const tick = async (): Promise<void> => {
-        // Sin este try/catch, un `run.json` corrupto que apareciera mientras
-        // la pestaña está abierta sería un rechazo NO capturado dentro de
-        // `setInterval` — y Bun mata el proceso entero por eso, no solo este
-        // stream. Para una superficie cuya tesis es que el silencio no debe
-        // parecer éxito, morir en silencio es justo el modo que no puede tener.
+        // Without this try/catch, a corrupt `run.json` appearing while the tab
+        // is open would be an UNCAUGHT rejection inside `setInterval` — and
+        // Bun kills the whole process over that, not just this stream. For a
+        // surface whose thesis is that silence must not look like success,
+        // dying silently is exactly the mode it can't have.
         try {
           const run = await store.readRun(name, runId);
           if (run === undefined) return;
 
-          // Solo lo que va dentro de `#live`, no la página entera: el cliente
-          // lo recibe con `innerHTML`, así que mandar `renderRunPage` anidaría
-          // una segunda copia de la miga de pan y del propio contenedor dentro
-          // de sí misma en cada tick.
+          // Only what goes inside `#live`, not the whole page: the client receives
+          // it with `innerHTML`, so sending `renderRunPage` would nest a second
+          // copy of the breadcrumb and of the container itself inside itself on
+          // every tick.
           const rendered = renderRunLive(run);
           if (rendered !== lastRunJson) {
             lastRunJson = rendered;
@@ -123,8 +122,8 @@ export function createRunStream(
             const file = Bun.file(join(logDir, `${step.id}.log`));
             if (!(await file.exists())) continue;
             const size = file.size;
-            // La primera vez se toma nota del tamaño sin mandar nada: lo que ya
-            // estaba en pantalla cuando se abrió el stream no se reenvía.
+            // The first time the size is noted without sending anything: what was
+            // already on screen when the stream was opened is not resent.
             const seen = offsets.get(step.id);
             if (seen === undefined) {
               offsets.set(step.id, size);
@@ -133,21 +132,21 @@ export function createRunStream(
             if (size <= seen) continue;
             const delta = await file.slice(seen, size).text();
             offsets.set(step.id, size);
-            // Con ámbito: el id del paso viaja junto al delta (el
-            // mismo evento alimenta la página de un run: pasos y log). Sin él, la página
-            // del paso no podría distinguir su propio delta del de cualquier
-            // otro paso corriendo a la vez en el mismo run.
+            // Scoped: the step's id travels with the delta (the same event feeds
+            // a run's page: steps and log). Without it, the step's page couldn't
+            // tell its own delta from that of any other step running at the
+            // same time in the same run.
             controller.enqueue(encoder.encode(sseEvent('log', { stepId: step.id, delta })));
           }
 
-          // Se cierra solo: el vivo solo tiene sentido mientras el run corre.
+          // It closes by itself: the live view only makes sense while the run is running.
           if (run.status !== 'running') {
             controller.enqueue(encoder.encode(sseEvent('done', '')));
             if (timer) clearInterval(timer);
             controller.close();
           }
         } catch (err) {
-          console.error(`[web] error refrescando el stream de ${name}/${runId}:`, err);
+          console.error(`[web] error refreshing the stream for ${name}/${runId}:`, err);
         }
       };
       timer = setInterval(() => void tick(), POLL_MS);
@@ -159,7 +158,7 @@ export function createRunStream(
   });
 }
 
-/** Tope de la vista HTML de un log. Por encima, enlace a `?raw=1`. */
+/** Cap of a log's HTML view. Above it, a link to `?raw=1`. */
 const MAX_LOG_CHARS = 200_000;
 
 export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Server<undefined> {
@@ -169,13 +168,13 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
   async function healthRows(now: Date): Promise<HealthRow[]> {
     const rows: HealthRow[] = [];
     for (const name of await listPipelineNames(ctx)) {
-      // Contención por pipeline: `loadPipeline` y `store.listRuns` lanzan en
-      // condiciones ORDINARIAS (un `pipelines/<x>/` a medio autoring sin
-      // `pipeline.yaml` — justo cuando este visor es más útil —, o un
-      // `run.json` truncado a media escritura). Sin este try/catch, un solo
-      // pipeline roto tumbaba `GET /` con 500 para todos los demás.
-      // `schedulerFor()` va dentro por lo mismo: en una plataforma sin
-      // programador cada fila enseña el error, pero el panel no da 500.
+      // Per-pipeline containment: `loadPipeline` and `store.listRuns` throw under
+      // ORDINARY conditions (a half-authored `pipelines/<x>/` with no
+      // `pipeline.yaml` — exactly when this viewer is most useful —, or a
+      // `run.json` truncated mid-write). Without this try/catch, a single
+      // broken pipeline took down `GET /` with a 500 for all the others.
+      // `schedulerFor()` is inside for the same reason: on a platform without a
+      // scheduler each row shows the error, but the dashboard doesn't 500.
       try {
         const backend = schedulerFor();
         const pipeline = await loadPipeline(ctx, name);
@@ -186,16 +185,16 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
           name,
           description: pipeline.description,
           health,
-          pasosTotales: pipeline.steps.length,
+          totalSteps: pipeline.steps.length,
           scheduler: { label: backend.label, logPath: backend.logPath(userHome(), name) },
-          // El log del job SOLO se lee aquí. Es el único
-          // rastro de un motor que muere antes de escribir `run.json`, y no es
-          // una fuente general — leerlo siempre lo convertiría en una segunda
-          // verdad que puede contradecir a `.runs/`.
+          // The job's log is read ONLY here. It is the only trace of an engine
+          // that dies before writing `run.json`, and it is not a general source
+          // — reading it always would make it a second truth that can
+          // contradict `.runs/`.
           ...(health.contradiction ? { jobLogTail: await tailJobLog(name) } : {}),
         });
       } catch (err) {
-        rows.push({ name, error: await motivoIlegible(ctx, name, err) });
+        rows.push({ name, error: await unreadableReason(ctx, name, err) });
       }
     }
     return rows;
@@ -209,28 +208,28 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
     return new ReadableStream({
       start(controller) {
         const tick = async (): Promise<void> => {
-          // `healthRows` ya contiene el error de cada pipeline por separado;
-          // este try/catch es la segunda red — cualquier otro fallo (p. ej. en
-          // `renderHealthPanel`) degrada el stream en vez de terminar el
-          // proceso: un rechazo sin capturar dentro de `setInterval` es un
-          // unhandled rejection, y Bun mata el proceso entero por eso.
+          // `healthRows` already holds each pipeline's error separately; this
+          // try/catch is the second net — any other failure (e.g. in
+          // `renderHealthPanel`) degrades the stream instead of ending the
+          // process: an uncaught rejection inside `setInterval` is an unhandled
+          // rejection, and Bun kills the whole process over that.
           try {
-            // `jobFacts` cachea con TTL de 30 s, así que este tick de un segundo
-            // NO pregunta al programador cada segundo.
-            const ahora = new Date();
-            const rendered = renderHealthPanel(await healthRows(ahora), ahora);
+            // `jobFacts` caches with a 30 s TTL, so this one-second tick does NOT
+            // ask the scheduler every second.
+            const now = new Date();
+            const rendered = renderHealthPanel(await healthRows(now), now);
             if (rendered === last) return;
             last = rendered;
             controller.enqueue(encoder.encode(sseEvent('panel', rendered)));
           } catch (err) {
-            console.error('[web] error refrescando el panel de salud:', err);
+            console.error('[web] error refreshing the health dashboard:', err);
           }
         };
         timer = setInterval(() => void tick(), POLL_MS);
         void tick();
       },
-      // A diferencia del stream de un run, este no se cierra solo: vive
-      // mientras la pestaña esté abierta.
+      // Unlike a run's stream, this one doesn't close by itself: it lives
+      // as long as the tab is open.
       cancel() {
         if (timer) clearInterval(timer);
       },
@@ -238,21 +237,21 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
   }
 
   return Bun.serve({
-    // Fijo y sin flag: exponer esto a la red es otro diseño, con su
-    // conversación sobre auth.
+    // Fixed and with no flag: exposing this to the network is a different
+    // design, with its own conversation about auth.
     hostname: '127.0.0.1',
     port: opts.port,
     routes: {
-      // Forma por-método, no el handler suelto: con el handler suelto Bun
-      // responde la página a CUALQUIER verbo (POST, PUT...), lo que viola
-      // la única regla de esta superficie — "toda ruta es GET". El handler por defecto (`fetch`) sigue
-      // devolviendo 404 para cualquier otra ruta y, con esta forma, también
-      // para un verbo no-GET sobre una ruta que sí existe.
+      // Per-method form, not the bare handler: with the bare handler Bun serves
+      // the page for ANY verb (POST, PUT...), which violates this surface's one
+      // rule — "every route is GET". The default handler (`fetch`) keeps
+      // returning 404 for any other route and, with this form, also for a
+      // non-GET verb on a route that does exist.
       '/': {
         GET: async () => {
-          const ahora = new Date();
+          const now = new Date();
           return new Response(
-            layout('pipelines', `<div id="live">${renderHealthPanel(await healthRows(ahora), ahora)}</div>`, {
+            layout('pipelines', `<div id="live">${renderHealthPanel(await healthRows(now), now)}</div>`, {
               sse: '/sse/health',
             }),
             { headers: { 'content-type': 'text/html; charset=utf-8' } },
@@ -280,7 +279,7 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
           if (run === undefined) return notFound();
           return new Response(
             layout(`${name} / ${run.id}`, renderRunPage(name, run), {
-              // El vivo solo tiene sentido mientras el run está corriendo.
+              // The live view only makes sense while the run is running.
               ...(run.status === 'running'
                 ? { sse: `/sse/${encodeURIComponent(name)}/${encodeURIComponent(run.id)}` }
                 : {}),
@@ -294,17 +293,17 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
           const name = await resolvePipelineName(ctx, req.params.name);
           if (name === undefined) return notFound();
           const run = (await store.listRuns(name)).find((r) => r.id === req.params.runId);
-          // El paso se valida contra las claves PROPIAS del run, no contra el
-          // disco ni contra la cadena de prototipos: así el `:stepId` de la
-          // URL nunca llega a formar parte de una ruta sin filtrar. Con
-          // `run.steps[id] === undefined` a secas, `constructor`, `toString`
-          // o `__proto__` devolvían 200 — no son claves propias, pero
-          // tampoco son `undefined`. `Object.hasOwn` cierra eso.
+          // The step is validated against the run's OWN keys, not against the disk
+          // nor the prototype chain: that way the URL's `:stepId` never becomes
+          // part of a path unfiltered. With a bare `run.steps[id] === undefined`,
+          // `constructor`, `toString` or `__proto__` returned 200 — they are not
+          // own keys, but they are not `undefined` either. `Object.hasOwn` closes
+          // that.
           if (run === undefined || !Object.hasOwn(run.steps, req.params.stepId)) return notFound();
 
           const path = join(ctx.root, '.runs', name, run.id, `${req.params.stepId}.log`);
           const file = Bun.file(path);
-          const text = (await file.exists()) ? await file.text() : '(este paso no dejó log)';
+          const text = (await file.exists()) ? await file.text() : '(this step left no log)';
 
           if (new URL(req.url).searchParams.get('raw') === '1') {
             return new Response(text, { headers: { 'content-type': 'text/plain; charset=utf-8' } });
@@ -316,13 +315,13 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
             layout(
               `${name} / ${run.id} / ${req.params.stepId}`,
               `<h2>${escapeHtml(req.params.stepId)}</h2>
-               ${truncated ? `<p>Mostrando la cola. <a href="${rawUrl}">Completo en texto plano</a>.</p>` : ''}
+               ${truncated ? `<p>Showing the tail. <a href="${rawUrl}">Full log as plain text</a>.</p>` : ''}
                <pre id="log">${escapeHtml(shown)}</pre>`,
               {
-                // El vivo solo tiene sentido mientras el run está corriendo,
-                // igual que en la página del run. Se le pasa su propio
-                // stepId para que el cliente escoja solo su porción del
-                // evento `log` (ver `SSE_CLIENT` en render.ts).
+                // The live view only makes sense while the run is running, same
+                // as on the run's page. It is passed its own stepId so the
+                // client picks only its portion of the `log` event (see
+                // `SSE_CLIENT` in render.ts).
                 ...(run.status === 'running'
                   ? {
                       sse: `/sse/${encodeURIComponent(name)}/${encodeURIComponent(run.id)}`,
@@ -361,6 +360,6 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
         },
       },
     },
-    fetch: () => new Response('No existe esa página.', { status: 404 }),
+    fetch: () => new Response('No such page.', { status: 404 }),
   });
 }

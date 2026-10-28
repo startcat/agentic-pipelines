@@ -4,34 +4,34 @@ import type { Pipeline, Step } from '../schema/pipeline.ts';
 export class GraphError extends Error {
   readonly issues: string[];
   constructor(issues: string[]) {
-    super(`Grafo de pasos inválido:\n  - ${issues.join('\n  - ')}`);
+    super(`Invalid step graph:\n  - ${issues.join('\n  - ')}`);
     this.name = 'GraphError';
     this.issues = issues;
   }
 }
 
 export type Graph = {
-  /** Orden topológico estable: respeta el orden declarado entre independientes. */
+  /** Stable topological order: respects the declared order among independent steps. */
   order: string[];
-  /** id de paso -> ids de los que depende. */
+  /** step id -> ids it depends on. */
   dependencies: Map<string, Set<string>>;
-  /** id de paso -> ids que dependen de él. Usado para la cascada de saltos. */
+  /** step id -> ids that depend on it. Used for the skip cascade. */
   dependents: Map<string, Set<string>>;
 };
 
 /**
- * Todos los textos de un paso donde puede haber referencias `{{x.y}}`.
+ * All the texts of a step where `{{x.y}}` references can appear.
  *
- * `additionalDirs` (solo pasos `agent`) faltaba aquí: `checkStepReferences`
- * (`graph/prompts.ts`) SÍ valida `{{steps.x.field}}` dentro de
- * `additional_dirs` y lo acepta como referencia válida, pero sin esta línea
- * el grafo nunca creaba la arista de dependencia correspondiente — un paso
- * que interpola la salida de otro en su `additional_dirs` podía ejecutarse
- * ANTES que el paso referenciado (el orden topológico no sabía que dependía
- * de él), y `interpolate()` (`runAgentStep`, `agent.ts`) lanzaría en tiempo
- * de ejecución un "Referencia sin resolver" en vez de que el grafo ordenara
- * los pasos correctamente. Mismo mecanismo que ya cubre `cwd` arriba: ambos
- * campos se interpolan contra el mismo `scope` en `runAgentStep`.
+ * `additionalDirs` (`agent` steps only) was missing here: `checkStepReferences`
+ * (`graph/prompts.ts`) DOES validate `{{steps.x.field}}` inside
+ * `additional_dirs` and accepts it as a valid reference, but without this
+ * line the graph never created the matching dependency edge — a step that
+ * interpolates another's output in its `additional_dirs` could run BEFORE
+ * the referenced step (the topological order did not know it depended on
+ * it), and `interpolate()` (`runAgentStep`, `agent.ts`) would throw an
+ * "Unresolved reference" at run time instead of the graph ordering the
+ * steps correctly. Same mechanism that already covers `cwd` above: both
+ * fields are interpolated against the same `scope` in `runAgentStep`.
  */
 function interpolatableTexts(step: Step): string[] {
   const texts: string[] = [];
@@ -43,10 +43,10 @@ function interpolatableTexts(step: Step): string[] {
 }
 
 /**
- * Referencias a pasos de un paso: las de `inputs` más las interpoladas.
- * Un `inputs` malformado (sin punto, o con más de uno) no lanza: se añade a
- * `issues` como un problema más, para que se acumule junto con el resto de
- * defectos del grafo en vez de eclipsarlos.
+ * Step references of a step: those of `inputs` plus the interpolated ones.
+ * A malformed `inputs` (no dot, or more than one) does not throw: it is
+ * added to `issues` as one more problem, so it accumulates with the rest of
+ * the graph's defects instead of overshadowing them.
  */
 function stepReferences(
   step: Step,
@@ -59,7 +59,7 @@ function stepReferences(
     const [from, field] = parts;
     if (parts.length !== 2 || !from || !field) {
       issues.push(
-        `${step.id}: input "${input}" debe tener la forma <paso>.<campo>`,
+        `${step.id}: input "${input}" must have the form <step>.<field>`,
       );
       continue;
     }
@@ -76,12 +76,12 @@ function stepReferences(
 }
 
 /**
- * Construye el grafo de dependencias entre pasos y su orden de ejecución.
- * Valida que toda referencia apunte a un paso existente y a un campo que ese
- * paso declara en `outputs`. El paso referenciado puede aparecer en
- * cualquier posición del YAML (antes o después del que lo referencia): no se
- * exige orden de declaración, solo ausencia de ciclos — el orden real de
- * ejecución lo decide `topoOrder`.
+ * Builds the dependency graph between steps and their execution order.
+ * Validates that every reference points to an existing step and to a field
+ * that step declares in `outputs`. The referenced step may appear at any
+ * position in the YAML (before or after the one referencing it): no
+ * declaration order is required, only the absence of cycles — the real
+ * execution order is decided by `topoOrder`.
  */
 export function buildGraph(pipeline: Pipeline): Graph {
   const issues: string[] = [];
@@ -98,12 +98,12 @@ export function buildGraph(pipeline: Pipeline): Graph {
     for (const ref of stepReferences(step, issues)) {
       const source = byId.get(ref.step);
       if (!source) {
-        issues.push(`${step.id}: referencia al paso inexistente "${ref.step}"`);
+        issues.push(`${step.id}: reference to nonexistent step "${ref.step}"`);
         continue;
       }
       if (!source.outputs || !(ref.field in source.outputs)) {
         issues.push(
-          `${step.id}: el paso "${ref.step}" no declara el output "${ref.field}" (referencia ${ref.step}.${ref.field})`,
+          `${step.id}: step "${ref.step}" does not declare the output "${ref.field}" (reference ${ref.step}.${ref.field})`,
         );
         continue;
       }
@@ -119,9 +119,10 @@ export function buildGraph(pipeline: Pipeline): Graph {
 }
 
 /**
- * Orden topológico estable por selección: en cada vuelta toma el primer paso
- * (en orden declarado) cuyas dependencias ya estén colocadas. Así dos pasos
- * independientes conservan el orden del YAML, que es lo que el autor espera.
+ * Stable topological order by selection: on each iteration it takes the first
+ * step (in declared order) whose dependencies are already placed. That way
+ * two independent steps keep the YAML order, which is what the author
+ * expects.
  */
 function topoOrder(
   pipeline: Pipeline,
@@ -147,13 +148,13 @@ function topoOrder(
 }
 
 /**
- * Construye el `GraphError` cuando `topoOrder` se atasca. `remaining` puede
- * mezclar varios grupos que no deben confundirse: uno o más ciclos (cada
- * componente fuertemente conexa cuenta como uno, sea un ciclo simple o
- * varios que comparten vértice), y los pasos que solo quedan bloqueados por
- * depender (directa o transitivamente) de alguno de ellos. Cada ciclo se
- * reporta por separado y solo lo que de verdad queda fuera de todos ellos se
- * etiqueta como bloqueado.
+ * Builds the `GraphError` when `topoOrder` gets stuck. `remaining` can mix
+ * several groups that must not be confused: one or more cycles (each
+ * strongly connected component counts as one, whether a simple cycle or
+ * several sharing a vertex), and the steps that are only blocked because
+ * they depend (directly or transitively) on one of them. Each cycle is
+ * reported separately and only what really falls outside all of them is
+ * labeled as blocked.
  */
 function cycleError(
   remaining: string[],
@@ -164,41 +165,41 @@ function cycleError(
   const blocked = remaining.filter((id) => !cycleNodes.has(id));
 
   const issues = cycles.map(
-    (cycle) => `ciclo de dependencias entre los pasos: ${cycle.join(', ')}`,
+    (cycle) => `dependency cycle between the steps: ${cycle.join(', ')}`,
   );
   if (blocked.length > 0) {
     const [label, pronoun] =
-      cycles.length === 1 ? ['el ciclo anterior', 'él'] : ['los ciclos anteriores', 'ellos'];
+      cycles.length === 1 ? ['the cycle above', 'it'] : ['the cycles above', 'them'];
     issues.push(
-      `pasos bloqueados por ${label}, no forman parte de ${pronoun}: ${blocked.join(', ')}`,
+      `steps blocked by ${label}, not part of ${pronoun}: ${blocked.join(', ')}`,
     );
   }
   return new GraphError(issues);
 }
 
 /**
- * Encuentra todos los ciclos dentro de `remaining` mediante el algoritmo de
- * Tarjan de componentes fuertemente conexas (SCC), restringido a las
- * aristas entre nodos de `remaining` (las que apuntan fuera ya están
- * resueltas por `topoOrder` y no pueden formar parte de un ciclo aquí).
+ * Finds all the cycles within `remaining` using Tarjan's algorithm for
+ * strongly connected components (SCC), restricted to the edges between
+ * nodes of `remaining` (those pointing outside are already resolved by
+ * `topoOrder` and cannot be part of a cycle here).
  *
- * Por qué SCC y no "buscar un ciclo simple y repetir": dos ciclos simples
- * que comparten un vértice (p. ej. a↔b y b↔c) no son dos ciclos separables,
- * son una única componente fuertemente conexa — a, b y c son mutuamente
- * alcanzables entre sí. Intentar pelarlos como ciclos independientes deja
- * uno de los nodos mal etiquetado como "bloqueado" cuando en realidad sigue
- * siendo cíclico, solo que por el ciclo que no se reportó. Tarjan evita el
- * problema de raíz: cada SCC de tamaño ≥ 2 es, por definición, un ciclo
- * (todos sus miembros son mutuamente alcanzables), y una SCC de un único
- * nodo solo es cíclica si ese nodo depende de sí mismo (auto-referencia).
- * Todo lo que quede fuera de cualquier SCC cíclica es, por construcción,
- * genuinamente acíclico: solo puede estar bloqueado por depender de un
- * ciclo, nunca ser parte de uno no detectado.
+ * Why SCC and not "find a simple cycle and repeat": two simple cycles that
+ * share a vertex (e.g. a↔b and b↔c) are not two separable cycles, they are
+ * a single strongly connected component — a, b and c are mutually
+ * reachable. Trying to peel them off as independent cycles leaves one of
+ * the nodes wrongly labeled "blocked" when it is actually still cyclic,
+ * just through the cycle that was not reported. Tarjan avoids the problem
+ * at the root: every SCC of size ≥ 2 is, by definition, a cycle (all its
+ * members are mutually reachable), and a single-node SCC is only cyclic if
+ * that node depends on itself (self-reference). Everything left outside any
+ * cyclic SCC is, by construction, genuinely acyclic: it can only be blocked
+ * by depending on a cycle, never be part of an undetected one.
  *
- * El resultado es determinista: los miembros de cada ciclo se listan en el
- * orden declarado del YAML (el de `remaining`), y los ciclos entre sí se
- * ordenan por la posición declarada de su primer miembro — no se depende
- * del orden de descubrimiento de Tarjan, que es un accidente del recorrido.
+ * The result is deterministic: the members of each cycle are listed in the
+ * YAML's declared order (that of `remaining`), and the cycles are ordered
+ * among themselves by the declared position of their first member — it
+ * does not depend on Tarjan's discovery order, which is an accident of the
+ * traversal.
  */
 function findCycles(
   remaining: string[],
@@ -235,9 +236,9 @@ function findCycles(
       const component: string[] = [];
       let w: string;
       do {
-        // No hay riesgo de vaciar la pila antes de encontrar `v`: se
-        // empujó al entrar en esta llamada y nada lo retira hasta que su
-        // propia SCC se cierra, justo aquí.
+        // There is no risk of emptying the stack before finding `v`: it
+        // was pushed on entering this call and nothing removes it until its
+        // own SCC closes, right here.
         w = stack.pop()!;
         onStack.delete(w);
         component.push(w);

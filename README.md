@@ -19,8 +19,7 @@ the commands and what gets persisted is in [`docs/reference.md`](docs/reference.
 > **Status.** Version 0.1.0. Runs on **macOS** (scheduled with `launchd`) and
 > on **Linux with systemd** (scheduled with user timers; see
 > [Install on Linux](#install-on-linux)). There is no crontab backend, and
-> Windows through WSL2 hasn't been verified. CLI messages and code comments
-> are currently in Spanish; the documentation is in English.
+> Windows through WSL2 hasn't been verified.
 
 > **Want something that works today?** [pipelines-starter](https://github.com/startcat/pipelines-starter)
 > has seven ready-to-use pipelines (website checks, stale pull requests, a
@@ -145,8 +144,7 @@ Full details in [The security model](docs/reference.md#the-security-model).
   agent tried to read a file outside its working folder; the engine blocked
   it, recorded it, and the run still finished green.
 
-The dashboard updates live while a run is in progress. Like the CLI messages,
-it's in Spanish for now.
+The dashboard updates live while a run is in progress.
 
 ## Installation
 

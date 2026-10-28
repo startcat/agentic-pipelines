@@ -14,21 +14,21 @@ import { setResolvedStartDir } from './shared.ts';
 const program = new Command();
 program
   .name('pipelines')
-  .description('Motor de pipelines agénticos')
+  .description('Agentic pipelines engine')
   .option(
     '--repo <path>',
-    'ruta al repo de pipelines (o un subdirectorio suyo). Si no se indica, ' +
-      'se usa PIPELINES_REPO; si tampoco está definida, se busca ascendiendo ' +
-      'desde el directorio actual. Debe ir antes del subcomando.',
+    'path to the data repo (or a subdirectory of it). If not given, ' +
+      'PIPELINES_REPO is used; if that is not set either, it is searched ' +
+      'upward from the current directory. Must come before the subcommand.',
   );
 
 /**
- * Punto de partida para `loadRepoContext`: independiente del directorio de
- * invocación. Precedencia
- * `--repo` > `PIPELINES_REPO` > cwd (la búsqueda ascendente en sí vive en
- * `loadRepoContext`, context.ts). Sin esto, un cron o launchd que no fije
- * `WorkingDirectory` arranca en un directorio sin relación con el repo y
- * `pipelines run` falla siempre.
+ * Starting point for `loadRepoContext`: independent of the invocation
+ * directory. Precedence
+ * `--repo` > `PIPELINES_REPO` > cwd (the upward search itself lives in
+ * `loadRepoContext`, context.ts). Without this, a cron or launchd that does
+ * not set `WorkingDirectory` starts in a directory unrelated to the repo and
+ * `pipelines run` always fails.
  */
 program.hook('preAction', () => {
   setResolvedStartDir(program.opts().repo ?? process.env.PIPELINES_REPO ?? process.cwd());

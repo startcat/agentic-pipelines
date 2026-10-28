@@ -23,9 +23,9 @@ export function registerRun(program: Command): void {
   program
     .command('run')
     .argument('<name>')
-    .option('--set <clave=valor>', 'valor de un param (repetible)', collectSetFlag, [] as string[])
-    .option('--force', 'ejecuta aunque una guarda de `when:` no pase', false)
-    .description('Ejecuta el pipeline ahora')
+    .option('--set <key=value>', 'value of a param (repeatable)', collectSetFlag, [] as string[])
+    .option('--force', 'run even if a `when:` guard does not pass', false)
+    .description('Run the pipeline now')
     .action(async (name: string, opts: { set: string[]; force: boolean }) => {
       await withContext(async (ctx) => {
         const pipeline = await loadPipeline(ctx, name);
@@ -37,28 +37,28 @@ export function registerRun(program: Command): void {
           processEnv: process.env,
           dotEnv: ctx.dotEnv,
         });
-        // `hasBlockingFailures`, no `report.ok`: un check `mcp-schema` es
-        // puramente informativo de `doctor` (ver su doc comment) — nunca debe
-        // impedir una ejecución real. `doctor`, más abajo, sigue usando
-        // `report.ok` sin cambios: ahí SÍ debe ser tan ruidoso como siempre.
+        // `hasBlockingFailures`, not `report.ok`: an `mcp-schema` check is
+        // purely informational for `doctor` (see its doc comment) — it must
+        // never prevent a real run. `doctor`, further below, still uses
+        // `report.ok` unchanged: there it SHOULD be as noisy as ever.
         if (hasBlockingFailures(report)) {
           printPreflight(report);
-          console.error('\nFaltan dependencias — no se ejecuta nada.');
+          console.error('\nMissing dependencies — nothing will run.');
           process.exitCode = EXIT_FAILURE;
           return;
         }
         if (!report.ok) {
-          // Únicamente fallos advisory (mcp-schema): no bloquean `run`, pero
-          // se avisan igualmente — el operador debería poder verlos sin tener
-          // que acordarse de correr `doctor` aparte.
+          // Only advisory failures (mcp-schema): they do not block `run`, but
+          // they are reported anyway — the operator should be able to see them
+          // without having to remember to run `doctor` separately.
           for (const check of report.checks.filter((c) => !c.ok)) {
-            console.error(`  aviso: ${check.kind} ${check.name} — ${check.detail}`);
+            console.error(`  warning: ${check.kind} ${check.name} — ${check.detail}`);
           }
         }
 
-        // Se resuelve ANTES de tomar el lock: un param obligatorio ausente no
-        // debe hacer que este proceso compita por (ni bloquee) una ejecución
-        // que no va a llegar a arrancar.
+        // Resolved BEFORE taking the lock: a missing required param must not
+        // make this process compete for (or block) a run that is never going
+        // to start.
         const params = resolveParams(pipeline, {
           local: await loadLocalParams(ctx, name),
           overrides: parseSetFlags(opts.set),
@@ -68,23 +68,25 @@ export function registerRun(program: Command): void {
           ctx.root,
           name,
           async () => {
-            // `--force` no toca preflight: eso mide si esta máquina PUEDE
-            // ejecutar el pipeline (auth, binarios, secretos), y saltárselo solo
-            // adelantaría el mismo fallo unos segundos. Lo que omite son las
-            // guardas de `when:`, que son política — "hoy no toca" —, y esa es
-            // la única que un humano delante puede contradecir a sabiendas.
+            // `--force` does not touch preflight: that measures whether this
+            // machine CAN run the pipeline (auth, binaries, secrets), and
+            // skipping it would only bring the same failure forward by a few
+            // seconds. What it skips are the `when:` guards, which are policy
+            // — "not today" —, and that is the only kind a human in front of
+            // it can knowingly overrule.
             const guards = opts.force
               ? ({ pass: true } as const)
               : await evaluateGuards(pipeline, { store, params, now: new Date() });
             if (opts.force) {
-              console.error('aviso: --force, se omite la evaluación de las guardas `when:`.');
+              console.error('warning: --force: skipping the `when:` guards.');
             }
             if (!guards.pass) {
               const run = await store.createRun(name, pipeline.version, params);
-              // `finishRun` muta `run` (le fija status y finishedAt), así que
-              // lo que se notifica es ya el registro cerrado, no el de arranque.
+              // `finishRun` mutates `run` (it sets status and finishedAt), so
+              // what gets notified is already the closed record, not the
+              // starting one.
               await store.finishRun(run, 'skipped', guards.reason);
-              console.log(`saltado: ${guards.reason}`);
+              console.log(`skipped: ${guards.reason}`);
               await notifyRunClosed(pipeline, run, ctx, store);
               return;
             }

@@ -9,20 +9,21 @@ export const OK = '✓';
 export const KO = '✗';
 
 /**
- * Códigos de salida: pensados para que un cron o un script puedan actuar sin
- * tener que interpretar la salida por pantalla.
- *   0   éxito. Incluye una guarda `when`/`throttle` que decide saltar la
- *       ejecución: es un resultado normal del pipeline, no un error — se deja el valor por defecto, sin constante.
- *   1   fallo genérico: pipeline.yaml inválido, dependencia ausente
- *       (preflight/doctor), params obligatorios ausentes o un paso que
- *       falló tras agotar sus reintentos.
- *   2   el propio fichero de lock está dañado o es ilegible — no es que
- *       otra ejecución lo tenga, algo va mal con el fichero en sí
- *       (`acquireLock` lanzó en vez de devolver `undefined`).
- *   3   ya hay otra ejecución legítima en curso sobre este pipeline
- *       (`acquireLock` devolvió `undefined`).
- *   130/143  el propio proceso fue interrumpido (SIGINT/SIGTERM) mientras
- *       sostenía el lock — convención Unix habitual (128 + señal).
+ * Exit codes: meant so that a cron or a script can act without having to
+ * interpret the on-screen output.
+ *   0   success. Includes a `when`/`throttle` guard that decides to skip the
+ *       run: that is a normal pipeline result, not an error — the default
+ *       value is kept, no constant.
+ *   1   generic failure: invalid pipeline.yaml, missing dependency
+ *       (preflight/doctor), missing required params or a step that
+ *       failed after exhausting its retries.
+ *   2   the lock file itself is damaged or unreadable — it is not that
+ *       another run holds it, something is wrong with the file itself
+ *       (`acquireLock` threw instead of returning `undefined`).
+ *   3   another legitimate run is already in progress on this pipeline
+ *       (`acquireLock` returned `undefined`).
+ *   130/143  the process itself was interrupted (SIGINT/SIGTERM) while
+ *       holding the lock — usual Unix convention (128 + signal).
  */
 export const EXIT_FAILURE = 1;
 export const EXIT_LOCK_ERROR = 2;
@@ -36,7 +37,7 @@ export function parseSetFlags(values: string[]): Record<string, string> {
   const result: Record<string, string> = {};
   for (const value of values) {
     const index = value.indexOf('=');
-    if (index === -1) throw new Error(`--set espera clave=valor, se recibió "${value}"`);
+    if (index === -1) throw new Error(`--set expects key=value, got "${value}"`);
     result[value.slice(0, index)] = value.slice(index + 1);
   }
   return result;
@@ -50,12 +51,11 @@ export function printPreflight(report: PreflightReport): void {
 }
 
 /**
- * Directorio de arranque resuelto UNA SOLA VEZ por el hook `preAction` del
- * entrypoint (`index.ts`), antes de que cualquier acción de subcomando
- * arranque. Ningún comando debe calcular esto por su cuenta ni tocar
- * Commander para conseguirlo — sustituye a la antigua `resolveStartDir()`,
- * que leía `program.opts().repo` desde fuera del módulo que declara
- * `program`.
+ * Start directory resolved ONLY ONCE by the entrypoint's `preAction` hook
+ * (`index.ts`), before any subcommand action starts. No command should
+ * compute this on its own or touch Commander to get it — it replaces the old
+ * `resolveStartDir()`, which read `program.opts().repo` from outside the
+ * module that declares `program`.
  */
 let resolvedStartDir: string | undefined;
 
@@ -66,7 +66,7 @@ export function setResolvedStartDir(dir: string): void {
 export function getResolvedStartDir(): string {
   if (resolvedStartDir === undefined) {
     throw new Error(
-      'getResolvedStartDir(): se llamó antes de que el hook preAction del entrypoint lo resolviera',
+      "getResolvedStartDir(): called before the entrypoint's preAction hook resolved it",
     );
   }
   return resolvedStartDir;
@@ -76,36 +76,35 @@ export async function withContext<T>(fn: (ctx: RepoContext) => Promise<T>): Prom
   try {
     return await fn(await loadRepoContext(getResolvedStartDir()));
   } catch (err) {
-    // Seguro llamar a process.exit aquí: cualquier lock que se hubiera
-    // adquirido dentro de `fn` ya se liberó en el `finally` de `withLock`
-    // antes de que la excepción llegara hasta este catch (ver `withLock`).
+    // Safe to call process.exit here: any lock acquired inside `fn` was
+    // already released in `withLock`'s `finally` before the exception
+    // reached this catch (see `withLock`).
     console.error((err as Error).message);
     process.exit(EXIT_FAILURE);
   }
 }
 
 /**
- * Guarda el rastro del canal en run.json sin que un fallo al escribirlo
- * (un run que no vive en `.runs/`, disco lleno) tape el aviso original.
+ * Saves the channel's trace in run.json without letting a failure to write it
+ * (a run that does not live in `.runs/`, full disk) hide the original warning.
  */
 async function persistNotify(store: RunStore, record: RunRecord, notify: NotifyRecord): Promise<void> {
   try {
     await store.writeNotify(record, notify);
   } catch (err) {
-    console.error(`aviso: no se pudo guardar el rastro del notify: ${(err as Error).message}`);
+    console.error(`warning: could not save the notify trace: ${(err as Error).message}`);
   }
 }
 
 /**
- * Notifica el cierre de un run, sea cual sea el camino por el que se cerró
- * (fin normal, guarda que lo salta, lock ocupado). Best-effort a propósito:
- * un canal roto no cambia el resultado del run, solo se avisa por
- * stderr.
+ * Notifies the closing of a run, whichever way it was closed (normal end,
+ * guard that skips it, busy lock). Best-effort on purpose: a broken channel
+ * does not change the run's result, it only warns on stderr.
  *
- * `lastSuccess` se consulta DESPUÉS de cerrar el run — así un run que acaba
- * de ir bien cuenta como su propio último éxito y nunca se anuncia stale —, y
- * solo si el pipeline declara `stale_after`, para no pagar el listado de
- * `.runs/` en el caso normal.
+ * `lastSuccess` is queried AFTER closing the run — so a run that just
+ * succeeded counts as its own last success and is never announced as stale —,
+ * and only if the pipeline declares `stale_after`, to avoid paying for the
+ * `.runs/` listing in the normal case.
  */
 export async function notifyRunClosed(
   pipeline: Pipeline,
@@ -120,9 +119,9 @@ export async function notifyRunClosed(
     const notify = await dispatchNotify(pipeline, record, ctx, { lastSuccessAt: lastSuccess?.startedAt });
     if (notify) await persistNotify(store, record, notify);
   } catch (err) {
-    // El rastro de un canal que falla se guarda igual: es el envío que más
-    // falta hace poder leer después.
+    // The trace of a failing channel is saved anyway: it is the delivery that
+    // most needs to be readable later.
     if (err instanceof ChannelFailedError) await persistNotify(store, record, err.notify);
-    console.error(`aviso: notify falló: ${(err as Error).message}`);
+    console.error(`warning: notify failed: ${(err as Error).message}`);
   }
 }

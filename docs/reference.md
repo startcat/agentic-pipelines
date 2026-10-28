@@ -385,7 +385,7 @@ not the SDK's `permissionMode`; it is the engine**:
    - **`additional_dirs`** widens the **read** roots, never the write ones:
      a step can read a source-of-truth repo without being able to touch it.
    - Any tool without an entry in the internal table is denied by default,
-     with the reason `tool desconocida para el motor: "<name>"`: fail closed
+     with the reason `unknown tool for the engine: "<name>"`: fail closed
      in the face of the unknown, not open.
    - The hook never throws: any internal error becomes an explicit denial.
 
@@ -472,7 +472,7 @@ current directory.
 | `doctor` | `pipelines doctor <name>` | Checks that the current machine can run the pipeline: agents, binaries, MCP servers (real start-up + live schema drift), environment variables, network resolution, and the Anthropic API key when the pipeline has `agent` steps. On Linux it adds platform checks: the systemd user bus, linger, `bash` on the `PATH` and the time zone (on UTC it warns that schedules will be read in UTC). Platform checks are informational: they are shown in red when they fail but never make `doctor` or `run` fail. |
 | `install` | `pipelines install <name> [--set k=v] [--force] [--dry-run]` | Installs the pipeline as a scheduled job from its `triggers.cron`: launchd on macOS, a systemd user timer on Linux (see [Scheduling backends](#scheduling-backends)). Writes the params to `.params.local.json` and the job files, derived and with no values inside. Computes the `PATH` from `requires.bin` and the `mcp_servers` `command`s, and checks that this `PATH` resolves everything needed (including the shell steps' interpreter: `sh` on macOS, `bash` on Linux) before writing anything. Warns about optional params without a value and the steps they affect. Stops if `doctor` is red, if there's a suspicious foreign job and, on Linux, if linger is missing. `--force` skips those cut-offs, but still WARNS, never silently. `--dry-run` goes through those same validations, prints the files it would write (on Linux, each one preceded by its path) and exits without touching anything: not the job files, not `.params.local.json` even if it gets `--set`, not the scheduler. A failing validation makes it fail all the same, so it is usable inside a script; the exception is linger, which the dry run shows but doesn't stop on. |
 | `uninstall` | `pipelines uninstall <name>` | Unloads the job (always, even if its files no longer exist) and deletes its files if it finds them: the plist on macOS; the `.service` and the `.timer` on Linux. Never uses `launchctl disable` or `systemctl mask`. Doesn't touch `.params.local.json` or the logs. Idempotent. |
-| `run` | `pipelines run <name> [--set key=value ...] [--force]` | Runs the pipeline now. `--set` is repeatable, to pass/override params. Evaluates `requires` (blocking) and the `when:` guards (a `skipped` is a success, not an error) before starting. Acquires an exclusive per-pipeline lock for the duration of the run. `--force` skips the `when:` guards (policy: "not today") but NOT `requires`, which measures whether this machine can run the pipeline; it warns on stderr and marks the run with `forced: true`, which `status` shows as `(guardas omitidas)`. A forced run doesn't prove the guards would have let it through, and it does anchor the `throttle` like any other run that executed. |
+| `run` | `pipelines run <name> [--set key=value ...] [--force]` | Runs the pipeline now. `--set` is repeatable, to pass/override params. Evaluates `requires` (blocking) and the `when:` guards (a `skipped` is a success, not an error) before starting. Acquires an exclusive per-pipeline lock for the duration of the run. `--force` skips the `when:` guards (policy: "not today") but NOT `requires`, which measures whether this machine can run the pipeline; it warns on stderr and marks the run with `forced: true`, which `status` shows as `(guards skipped)`. A forced run doesn't prove the guards would have let it through, and it does anchor the `throttle` like any other run that executed. |
 | `resume` | `pipelines resume <name> <run-id>` | Resumes a `failed` run from where it stopped, reusing its original params. |
 | `status` | `pipelines status [name] [-n, --limit <n>]` | Lists the latest runs (5 by default) of one pipeline, or of all of them if the name is omitted: id, status, cost, skip reason if any. |
 | `show` | `pipelines show <name> <run-id> [step]` | Dumps the full `RunRecord` as JSON, or the `StepRecord` of a specific step if given (including `denials` if the step had any tool denied). The `RunRecord` includes `notify` when the channel was invoked: channel, exit code, timestamp and the (redacted) tail of its output, also when the channel failed. The `error` of a failed shell step includes the last lines of its stderr. |
@@ -663,7 +663,7 @@ per pipeline and per run:
 | `denials` | List of tools denied by the sandboxing hook; see [The security model](#the-security-model) |
 
 Each `<step>.log` holds the step's transcript, with any secret value already
-replaced by `«redactado»` before it touches disk.
+replaced by `[redacted]` before it touches disk.
 
 ## Data repo layout
 

@@ -1,22 +1,22 @@
 import { findReferences } from '../params/resolve.ts';
 import type { Pipeline } from '../schema/pipeline.ts';
 
-/** Un tramo de un comando de shell, y si bash expandiría `${…}` dentro. */
+/** A segment of a shell command, and whether bash would expand `${…}` inside it. */
 export type Segment = { text: string; expands: boolean };
 
 type Heredoc = { delimiter: string; expands: boolean; stripTabs: boolean };
 
 /**
- * Parte un comando de shell en tramos, marcando cada uno según si bash
- * expandiría `${…}` dentro.
+ * Splits a shell command into segments, marking each one by whether bash
+ * would expand `${…}` inside it.
  *
- * NO es un parser de bash y no debe llegar a serlo. Cubre cinco contextos
- * donde una referencia del motor puede acabar: comillas simples, comillas
- * dobles, escapes, comentarios, y heredocs con y sin delimitador
- * entrecomillado. Ante cualquier construcción que no entienda, el estado por
- * defecto es "expande" — o sea, no avisar. Un falso negativo aquí cuesta una
- * noche; un falso positivo hace que la regla se silencie y entonces no
- * cuesta una noche, cuesta todas.
+ * It is NOT a bash parser and must not become one. It covers five contexts
+ * where an engine reference can end up: single quotes, double quotes,
+ * escapes, comments, and heredocs with and without a quoted delimiter. For
+ * any construct it does not understand, the default state is "expands" —
+ * that is, do not warn. A false negative here costs one night; a false
+ * positive gets the rule silenced, and then it costs not one night but all
+ * of them.
  */
 export function splitByExpansion(command: string): Segment[] {
   const segments: Segment[] = [];
@@ -54,7 +54,7 @@ export function splitByExpansion(command: string): Segment[] {
         continue;
       }
       if (quote === 'double') {
-        // Dentro de comillas dobles la barra invertida sí escapa.
+        // Inside double quotes the backslash does escape.
         if (c === '\\') {
           i += 2;
           continue;
@@ -70,18 +70,18 @@ export function splitByExpansion(command: string): Segment[] {
         c === '#' &&
         (i === 0 || /\s/.test(line[i - 1]!) || ';&|('.includes(line[i - 1]!))
       ) {
-        // Un comentario. Sin esto, el apóstrofo de un `# no s'ha de…` abre una
-        // cadena que no cierra en toda la línea y deja el RESTO del bloque
-        // marcado como "no expande". Los pipelines de este repo están
-        // comentados en catalán: al probar la regla contra los tres reales dio
-        // 5 falsos positivos, todos por esta causa, y los 5 sobre referencias
-        // que en realidad van entre comillas dobles.
+        // A comment. Without this, the apostrophe in a `# no s'ha de…` opens
+        // a string that never closes on the whole line and leaves the REST of
+        // the block marked as "does not expand". The pipelines in this repo
+        // are commented in Catalan: when the rule was tried against the three
+        // real ones it gave 5 false positives, all from this cause, and all 5
+        // on references that are actually inside double quotes.
         //
-        // En `sh`, `#` también abre comentario tras `;`, `&`, `|` o `(` — no
-        // solo a principio de línea o tras un espacio. Sin esto, un `echo
-        // a;# comentario` con un apóstrofo dentro del comentario (p.ej. un
-        // "no s'ha de fer" en catalán) abre una comilla simple que ya no
-        // cierra, e invierte el estado de todas las líneas siguientes.
+        // In `sh`, `#` also opens a comment after `;`, `&`, `|` or `(` — not
+        // only at the start of a line or after a space. Without this, an `echo
+        // a;# comment` with an apostrophe inside the comment (e.g. a Catalan
+        // "no s'ha de fer") opens a single quote that never closes, and
+        // flips the state of every following line.
         push(line.slice(start, i), true);
         start = line.length;
         break;
@@ -103,9 +103,10 @@ export function splitByExpansion(command: string): Segment[] {
         continue;
       }
       if (c === '<' && line[i + 1] === '<') {
-        // `<<<` es un here-string, no un heredoc. Se salta ENTERO (i += 3): con
-        // un `i += 1` el segundo `<` se volvería a leer como el principio de
-        // otro `<<` y "hola" en `cat <<< hola` acabaría de delimitador.
+        // `<<<` is a here-string, not a heredoc. It is skipped WHOLE (i += 3):
+        // with `i += 1` the second `<` would be read again as the start of
+        // another `<<` and "hello" in `cat <<< hello` would end up as the
+        // delimiter.
         if (line[i + 2] === '<') {
           i += 3;
           continue;
@@ -126,16 +127,15 @@ export function splitByExpansion(command: string): Segment[] {
     }
   }
 
-  // Guarda de estado terminal. Si al acabar el escaneo queda una comilla sin
-  // cerrar, o un heredoc abierto (o uno pendiente de abrir en la última
-  // línea), es que el comando no es `sh` válido — o que el escáner se ha
-  // perdido y ha reconstruido mal el estado a partir de algo que no entendía
-  // (dos heredocs abiertos en la misma línea, por ejemplo). En cualquiera de
-  // los dos casos, seguir con el estado que arrastra el bucle produce
-  // falsos positivos sobre referencias que en realidad expanden bien. Ningún
-  // script correcto pierde cobertura por este bail-out — una comilla simple
-  // sin cerrar no es `sh` válido —, y cualquier script que el escáner haya
-  // malinterpretado deja de acusar en falso.
+  // Terminal-state guard. If the scan ends with an unclosed quote, or an
+  // open heredoc (or one waiting to open on the last line), either the
+  // command is not valid `sh` or the scanner got lost and rebuilt the state
+  // wrongly from something it did not understand (two heredocs opened on the
+  // same line, for example). In both cases, carrying on with the state the
+  // loop has accumulated produces false positives on references that
+  // actually expand fine. No correct script loses coverage through this
+  // bail-out — an unclosed single quote is not valid `sh` — and any script
+  // the scanner misread is no longer falsely flagged.
   if (quote !== 'none' || heredoc !== undefined || pending !== undefined) {
     return [{ text: command, expands: true }];
   }
@@ -144,9 +144,9 @@ export function splitByExpansion(command: string): Segment[] {
 }
 
 /**
- * Lee un abridor de heredoc a partir de la posición de `<<`. Devuelve el
- * heredoc y la posición siguiente, o `undefined` si lo que hay no es un
- * abridor reconocible (y entonces el escáner sigue como si fuera texto).
+ * Reads a heredoc opener starting at the position of `<<`. Returns the
+ * heredoc and the next position, or `undefined` if what is there is not a
+ * recognizable opener (and then the scanner goes on as if it were text).
  */
 function parseHeredocOpener(
   line: string,
@@ -175,7 +175,7 @@ function parseHeredocOpener(
   };
 }
 
-/** Texto con el que se nombra una referencia en un mensaje de error. */
+/** Text used to name a reference in an error message. */
 function displayRef(ref: ReturnType<typeof findReferences>[number]): string {
   if (ref.kind === 'param') return `params.${ref.name}`;
   if (ref.kind === 'secret') return `secrets.${ref.name}`;
@@ -183,9 +183,9 @@ function displayRef(ref: ReturnType<typeof findReferences>[number]): string {
 }
 
 /**
- * Referencias `{{x.y}}` de `command` que caen donde bash NO expande `${…}`.
- * `interpolateForShell` las sustituye por `${__PIPELINES_REF_n}`, así que
- * ahí llegan literales y el paso recibe una variable vacía.
+ * `{{x.y}}` references in `command` that fall where bash does NOT expand
+ * `${…}`. `interpolateForShell` replaces them with `${__PIPELINES_REF_n}`,
+ * so they arrive there literally and the step gets an empty variable.
  */
 export function unexpandedReferences(command: string): string[] {
   const found: string[] = [];
@@ -197,16 +197,16 @@ export function unexpandedReferences(command: string): string[] {
 }
 
 /**
- * Un comando de shell partido en tramos por los operadores que separan
- * comandos simples. R2 solo debe mirar el tramo que de verdad invoca
- * `grep`: sin esto, un `\s` en un `printf` de otro tramo daría un falso
- * positivo, y una regla con falsos positivos se acaba silenciando.
+ * A shell command split into segments by the operators that separate
+ * simple commands. R2 must only look at the segment that actually invokes
+ * `grep`: without this, a `\s` in a `printf` in another segment would give
+ * a false positive, and a rule with false positives ends up silenced.
  */
 function commandSegments(command: string): string[] {
   return command.split(/\n|\|\||&&|[|;]/);
 }
 
-/** R2: `\s` no existe en la ERE de POSIX y el grep de macOS no la acepta. */
+/** R2: `\s` does not exist in POSIX ERE and macOS grep does not accept it. */
 function checkPosixEre(label: string, command: string): string[] {
   const issues: string[] = [];
   for (const segment of commandSegments(command)) {
@@ -214,54 +214,55 @@ function checkPosixEre(label: string, command: string): string[] {
     if (!/(^|\s)-[A-Za-z]*E/.test(segment)) continue;
     if (!segment.includes('\\s')) continue;
     issues.push(
-      `${label}: "\\s" dentro de un patrón de grep -E. No existe en la ERE de POSIX ` +
-        `(es extensión de GNU) y el grep de macOS no la acepta: usa [[:space:]]. ` +
-        `Costó diez noches saltando en silencio, del 20 al 29 de agosto de 2026`,
+      `${label}: "\\s" inside a grep -E pattern. It does not exist in POSIX ERE ` +
+        `(it is a GNU extension) and macOS grep does not accept it: use [[:space:]]. ` +
+        `It cost ten nights of silent skipping, from August 20 to 29, 2026`,
     );
   }
   return issues;
 }
 
-/** R3: presencia de `set -euo pipefail` al abrir un `run:` multilínea. */
+/** R3: presence of `set -euo pipefail` at the top of a multi-line `run:`. */
 function checkStrictMode(label: string, run: string): string[] {
   if (!run.trimEnd().includes('\n')) return [];
   const first = run
     .split('\n')
     .map((line) => line.trim())
     .find((line) => line.length > 0 && !line.startsWith('#'))
-    // Un comentario al final de la propia línea ("set -euo pipefail  #
-    // estricto") es código correcto: se descarta antes de comparar. Solo se
-    // quita de la primera línea significativa, no del resto del bloque —
-    // R3 no comprueba nada más. "set -eu -o pipefail" seguir rechazándose
-    // es a propósito: la convención del repo es esa línea exacta.
+    // A comment at the end of the line itself ("set -euo pipefail  #
+    // strict") is correct code: it is dropped before comparing. It is only
+    // stripped from the first significant line, not from the rest of the
+    // block — R3 checks nothing else. "set -eu -o pipefail" still being
+    // rejected is on purpose: the repo convention is that exact line.
     ?.replace(/\s+#.*$/, '')
     .trimEnd();
   if (first === 'set -euo pipefail') return [];
   return [
-    `${label}: un run: multilínea debe abrir con "set -euo pipefail". Sin él, un ` +
-      `comando que falla a mitad deja el paso en éxito y el fallo aparece más tarde ` +
-      `y en otro sitio`,
+    `${label}: a multi-line run: must open with "set -euo pipefail". Without it, a ` +
+      `command that fails midway leaves the step successful, and the failure shows up later ` +
+      `and somewhere else`,
   ];
 }
 
 /**
- * R5: una asignación cuyo valor es una sustitución con `grep` y sin `||`
- * dentro de la sustitución. Bajo `set -e` (que R3 exige), `var=$(cmd)` toma
- * el código de salida de la sustitución; con `pipefail`, el de cualquier
- * tramo de la tubería. `grep` sale con 1 cuando no casa — que es
- * exactamente el caso «no hay ERROR: en el texto» que el fallback de la
- * línea siguiente quería tratar — y el paso muere antes de llegar a él.
+ * R5: an assignment whose value is a substitution with `grep` and no `||`
+ * inside the substitution. Under `set -e` (which R3 requires), `var=$(cmd)`
+ * takes the exit code of the substitution; with `pipefail`, that of any
+ * command in the pipe. `grep` exits with 1 when it does not match —
+ * which is exactly the "there is no ERROR: in the text" case that the
+ * fallback on the next line meant to handle — and the step dies before
+ * reaching it.
  *
- * Apareció tres veces en un solo día al migrar un pipeline real:
- * `out=$(q …)`, lo mismo en `qa()`, y `alerts="…$(… | grep … | head -1)"`.
- * Las tres las cazó una revisión, ninguna `validate`. Esta regla es esa
- * revisión, en código.
+ * It appeared three times in a single day while migrating a real pipeline:
+ * `out=$(q …)`, the same in `qa()`, and
+ * `alerts="…$(… | grep … | head -1)"`. A review caught all three, `validate`
+ * caught none. This rule is that review, in code.
  *
- * Solo asignaciones al principio de una línea (con `export`/`local`/
- * `readonly` delante o no): `if x=$(grep …)` y `while x=$(…)` están
- * guardados por construcción y no cuentan. Solo `grep`: es el comando
- * cuyo «no encontré nada» sale con 1 por diseño. Un `||` en cualquier
- * punto de la sustitución la da por tratada (`|| true`, `|| echo 0`).
+ * Only assignments at the start of a line (with `export`/`local`/
+ * `readonly` in front or not): `if x=$(grep …)` and `while x=$(…)` are
+ * guarded by construction and do not count. Only `grep`: it is the command
+ * whose "found nothing" exits with 1 by design. A `||` anywhere in the
+ * substitution counts it as handled (`|| true`, `|| echo 0`).
  */
 function checkGrepSubstitution(label: string, run: string): string[] {
   const issues: string[] = [];
@@ -276,10 +277,10 @@ function checkGrepSubstitution(label: string, run: string): string[] {
       const body = substitutionBody(line, from);
       if (/\bgrep\b/.test(body) && !body.includes('||')) {
         issues.push(
-          `${label}: la asignación "${name}=" toma su valor de una sustitución con grep y sin "||" ` +
-            `dentro. Bajo set -e (y pipefail), grep sale con 1 cuando no casa y mata el paso antes ` +
-            `de su propio fallback: añade "|| true" dentro de la sustitución. Apareció tres veces en ` +
-            `un solo día al migrar un pipeline real`,
+          `${label}: the assignment "${name}=" takes its value from a substitution with grep and no "||" ` +
+            `inside. Under set -e (and pipefail), grep exits with 1 when it does not match and kills the step before ` +
+            `its own fallback: add "|| true" inside the substitution. It appeared three times in ` +
+            `a single day while migrating a real pipeline`,
         );
         break;
       }
@@ -290,9 +291,9 @@ function checkGrepSubstitution(label: string, run: string): string[] {
 }
 
 /**
- * El interior de la sustitución `$(` que empieza en `from`, hasta su `)`
- * de cierre contando paréntesis anidados. Si no cierra en la línea, el
- * resto de la línea.
+ * The inside of the `$(` substitution that starts at `from`, up to its
+ * closing `)` counting nested parentheses. If it does not close on the
+ * line, the rest of the line.
  */
 function substitutionBody(line: string, from: number): string {
   let depth = 0;
@@ -308,11 +309,11 @@ function substitutionBody(line: string, from: number): string {
 }
 
 /**
- * Las cinco reglas, cerradas y en código. NO hay registro de reglas, ni
- * severidades configurables, ni forma de añadir una sin tocar este
- * fichero — y es a propósito: en cuanto esto admita
- * configuración deja de ser una lista de incidentes y pasa a ser un
- * framework que nadie mantiene. Una regla nueva entra cuando una noche la pague.
+ * The five rules, closed and in code. There is NO rule registry, no
+ * configurable severities, and no way to add one without touching this
+ * file — and that is on purpose: as soon as this accepts configuration it
+ * stops being a list of incidents and becomes a framework nobody maintains.
+ * A new rule goes in only once a night has paid for it.
  */
 export function lintPipeline(pipeline: Pipeline): string[] {
   const issues: string[] = [];
@@ -332,18 +333,18 @@ export function lintPipeline(pipeline: Pipeline): string[] {
     // R1
     for (const ref of unexpandedReferences(text)) {
       issues.push(
-        `${label}: la referencia "{{${ref}}}" cae donde bash no expande \${…} ` +
-          `(comillas simples, o heredoc con delimitador entrecomillado). El motor la ` +
-          `sustituye por \${__PIPELINES_REF_n} y pasa el valor por entorno: ahí llega ` +
-          `literal y la variable queda vacía`,
+        `${label}: the reference "{{${ref}}}" falls where bash does not expand \${…} ` +
+          `(single quotes, or a heredoc with a quoted delimiter). The engine replaces it ` +
+          `with \${__PIPELINES_REF_n} and passes the value through the environment: it arrives there ` +
+          `literally and the variable ends up empty`,
       );
     }
     // R2
     issues.push(...checkPosixEre(label, text));
   }
 
-  // R3 — solo sobre `run:`, no sobre las guardas: una guarda es una
-  // expresión de una línea evaluada por su código de salida, no un script.
+  // R3 — only on `run:`, not on guards: a guard is a one-line
+  // expression evaluated by its exit code, not a script.
   for (const step of pipeline.steps) {
     if (step.type === 'shell') issues.push(...checkStrictMode(`steps.${step.id}.run`, step.run));
   }
@@ -351,7 +352,7 @@ export function lintPipeline(pipeline: Pipeline): string[] {
     issues.push(...checkStrictMode(`always.${step.id}.run`, step.run));
   }
 
-  // R5 — como R3, solo sobre `run:`.
+  // R5 — like R3, only on `run:`.
   for (const step of pipeline.steps) {
     if (step.type === 'shell') issues.push(...checkGrepSubstitution(`steps.${step.id}.run`, step.run));
   }
@@ -362,9 +363,9 @@ export function lintPipeline(pipeline: Pipeline): string[] {
   // R4
   if (pipeline.triggers.length > 0 && pipeline.notify && !pipeline.notify.staleAfter) {
     issues.push(
-      `notify: un pipeline con triggers: debe declarar notify.stale_after. Sin él, un ` +
-        `pipeline frenado por una guarda no se lo dice a nadie: no hay ningún error que ` +
-        `notificar, solo ausencia`,
+      `notify: a pipeline with triggers: must declare notify.stale_after. Without it, a ` +
+        `pipeline held back by a guard tells nobody: there is no error to ` +
+        `notify, only absence`,
     );
   }
 

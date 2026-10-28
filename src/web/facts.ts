@@ -1,7 +1,7 @@
 /**
- * La contraparte CON EFECTOS de `health/evaluate.ts`: lee los ficheros del job
- * de disco, pregunta al programador y genera los que `install` produciría
- * ahora, para que el módulo puro pueda comparar. Aquí vive el TTL.
+ * The counterpart WITH EFFECTS of `health/evaluate.ts`: reads the job files
+ * from disk, asks the scheduler and generates the ones `install` would produce
+ * now, so the pure module can compare. The TTL lives here.
  */
 import { dirname, join } from 'node:path';
 import type { RepoContext } from '../cli/context.ts';
@@ -12,12 +12,12 @@ import { computePath, cronToCalendarIntervals, labelFor } from '../install/commo
 import type { Pipeline } from '../schema/pipeline.ts';
 
 /**
- * Los ficheros del job que `install` escribiría ahora mismo, concatenados en
- * su orden fijo (en launchd hay uno solo, así que es el plist tal cual).
- * Devuelve `undefined` si no se puede calcular —típicamente porque un binario
- * de `requires.bin` no está en esta máquina—: sin el lado esperado no hay
- * comparación, y `evaluateTrigger` no afirma desviación. Es lo correcto:
- * `doctor` ya cuenta esa historia mejor.
+ * The job files `install` would write right now, concatenated in their fixed
+ * order (launchd has just one, so it is the plist as is). Returns `undefined`
+ * if it can't be computed — typically because a `requires.bin` binary is not
+ * on this machine —: without the expected side there is no comparison, and
+ * `evaluateTrigger` does not claim drift. That is right: `doctor` already
+ * tells that story better.
  */
 function expectedArtifact(
   backend: SchedulerBackend,
@@ -63,7 +63,7 @@ export async function collectJobFacts(
   return { ...facts, artifactExpected: expectedArtifact(backend, pipeline, ctx, now) };
 }
 
-/** Caché por pipeline con caducidad: launchctl no se consulta en cada tick. */
+/** Per-pipeline cache with expiry: launchctl is not queried on every tick. */
 export function createJobFactsCache(ttlMs: number) {
   const entries = new Map<string, { at: number; facts: JobFacts }>();
   return {

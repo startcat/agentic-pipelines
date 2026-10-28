@@ -2,27 +2,27 @@ import { describe, expect, test } from 'bun:test';
 import { schedulerFor } from '../../src/install/backend.ts';
 
 describe('schedulerFor', () => {
-  test('en macOS elige launchd', () => {
+  test('on macOS it picks launchd', () => {
     expect(schedulerFor('darwin', {}).kind).toBe('launchd');
   });
 
-  test('en Linux elige systemd', () => {
+  test('on Linux it picks systemd', () => {
     expect(schedulerFor('linux', {}).kind).toBe('systemd');
   });
 
-  test('en cualquier otra plataforma lanza un error que dice cuáles sirven', () => {
+  test('on any other platform it throws an error that says which ones work', () => {
     expect(() => schedulerFor('win32', {})).toThrow(
-      'Programar pipelines solo está soportado en macOS (launchd) y Linux (systemd); esta máquina es win32.',
+      'Scheduling pipelines is only supported on macOS (launchd) and Linux (systemd); this machine is win32.',
     );
   });
 
-  // El seam de los tests: forzar el backend sin depender de la máquina.
-  test('PIPELINES_SCHEDULER manda sobre la plataforma', () => {
+  // The tests' seam: force the backend without depending on the machine.
+  test('PIPELINES_SCHEDULER wins over the platform', () => {
     expect(schedulerFor('darwin', { PIPELINES_SCHEDULER: 'systemd' }).kind).toBe('systemd');
     expect(schedulerFor('linux', { PIPELINES_SCHEDULER: 'launchd' }).kind).toBe('launchd');
   });
 
-  test('un PIPELINES_SCHEDULER desconocido es un error, no un valor por defecto', () => {
+  test('an unknown PIPELINES_SCHEDULER is an error, not a default value', () => {
     expect(() => schedulerFor('darwin', { PIPELINES_SCHEDULER: 'cron' })).toThrow('PIPELINES_SCHEDULER');
   });
 });

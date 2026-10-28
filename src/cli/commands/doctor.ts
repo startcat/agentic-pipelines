@@ -8,7 +8,7 @@ export function registerDoctor(program: Command): void {
   program
     .command('doctor')
     .argument('<name>')
-    .description('Comprueba si esta máquina puede ejecutar el pipeline')
+    .description('Check whether this machine can run the pipeline')
     .action(async (name: string) => {
       await withContext(async (ctx) => {
         const pipeline = await loadPipeline(ctx, name);
@@ -22,18 +22,18 @@ export function registerDoctor(program: Command): void {
         printPreflight(report);
         if (!report.ok) {
           const bad = report.checks.filter((c) => !c.ok).length;
-          console.error(`\n${bad} problema(s) — no se ejecutará.`);
+          console.error(`\n${bad} problem(s) — it will not run.`);
           process.exitCode = EXIT_FAILURE;
           return;
         }
-        // Los checks de plataforma no bloquean `run`, pero sí dicen que
-        // `install` no funcionaría todavía: «Todo listo» sería mentira.
+        // Platform checks do not block `run`, but they do say that `install`
+        // would not work yet: "All set" would be a lie.
         const platformRed = report.checks.filter((c) => c.kind === 'platform' && !c.ok).map((c) => c.name);
         if (platformRed.length > 0) {
-          console.log(`\nListo para ejecutar; para instalar falta: ${platformRed.join(', ')}.`);
+          console.log(`\nReady to run; to install, still missing: ${platformRed.join(', ')}.`);
           return;
         }
-        console.log('\nTodo listo.');
+        console.log('\nAll set.');
       });
     });
 }

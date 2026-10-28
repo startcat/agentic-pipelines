@@ -3,116 +3,116 @@ import { splitByExpansion, unexpandedReferences, lintPipeline } from '../../src/
 import { parsePipeline } from '../../src/schema/pipeline.ts';
 
 describe('splitByExpansion', () => {
-  test('sin comillas, todo expande', () => {
+  test('without quotes, everything expands', () => {
     expect(splitByExpansion('echo {{params.x}}')).toEqual([
       { text: 'echo {{params.x}}', expands: true },
     ]);
   });
 
-  test('marca el interior de unas comillas simples', () => {
-    const segments = splitByExpansion(`echo 'hola' fuera`);
-    expect(segments.filter((s) => !s.expands).map((s) => s.text)).toEqual(['hola']);
+  test('marks the inside of single quotes', () => {
+    const segments = splitByExpansion(`echo 'hello' outside`);
+    expect(segments.filter((s) => !s.expands).map((s) => s.text)).toEqual(['hello']);
   });
 
-  test('el interior de comillas dobles expande', () => {
-    expect(splitByExpansion(`echo "hola"`).every((s) => s.expands)).toBe(true);
+  test('the inside of double quotes expands', () => {
+    expect(splitByExpansion(`echo "hello"`).every((s) => s.expands)).toBe(true);
   });
 
-  test('unas comillas simples dentro de comillas dobles no abren nada', () => {
-    expect(splitByExpansion(`echo "no's abre"`).every((s) => s.expands)).toBe(true);
+  test('single quotes inside double quotes open nothing', () => {
+    expect(splitByExpansion(`echo "it's fine"`).every((s) => s.expands)).toBe(true);
   });
 
-  test('una comilla simple escapada fuera de comillas no abre nada', () => {
+  test('an escaped single quote outside quotes opens nothing', () => {
     expect(splitByExpansion(`echo \\' {{params.x}}`).every((s) => s.expands)).toBe(true);
   });
 
-  test('el cuerpo de un heredoc entrecomillado no expande', () => {
-    const segments = splitByExpansion("cat <<'EOF'\ncuerpo\nEOF\nfin");
-    expect(segments.filter((s) => !s.expands).map((s) => s.text)).toEqual(['cuerpo']);
+  test('the body of a quoted heredoc does not expand', () => {
+    const segments = splitByExpansion("cat <<'EOF'\nbody\nEOF\nend");
+    expect(segments.filter((s) => !s.expands).map((s) => s.text)).toEqual(['body']);
   });
 
-  test('el cuerpo de un heredoc sin entrecomillar sí expande', () => {
-    expect(splitByExpansion('cat <<EOF\ncuerpo\nEOF\n').every((s) => s.expands)).toBe(true);
+  test('the body of an unquoted heredoc does expand', () => {
+    expect(splitByExpansion('cat <<EOF\nbody\nEOF\n').every((s) => s.expands)).toBe(true);
   });
 
-  test('un heredoc <<- entrecomillado con delimitador indentado por tabuladores cierra igual', () => {
-    const segments = splitByExpansion("cat <<-'EOF'\n\tcuerpo\n\tEOF\nfin");
-    expect(segments.filter((s) => !s.expands).map((s) => s.text)).toEqual(['\tcuerpo']);
+  test('a quoted <<- heredoc with a tab-indented delimiter closes just the same', () => {
+    const segments = splitByExpansion("cat <<-'EOF'\n\tbody\n\tEOF\nend");
+    expect(segments.filter((s) => !s.expands).map((s) => s.text)).toEqual(['\tbody']);
   });
 
-  test('un here-string <<< no es un heredoc', () => {
-    expect(splitByExpansion('cat <<< hola').every((s) => s.expands)).toBe(true);
+  test('a <<< here-string is not a heredoc', () => {
+    expect(splitByExpansion('cat <<< hello').every((s) => s.expands)).toBe(true);
   });
 
-  test('el apóstrofo de un comentario no abre una cadena', () => {
+  test('the apostrophe in a comment does not open a string', () => {
     const segments = splitByExpansion("# aquest pas no s'ha de saltar\necho {{params.x}}");
     expect(segments.every((s) => s.expands)).toBe(true);
   });
 
-  test('una almohadilla pegada a una palabra no es un comentario', () => {
+  test('a hash stuck to a word is not a comment', () => {
     const segments = splitByExpansion(`echo abc#def '{{params.x}}'`);
     expect(segments.filter((s) => !s.expands).map((s) => s.text)).toEqual(['{{params.x}}']);
   });
 });
 
 describe('unexpandedReferences', () => {
-  test('caza la referencia dentro de comillas simples', () => {
+  test('catches the reference inside single quotes', () => {
     expect(unexpandedReferences(`curl -d '{"repo":"{{params.repo}}"}'`)).toEqual(['params.repo']);
   });
 
-  test('no caza la referencia dentro de comillas dobles', () => {
-    expect(unexpandedReferences(`grep -qE "patron" "{{params.docs_repo}}/x.md"`)).toEqual([]);
+  test('does not catch the reference inside double quotes', () => {
+    expect(unexpandedReferences(`grep -qE "pattern" "{{params.docs_repo}}/x.md"`)).toEqual([]);
   });
 
-  test('no caza una referencia sin comillas', () => {
+  test('does not catch an unquoted reference', () => {
     expect(unexpandedReferences('echo {{params.x}}')).toEqual([]);
   });
 
-  test('caza la referencia dentro de un heredoc entrecomillado', () => {
+  test('catches the reference inside a quoted heredoc', () => {
     expect(unexpandedReferences("python3 <<'PY'\nprint('{{params.x}}')\nPY\n")).toEqual(['params.x']);
   });
 
-  test('nombra bien una referencia a un paso y a un secreto', () => {
+  test('names a step reference and a secret reference correctly', () => {
     expect(unexpandedReferences(`echo '{{fetch.head}} {{secrets.TOKEN}}'`)).toEqual([
       'fetch.head',
       'secrets.TOKEN',
     ]);
   });
 
-  test('la guarda REAL de docs-review no dispara (comillas de YAML, no de shell)', () => {
+  test('the REAL docs-review guard does not fire (YAML quotes, not shell quotes)', () => {
     const parsed =
       'grep -qE "^\\| Slug \\(ca\\)[[:space:]]+\\| Estat[[:space:]]+\\| Captures[[:space:]]+\\|[^|]*ltima revisi[^|]*\\|" "{{params.docs_repo}}/scripts/auto-review-status.md"';
     expect(unexpandedReferences(parsed)).toEqual([]);
   });
 
-  // Un
-  // `;#` no se reconocía como comentario y un `#` con un apóstrofo catalán
-  // detrás dejaba `quote` en 'single' para siempre, invirtiendo el estado de
-  // todo lo que venía después.
-  test('un comentario tras ";" no deja una comilla abierta para siempre (antes: falso positivo en params.y, falso negativo en params.x)', () => {
+  // A
+  // `;#` was not recognized as a comment and a `#` followed by a Catalan
+  // apostrophe left `quote` at 'single' forever, flipping the state of
+  // everything that came after.
+  test('a comment after ";" does not leave a quote open forever (before: false positive on params.y, false negative on params.x)', () => {
     const command = "echo a;# no s'ha de fer\necho '{{params.x}}' && echo {{params.y}}";
-    // Antes del fix (b), el escáner no reconocía "#" tras ";" como
-    // comentario: el apóstrofo de "s'ha" abría una comilla simple que no
-    // cerraba en toda la línea 1, y ese estado se colaba en la línea 2. El
-    // resultado era exactamente al revés de lo correcto: `params.y` (que
-    // expande bien) salía como hallazgo, y `params.x` (que de verdad está
-    // entre comillas simples de shell) no salía. Con el fix, la línea 1 se
-    // reconoce entera como comentario y la línea 2 se analiza limpia: el
-    // defecto real se caza y el inventado desaparece.
+    // Before fix (b), the scanner did not recognize "#" after ";" as a
+    // comment: the apostrophe in "s'ha" opened a single quote that did not
+    // close on the whole of line 1, and that state leaked into line 2. The
+    // result was exactly the opposite of the correct one: `params.y` (which
+    // expands fine) came out as a finding, and `params.x` (which really is
+    // inside shell single quotes) did not. With the fix, line 1 is
+    // recognized as a comment in full and line 2 is analyzed cleanly: the
+    // real defect is caught and the made-up one disappears.
     expect(unexpandedReferences(command)).toEqual(['params.x']);
   });
 
-  test('dos heredocs abiertos en la misma línea activan la guarda de estado terminal (antes: falso positivo)', () => {
-    // El escáner solo recuerda un heredoc "pending" por línea
-    // (`pending = pending ?? opener.heredoc`), así que el segundo `<<'B'`
-    // se pierde. Eso deja el cuerpo real de B como texto suelto, con un
-    // apóstrofo ("dos s'ha") que abre una comilla simple que ya no cierra.
-    // Antes del bail-out, ese estado corrupto se arrastraba hasta el final
-    // y marcaba la línea de `echo "{{params.x}}"` (entre comillas DOBLES,
-    // que expande perfectamente) como si no expandiera: falso positivo. Con
-    // la guarda de estado terminal, un escaneo que acaba con una comilla sin
-    // cerrar se descarta entero y no se informa de nada para este comando.
-    const command = "cat <<'A' <<'B'\nuno\nA\ndos s'ha\nB\necho \"{{params.x}}\"";
+  test('two heredocs opened on the same line trigger the terminal-state guard (before: false positive)', () => {
+    // The scanner only remembers one "pending" heredoc per line
+    // (`pending = pending ?? opener.heredoc`), so the second `<<'B'` is
+    // lost. That leaves the real body of B as loose text, with an apostrophe
+    // ("dos s'ha") that opens a single quote that never closes. Before the
+    // bail-out, that corrupt state was carried to the end and marked the
+    // `echo "{{params.x}}"` line (inside DOUBLE quotes, which expands
+    // perfectly) as if it did not expand: a false positive. With the
+    // terminal-state guard, a scan that ends with an unclosed quote is
+    // discarded entirely and nothing is reported for this command.
+    const command = "cat <<'A' <<'B'\none\nA\ndos s'ha\nB\necho \"{{params.x}}\"";
     expect(unexpandedReferences(command)).toEqual([]);
   });
 });
@@ -122,44 +122,44 @@ description: d
 version: 1
 `;
 
-describe('R1 dentro de lintPipeline', () => {
-  test('caza una referencia entre comillas simples en un run:', () => {
+describe('R1 inside lintPipeline', () => {
+  test('catches a reference inside single quotes in a run:', () => {
     const issues = lintPipeline(parsePipeline(`${BASE}params:
   repo:
     description: r
 steps:
-  - id: uno
+  - id: one
     type: shell
     run: "curl -d '{{params.repo}}'"
 `));
     expect(issues).toHaveLength(1);
-    expect(issues[0]).toContain('steps.uno.run');
+    expect(issues[0]).toContain('steps.one.run');
     expect(issues[0]).toContain('params.repo');
   });
 
-  test('caza una referencia entre comillas simples en un always:', () => {
+  test('catches a reference inside single quotes in an always:', () => {
     const issues = lintPipeline(parsePipeline(`${BASE}params:
   repo:
     description: r
 steps:
-  - id: uno
+  - id: one
     type: shell
     run: "true"
 always:
-  - id: limpia
+  - id: cleanup
     run: "echo '{{params.repo}}'"
 `));
     expect(issues).toHaveLength(1);
-    expect(issues[0]).toContain('always.limpia.run');
+    expect(issues[0]).toContain('always.cleanup.run');
   });
 });
 
-describe('R2: \\s en un grep -E', () => {
-  test('dispara', () => {
+describe('R2: \\s in a grep -E', () => {
+  test('fires', () => {
     const issues = lintPipeline(parsePipeline(`${BASE}when:
-  - shell: 'grep -qE "a\\s+b" fichero'
+  - shell: 'grep -qE "a\\s+b" file'
 steps:
-  - id: uno
+  - id: one
     type: shell
     run: "true"
 `));
@@ -168,19 +168,19 @@ steps:
     expect(issues[0]).toContain('[[:space:]]');
   });
 
-  test('no dispara con [[:space:]]', () => {
+  test('does not fire with [[:space:]]', () => {
     expect(lintPipeline(parsePipeline(`${BASE}when:
-  - shell: 'grep -qE "a[[:space:]]+b" fichero'
+  - shell: 'grep -qE "a[[:space:]]+b" file'
 steps:
-  - id: uno
+  - id: one
     type: shell
     run: "true"
 `))).toEqual([]);
   });
 
-  test('no dispara si el \\s está en OTRO tramo del comando', () => {
+  test('does not fire if the \\s is in ANOTHER segment of the command', () => {
     expect(lintPipeline(parsePipeline(`${BASE}steps:
-  - id: uno
+  - id: one
     type: shell
     run: |
       set -euo pipefail
@@ -190,58 +190,58 @@ steps:
 });
 
 describe('R3: set -euo pipefail', () => {
-  test('dispara en un run: multilínea que no lo abre', () => {
+  test('fires on a multi-line run: that does not open with it', () => {
     const issues = lintPipeline(parsePipeline(`${BASE}steps:
-  - id: uno
+  - id: one
     type: shell
     run: |
-      echo hola
-      echo adios
+      echo hello
+      echo bye
 `));
     expect(issues).toHaveLength(1);
-    expect(issues[0]).toContain('steps.uno.run');
+    expect(issues[0]).toContain('steps.one.run');
     expect(issues[0]).toContain('set -euo pipefail');
   });
 
-  test('no dispara si va tras un comentario', () => {
+  test('does not fire if it comes after a comment', () => {
     expect(lintPipeline(parsePipeline(`${BASE}steps:
-  - id: uno
+  - id: one
     type: shell
     run: |
-      # explicación
+      # explanation
       set -euo pipefail
-      echo hola
+      echo hello
 `))).toEqual([]);
   });
 
-  test('un run: de una línea está exento', () => {
+  test('a one-line run: is exempt', () => {
     expect(lintPipeline(parsePipeline(`${BASE}steps:
-  - id: uno
+  - id: one
     type: shell
     run: "rm -rf /tmp/x"
 `))).toEqual([]);
   });
 
-  // "set -euo pipefail  # estricto" es
-  // código correcto y R3 lo rechazaba por comparar contra la línea entera,
-  // comentario incluido.
-  test('no dispara con un comentario al final de la propia línea', () => {
+  // "set -euo pipefail  # strict" is
+  // correct code and R3 rejected it because it compared against the whole
+  // line, comment included.
+  test('does not fire with a comment at the end of the line itself', () => {
     expect(lintPipeline(parsePipeline(`${BASE}steps:
-  - id: uno
+  - id: one
     type: shell
     run: |
-      set -euo pipefail  # estricto
-      echo hola
+      set -euo pipefail  # strict
+      echo hello
 `))).toEqual([]);
   });
 
-  test('"set -eu -o pipefail" sigue rechazándose aunque lleve comentario', () => {
+  test('"set -eu -o pipefail" is still rejected even with a comment', () => {
     const issues = lintPipeline(parsePipeline(`${BASE}steps:
-  - id: uno
+  - id: one
     type: shell
     run: |
-      set -eu -o pipefail  # equivalente, pero no es la convención
-      echo hola
+      set -eu -o pipefail  # equivalent, but not the convention
+      echo hello
 `));
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain('set -euo pipefail');
@@ -249,14 +249,14 @@ describe('R3: set -euo pipefail', () => {
 });
 
 describe('R4: stale_after', () => {
-  test('dispara con triggers y notify pero sin stale_after', () => {
+  test('fires with triggers and notify but without stale_after', () => {
     const issues = lintPipeline(parsePipeline(`${BASE}triggers:
   - cron: "0 3 * * *"
 notify:
   on: [failed]
-  channel: correo
+  channel: mail
 steps:
-  - id: uno
+  - id: one
     type: shell
     run: "true"
 `));
@@ -265,74 +265,74 @@ steps:
     expect(issues[0]).toContain('stale_after');
   });
 
-  test('no dispara sin triggers', () => {
+  test('does not fire without triggers', () => {
     expect(lintPipeline(parsePipeline(`${BASE}notify:
   on: [failed]
-  channel: correo
+  channel: mail
 steps:
-  - id: uno
+  - id: one
     type: shell
     run: "true"
 `))).toEqual([]);
   });
 
-  test('no dispara con stale_after declarado', () => {
+  test('does not fire with stale_after declared', () => {
     expect(lintPipeline(parsePipeline(`${BASE}triggers:
   - cron: "0 3 * * *"
 notify:
   on: [failed]
   stale_after: 72h
-  channel: correo
+  channel: mail
 steps:
-  - id: uno
+  - id: one
     type: shell
     run: "true"
 `))).toEqual([]);
   });
 });
 
-describe('R5: una asignación con $(… grep …) sin || dentro', () => {
+describe('R5: an assignment with $(… grep …) without || inside', () => {
   const step = (run: string) => `${BASE}steps:
-  - id: uno
+  - id: one
     type: shell
     run: |
       set -euo pipefail
 ${run.split('\n').map((l) => `      ${l}`).join('\n')}
 `;
 
-  test('dispara: out=$(… | grep … | head -1) sin || muere bajo pipefail cuando grep no casa', () => {
+  test('fires: out=$(… | grep … | head -1) without || dies under pipefail when grep does not match', () => {
     const issues = lintPipeline(parsePipeline(step(`out=$(printf '%s' "$x" | grep -iE 'ERROR:' | head -1)
 echo "$out"`)));
     expect(issues).toHaveLength(1);
-    expect(issues[0]).toContain('steps.uno.run');
+    expect(issues[0]).toContain('steps.one.run');
     expect(issues[0]).toContain('grep');
     expect(issues[0]).toContain('|| true');
   });
 
-  test('dispara también dentro de comillas dobles y con export/local', () => {
+  test('also fires inside double quotes and with export/local', () => {
     const issues = lintPipeline(parsePipeline(step(`export alerts="🔴 res: $(printf '%s' "$out" | grep -iE 'ERROR:' | head -1)"
 local n=$(grep -c PRES "$f")`)));
     expect(issues).toHaveLength(2);
   });
 
-  test('no dispara con || true dentro de la sustitución', () => {
+  test('does not fire with || true inside the substitution', () => {
     expect(lintPipeline(parsePipeline(step(`out=$(printf '%s' "$x" | grep -iE 'ERROR:' | head -1 || true)
 n=$(grep -c PRES "$f" || echo 0)`)))).toEqual([]);
   });
 
-  test('no dispara si la asignación está guardada por if/while', () => {
-    expect(lintPipeline(parsePipeline(step(`if out=$(grep x "$f"); then echo si; fi
+  test('does not fire if the assignment is guarded by if/while', () => {
+    expect(lintPipeline(parsePipeline(step(`if out=$(grep x "$f"); then echo yes; fi
 while l=$(grep y "$f"); do break; done`)))).toEqual([]);
   });
 
-  test('no dispara sin grep, ni en comentarios, ni con grep fuera de una sustitución', () => {
+  test('does not fire without grep, nor in comments, nor with grep outside a substitution', () => {
     expect(lintPipeline(parsePipeline(step(`out=$(printf '%s' "$x" | head -1)
-# alerts=$(grep esto es un comentario)
-grep -q patron "$f" || true
+# alerts=$(grep this is a comment)
+grep -q pattern "$f" || true
 n=$(sed -n 's/x//p' "$f")`)))).toEqual([]);
   });
 
-  test('sigue el paréntesis correcto con sustituciones anidadas', () => {
+  test('follows the right parenthesis with nested substitutions', () => {
     const issues = lintPipeline(parsePipeline(step(`v=$(tok "N=" "$(q "select 1")")
 w=$(tok "N=" "$(printf '%s' "$x" | grep -c y)")`)));
     expect(issues).toHaveLength(1);

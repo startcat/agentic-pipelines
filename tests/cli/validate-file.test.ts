@@ -31,13 +31,13 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-describe('validate <nombre> con las reglas cableadas', () => {
-  test('la sonda de referencias rotas en run: ya no pasa', async () => {
-    // Las referencias van entre comillas DOBLES de shell (YAML de comillas
-    // simples, que no procesan escapes: lo que se escribe es lo que ve
-    // bash), para que R1 no dispare aquí y la única forma de tumbar este
-    // test sea que `checkGuardReferences`/`checkStepReferences` sigan
-    // cableados de verdad.
+describe('validate <name> with the rules wired in', () => {
+  test('the broken-references probe in run: no longer passes', async () => {
+    // The references go inside shell DOUBLE quotes (single-quoted YAML, which
+    // does not process escapes: what is written is what bash sees), so that R1
+    // does not fire here and the only way to bring this test down is for
+    // `checkGuardReferences`/`checkStepReferences` to still be genuinely
+    // wired in.
     writePipeline(
       'demo',
       `name: demo
@@ -45,13 +45,13 @@ description: d
 version: 1
 params:
   real:
-    description: existe
+    description: exists
 when:
-  - shell: 'test -n "{{params.guarda_inexistente}}"'
+  - shell: 'test -n "{{params.missing_guard}}"'
 steps:
   - id: uno
     type: shell
-    run: 'echo "{{params.run_inexistente}}" && echo {{params.real}}'
+    run: 'echo "{{params.missing_run}}" && echo {{params.real}}'
 `,
     );
     const { code, out } = await cli(['validate', 'demo']);
@@ -60,7 +60,7 @@ steps:
     expect(out).toContain('uno.run');
   });
 
-  test('un pipeline correcto sigue en verde', async () => {
+  test('a correct pipeline stays green', async () => {
     writePipeline(
       'ok',
       `name: ok
@@ -77,47 +77,47 @@ steps:
     expect(out).toContain('ok');
   });
 
-  test('un prompt que falta sigue siendo ERROR sin --file', async () => {
+  test('a missing prompt is still an ERROR without --file', async () => {
     writePipeline(
-      'conagente',
-      `name: conagente
+      'withagent',
+      `name: withagent
 description: d
 version: 1
 steps:
   - id: uno
     type: agent
-    agent: redactor
-    prompt: falta.md
+    agent: writer
+    prompt: missing.md
 `,
     );
-    const { code, out } = await cli(['validate', 'conagente']);
+    const { code, out } = await cli(['validate', 'withagent']);
     expect(code).not.toBe(0);
-    expect(out).toContain('falta.md');
+    expect(out).toContain('missing.md');
   });
 
-  test('una regla del motor sola basta para tumbar el pipeline (R3)', async () => {
+  test('a single engine rule is enough to bring the pipeline down (R3)', async () => {
     writePipeline(
-      'sinstrict',
-      `name: sinstrict
+      'nostrict',
+      `name: nostrict
 description: d
 version: 1
 steps:
   - id: uno
     type: shell
     run: |
-      echo hola
-      echo adios
+      echo hello
+      echo goodbye
 `,
     );
-    const { code, out } = await cli(['validate', 'sinstrict']);
+    const { code, out } = await cli(['validate', 'nostrict']);
     expect(code).not.toBe(0);
     expect(out).toContain('set -euo pipefail');
   });
 
-  test('R1 llega al comando: referencia declarada, pero entre comillas simples', async () => {
+  test('R1 reaches the command: declared reference, but inside single quotes', async () => {
     writePipeline(
-      'comillas',
-      `name: comillas
+      'quotes',
+      `name: quotes
 description: d
 version: 1
 params:
@@ -129,15 +129,15 @@ steps:
     run: "curl -d '{{params.repo}}'"
 `,
     );
-    const { code, out } = await cli(['validate', 'comillas']);
+    const { code, out } = await cli(['validate', 'quotes']);
     expect(code).not.toBe(0);
-    expect(out).toContain('no expande');
+    expect(out).toContain('does not expand');
   });
 });
 
 describe('validate --file', () => {
-  test('valida un borrador que no vive en pipelines/<nombre>/', async () => {
-    const draft = join(root, 'borrador.yaml');
+  test('validates a draft that does not live in pipelines/<name>/', async () => {
+    const draft = join(root, 'draft.yaml');
     writeFileSync(
       draft,
       `name: demo
@@ -154,11 +154,11 @@ steps:
     expect(out).toContain('demo');
   });
 
-  test('el name: no tiene que coincidir con ningún directorio', async () => {
-    const draft = join(root, 'otro-nombre.yaml');
+  test('the name: does not have to match any directory', async () => {
+    const draft = join(root, 'other-name.yaml');
     writeFileSync(
       draft,
-      `name: se-llama-distinto
+      `name: named-differently
 description: d
 version: 1
 steps:
@@ -170,8 +170,8 @@ steps:
     expect((await cli(['validate', '--file', draft])).code).toBe(0);
   });
 
-  test('un prompt que falta es AVISO, y dice que no ha mirado sus referencias', async () => {
-    const draft = join(root, 'borrador.yaml');
+  test('a missing prompt is a WARNING, and says it did not check its references', async () => {
+    const draft = join(root, 'draft.yaml');
     writeFileSync(
       draft,
       `name: demo
@@ -180,19 +180,19 @@ version: 1
 steps:
   - id: uno
     type: agent
-    agent: redactor
-    prompt: todavia-no.md
+    agent: writer
+    prompt: not-yet.md
 `,
     );
     const { code, out } = await cli(['validate', '--file', draft]);
     expect(code).toBe(0);
-    expect(out).toContain('aviso');
-    expect(out).toContain('todavia-no.md');
-    expect(out).toContain('NO se han comprobado');
+    expect(out).toContain('warning');
+    expect(out).toContain('not-yet.md');
+    expect(out).toContain('NOT been checked');
   });
 
-  test('un error de esquema sigue siendo error', async () => {
-    const draft = join(root, 'malo.yaml');
+  test('a schema error is still an error', async () => {
+    const draft = join(root, 'bad.yaml');
     writeFileSync(
       draft,
       `name: demo
@@ -208,13 +208,13 @@ steps:
     );
     const { code, out } = await cli(['validate', '--file', draft]);
     expect(code).not.toBe(0);
-    expect(out).toContain('s, m o h');
+    expect(out).toContain('s, m or h');
   });
 
-  test('fuera de cualquier repo no revienta, y avisa de que no ha mirado el canal', async () => {
-    const elsewhere = mkdtempSync(join(tmpdir(), 'ap-sin-repo-'));
+  test('outside any repo it does not blow up, and warns that it did not check the channel', async () => {
+    const elsewhere = mkdtempSync(join(tmpdir(), 'ap-no-repo-'));
     try {
-      const draft = join(elsewhere, 'borrador.yaml');
+      const draft = join(elsewhere, 'draft.yaml');
       writeFileSync(
         draft,
         `name: demo
@@ -225,7 +225,7 @@ triggers:
 notify:
   on: [failed]
   stale_after: 72h
-  channel: correo
+  channel: mail
 steps:
   - id: uno
     type: shell
@@ -234,15 +234,15 @@ steps:
       );
       const { code, out } = await cli(['validate', '--file', draft], elsewhere);
       expect(code).toBe(0);
-      expect(out).toContain('aviso');
-      expect(out).toContain('correo');
+      expect(out).toContain('warning');
+      expect(out).toContain('mail');
     } finally {
       rmSync(elsewhere, { recursive: true, force: true });
     }
   });
 
-  test('--file junto a un nombre es un error de uso', async () => {
-    const draft = join(root, 'borrador.yaml');
+  test('--file together with a name is a usage error', async () => {
+    const draft = join(root, 'draft.yaml');
     writeFileSync(draft, 'name: demo\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n');
     const { code, out } = await cli(['validate', 'demo', '--file', draft]);
     expect(code).not.toBe(0);

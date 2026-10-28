@@ -5,38 +5,38 @@ import type { Pipeline } from '../schema/pipeline.ts';
 export type UnsetParamImpact = {
   param: string;
   /**
-   * Pasos cuyo `when:` es justo una referencia pelada a ese param
-   * (`{{params.x}}`, sin comparación): `evaluateWhen` trata una referencia
-   * ausente como `undefined`, que es falso, así que estos pasos se saltan
-   * CON CERTEZA cuando el param no tiene valor.
+   * Steps whose `when:` is exactly a bare reference to that param
+   * (`{{params.x}}`, no comparison): `evaluateWhen` treats a missing
+   * reference as `undefined`, which is falsy, so these steps are skipped
+   * FOR CERTAIN when the param has no value.
    */
   skippedSteps: string[];
   /**
-   * Pasos cuyo `when:` referencia ese param DENTRO de una comparación
-   * (`{{params.x}} != "..."`, etc.): el resultado depende del operador y del
-   * literal — con `!=` el paso se EJECUTA, no se salta —, así que no se
-   * afirma un desenlace, solo que el paso depende del param.
+   * Steps whose `when:` references that param INSIDE a comparison
+   * (`{{params.x}} != "..."`, etc.): the result depends on the operator and
+   * the literal — with `!=` the step RUNS, it is not skipped —, so no outcome
+   * is asserted, only that the step depends on the param.
    */
   uncertainSteps: string[];
 };
 
 /**
- * Params declarados que se quedan sin valor, con los pasos que se saltarán
- * (con certeza) o que simplemente dependen de él (sin certeza) por ello. No
- * es un error — un param opcional sin valor es legítimo —, pero es lo que
- * `install` imprime al terminar.
+ * Declared params that end up without a value, with the steps that will be
+ * skipped (for certain) or that merely depend on it (uncertain) because of it.
+ * It is not an error — an optional param without a value is legitimate —, but
+ * it is what `install` prints when it finishes.
  *
- * Nace del segundo incidente del 2026-08-29: el plist no pasaba
- * `deploy_dispatch_url`, el paso `deploy` se saltaba limpiamente cada noche, y
- * el efecto (el sitio publicado congelado mientras los commits seguían
- * llegando) no producía error en ninguna parte. Un `install` que lo hubiera
- * dicho en voz alta habría bastado.
+ * Born from the second incident of 2026-08-29: the plist did not pass
+ * `deploy_dispatch_url`, the `deploy` step was skipped cleanly every night,
+ * and the effect (the published site frozen while commits kept arriving)
+ * produced no error anywhere. An `install` that had said it out loud would
+ * have been enough.
  *
- * La distinción entre `skippedSteps` y `uncertainSteps` nace de la revisión
- * final: con `when: '{{params.dry_run}} != "yes"'` y `dry_run` sin valor, la
- * comparación da `true` y el paso SE EJECUTA, así que afirmar "se saltará"
- * ahí sería mentir — justo el tipo de aviso falso que este comando existe
- * para evitar.
+ * The distinction between `skippedSteps` and `uncertainSteps` comes from the
+ * final review: with `when: '{{params.dry_run}} != "yes"'` and `dry_run`
+ * without a value, the comparison gives `true` and the step RUNS, so claiming
+ * "it will be skipped" there would be lying — exactly the kind of false
+ * warning this command exists to avoid.
  */
 export function unsetParamImpacts(
   pipeline: Pipeline,

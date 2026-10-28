@@ -5,12 +5,12 @@ import type { NotifyRecord, RunRecord, RunStatus, StepRecord } from './types.ts'
 
 export type { NotifyRecord, RunRecord, RunStatus, StepRecord, StepStatus } from './types.ts';
 
-/** Marcador con el que se sustituye cualquier valor de secreto. */
-export const REDACTION = '«redactado»';
+/** Marker that replaces any secret value. */
+export const REDACTION = '[redacted]';
 
 /**
- * Sustituye los valores de secreto que aparezcan en un texto. Se aplica a todo
- * lo que se escribe en disco o se muestra por pantalla.
+ * Replaces any secret values that appear in a text. Applied to everything that
+ * is written to disk or shown on screen.
  */
 export function redactSecrets(text: string, secrets: string[]): string {
   let output = text;
@@ -22,25 +22,25 @@ export function redactSecrets(text: string, secrets: string[]): string {
 }
 
 /**
- * Un id de run legible, ordenable lexicográficamente (el orden alfabético de
- * los ids coincide con el orden cronológico) y seguro para nombres de fichero
- * (sin `:`, que es un carácter ilegal en rutas de algunos sistemas de
- * archivos). Conserva los milisegundos: con solo segundos de resolución,
- * dos runs separados por pocos milisegundos producirían el mismo id y el
- * segundo pisaría el directorio del primero en `.runs/`. Dos runs dentro del
- * mismo milisegundo siguen colisionando, pero eso requiere concurrencia real
- * y se cubre con el lock de `guards/lock.ts`, no aquí.
+ * A readable run id, lexicographically sortable (the alphabetical order of
+ * the ids matches the chronological order) and safe for file names (no `:`,
+ * which is an illegal character in paths on some file systems). It keeps the
+ * milliseconds: with only second resolution, two runs a few milliseconds
+ * apart would produce the same id and the second would overwrite the first's
+ * directory in `.runs/`. Two runs within the same millisecond still collide,
+ * but that requires real concurrency and is covered by the lock of
+ * `guards/lock.ts`, not here.
  */
 function newRunId(now: Date): string {
   return now.toISOString().replace(/[:.]/g, '-');
 }
 
 /**
- * Comprueba si un error de `fs` es ENOENT (ruta inexistente), el único caso
- * en que "no hay dato" es una respuesta válida. Cualquier otro error
- * (permisos, disco lleno, etc.) se deja propagar: confundir un fallo real de
- * infraestructura con un run que nunca existió llevaría a `resume`
- * a reiniciar en silencio en vez de detenerse ante el problema real.
+ * Checks whether an `fs` error is ENOENT (path doesn't exist), the only case
+ * where "no data" is a valid answer. Any other error (permissions, full disk,
+ * etc.) is allowed to propagate: mistaking a real infrastructure failure for a
+ * run that never existed would lead `resume` to restart silently instead of
+ * stopping at the real problem.
  */
 function isEnoent(err: unknown): boolean {
   return (
@@ -52,10 +52,10 @@ function isEnoent(err: unknown): boolean {
 }
 
 /**
- * Persistencia de ejecuciones en `<repoRoot>/.runs/<pipeline>/<runId>/`.
- * El estado se escribe tras cada paso, nunca solo al final: si el proceso
- * muere a media ejecución, lo ya completado sigue en disco y `resume` puede
- * retomarlo.
+ * Persistence of runs in `<repoRoot>/.runs/<pipeline>/<runId>/`.
+ * The state is written after each step, never only at the end: if the process
+ * dies mid-run, what was already completed stays on disk and `resume` can pick
+ * it up.
  */
 export class RunStore {
   constructor(private readonly repoRoot: string) {}
@@ -83,8 +83,8 @@ export class RunStore {
       startedAt: now.toISOString(),
       params,
       steps: {},
-      // Solo cuando es cierto: así el run.json de una ejecución normal no
-      // gana un campo que no dice nada.
+      // Only when true: that way the run.json of a normal run doesn't gain a
+      // field that says nothing.
       ...(forced ? { forced: true } : {}),
     };
     await mkdir(this.runDir(pipeline, run.id), { recursive: true });
@@ -92,13 +92,13 @@ export class RunStore {
     return run;
   }
 
-  /** Escribe el resultado de un paso y actualiza run.json inmediatamente. */
+  /** Writes a step's result and updates run.json immediately. */
   async writeStep(run: RunRecord, step: StepRecord): Promise<void> {
     run.steps[step.id] = step;
     await this.persist(run);
   }
 
-  /** Guarda la transcripción de un paso, ya redactada por el llamante. */
+  /** Saves a step's transcript, already redacted by the caller. */
   async writeStepLog(run: RunRecord, stepId: string, contents: string): Promise<void> {
     await writeFile(join(this.runDir(run.pipeline, run.id), `${stepId}.log`), contents, 'utf8');
   }
@@ -115,8 +115,8 @@ export class RunStore {
   }
 
   /**
-   * Guarda el rastro del canal de notify en run.json. Se llama DESPUÉS de
-   * `finishRun`: el canal solo se invoca con el run ya cerrado.
+   * Saves the notify channel's trace in run.json. It is called AFTER
+   * `finishRun`: the channel is only invoked once the run is closed.
    */
   async writeNotify(run: RunRecord, notify: NotifyRecord): Promise<void> {
     run.notify = notify;
@@ -133,7 +133,7 @@ export class RunStore {
     }
   }
 
-  /** Runs del pipeline, del más reciente al más antiguo. */
+  /** The pipeline's runs, from newest to oldest. */
   async listRuns(pipeline: string): Promise<RunRecord[]> {
     let entries: string[];
     try {
@@ -150,24 +150,24 @@ export class RunStore {
     return runs;
   }
 
-  /** Último run con estado 'success'. Base del throttle: un run fallido no consume la ventana. */
+  /** Last run with status 'success'. Basis of the throttle: a failed run does not consume the window. */
   async lastSuccess(pipeline: string): Promise<RunRecord | undefined> {
     const runs = await this.listRuns(pipeline);
     return runs.find((r) => r.status === 'success');
   }
 
   /**
-   * Último run que EJECUTÓ algo, con éxito o con fallo. Ancla de
-   * `throttle`/`changed` cuando declaran `since: last_attempt`.
+   * Last run that EXECUTED something, with success or failure. Anchor of
+   * `throttle`/`changed` when they declare `since: last_attempt`.
    *
-   * Los runs saltados no cuentan, y ese matiz es el arreglo de un fallo
-   * real: antes devolvía cualquier run terminado, así
-   * que un pipeline con `since: last_attempt` empujaba el ancla de su propia
-   * ventana con cada tick que él mismo saltaba — por guarda o por lock — y la
-   * ventana no vencía nunca. `since: last_attempt` existe para espaciar
-   * TRABAJO; su única diferencia con `last_success` es que cuenta también los
-   * intentos fallidos, para que un pipeline que falla no machaque. Un run
-   * saltado no hizo trabajo alguno, así que anclar en él es un contrasentido.
+   * Skipped runs don't count, and that nuance is the fix for a real bug: it
+   * used to return any finished run, so a pipeline with `since: last_attempt`
+   * pushed the anchor of its own window with every tick it skipped itself — by
+   * guard or by lock — and the window never expired. `since: last_attempt`
+   * exists to space out WORK; its only difference from `last_success` is that
+   * it also counts failed attempts, so that a failing pipeline doesn't keep
+   * retrying back to back. A skipped run did no work at all, so anchoring on
+   * it is a contradiction.
    */
   async lastAttempt(pipeline: string): Promise<RunRecord | undefined> {
     const runs = await this.listRuns(pipeline);
@@ -175,17 +175,16 @@ export class RunStore {
   }
 
   /**
-   * Escribe `run.json` de forma atómica: primero vuelca el contenido a un
-   * fichero temporal en el mismo directorio del run (mismo sistema de
-   * ficheros, para que el `rename` de abajo sea atómico de verdad y no
-   * degrade a una copia si el temporal cayera en otro filesystem) y luego lo
-   * renombra sobre el destino. Quien lea `run.json` en cualquier instante ve
-   * siempre la versión anterior completa o la nueva completa, nunca un
-   * fichero a medio escribir — justo el escenario que este módulo existe
-   * para sobrevivir (un proceso que muere a media ejecución). El nombre del
-   * temporal lleva un UUID para que dos escrituras concurrentes sobre el
-   * mismo run no compartan fichero temporal entre sí. Si la escritura falla,
-   * se intenta borrar el temporal para no dejar basura en `.runs/`.
+   * Writes `run.json` atomically: first it dumps the content to a temporary
+   * file in the same directory as the run (same file system, so that the
+   * `rename` below is truly atomic and doesn't degrade to a copy if the
+   * temporary landed on another filesystem) and then renames it over the
+   * target. Whoever reads `run.json` at any instant always sees either the
+   * complete previous version or the complete new one, never a half-written
+   * file — exactly the scenario this module exists to survive (a process that
+   * dies mid-run). The temporary's name carries a UUID so that two concurrent
+   * writes on the same run don't share a temporary file. If the write fails,
+   * it tries to delete the temporary so as not to leave garbage in `.runs/`.
    */
   private async persist(run: RunRecord): Promise<void> {
     const targetPath = join(this.runDir(run.pipeline, run.id), 'run.json');

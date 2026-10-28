@@ -26,8 +26,8 @@ const run = (yaml: string, extra: Record<string, unknown> = {}) =>
     ...extra,
   });
 
-describe('runPipeline — camino feliz', () => {
-  test('ejecuta los pasos en orden y termina en success', async () => {
+describe('runPipeline — happy path', () => {
+  test('runs the steps in order and ends in success', async () => {
     const record = await run(`
 name: demo
 description: d
@@ -39,7 +39,7 @@ steps:
     outputs: { n: number }
   - id: b
     type: shell
-    run: 'echo recibido-{{a.n}}'
+    run: 'echo received-{{a.n}}'
 `);
     expect(record.status).toBe('success');
     expect(record.steps.a!.outputs).toEqual({ n: 1 });
@@ -47,8 +47,8 @@ steps:
   });
 });
 
-describe('runPipeline — políticas de error', () => {
-  test('on_error stop detiene el run y marca failed', async () => {
+describe('runPipeline — error policies', () => {
+  test('on_error stop halts the run and marks it failed', async () => {
     const record = await run(`
 name: demo
 description: d
@@ -66,7 +66,7 @@ steps:
     expect(record.steps.b).toBeUndefined();
   });
 
-  test('on_error continue sigue con el paso siguiente', async () => {
+  test('on_error continue goes on to the next step', async () => {
     const record = await run(`
 name: demo
 description: d
@@ -82,14 +82,14 @@ steps:
 `);
     expect(record.steps.a!.status).toBe('failed');
     expect(record.steps.b!.status).toBe('success');
-    // El único fallo de este run declaró on_error: continue — tolerado
-    // explícitamente por el propio pipeline, así que el agregado del run
-    // es success. El paso en sí sigue registrado como failed (línea de
-    // arriba): el detalle no se pierde, solo cambia el agregado.
+    // The only failure in this run declared on_error: continue — explicitly
+    // tolerated by the pipeline itself, so the run's aggregate is success.
+    // The step itself is still recorded as failed (line above): the detail is
+    // not lost, only the aggregate changes.
     expect(record.status).toBe('success');
   });
 
-  test('un fallo con on_error stop mezclado con uno continue sigue marcando el run failed', async () => {
+  test('a failure with on_error stop mixed with a continue one still marks the run failed', async () => {
     const record = await run(`
 name: demo
 description: d
@@ -108,7 +108,7 @@ steps:
     expect(record.status).toBe('failed');
   });
 
-  test('varios fallos, todos on_error continue, dejan el run en success', async () => {
+  test('several failures, all on_error continue, leave the run in success', async () => {
     const record = await run(`
 name: demo
 description: d
@@ -132,7 +132,7 @@ steps:
     expect(record.status).toBe('success');
   });
 
-  test('retry no reintenta un fallo NO transitorio', async () => {
+  test('retry does not retry a NON-transient failure', async () => {
     const record = await run(`
 name: demo
 description: d
@@ -146,7 +146,7 @@ steps:
     expect(record.steps.a!.attempts).toBe(1);
   });
 
-  test('retry con on: any reintenta hasta agotar los intentos', async () => {
+  test('retry with on: any retries until attempts run out', async () => {
     const waits: number[] = [];
     const record = await run(
       `
@@ -163,18 +163,18 @@ steps:
     );
     expect(record.steps.a!.attempts).toBe(3);
     expect(record.steps.a!.status).toBe('failed');
-    // Backoff exponencial: 1s y 2s, sin esperar de verdad en el test.
+    // Exponential backoff: 1s and 2s, without really waiting in the test.
     expect(waits).toEqual([1000, 2000]);
   });
 });
 
-describe('runPipeline — errores de interpolación no abortan el run', () => {
-  // `interpolate()` (params/resolve.ts) lanza si una referencia `{{...}}`
-  // no se puede resolver, y ni runShellStep ni runAgentStep la capturan: es
-  // responsabilidad del orquestador convertir esa excepción en un fallo de
-  // paso, no dejar que aborte runPipeline entero con un rechazo sin
-  // capturar.
-  test('una referencia sin resolver falla solo el paso, runPipeline no rechaza', async () => {
+describe('runPipeline — interpolation errors do not abort the run', () => {
+  // `interpolate()` (params/resolve.ts) throws if a `{{...}}` reference
+  // cannot be resolved, and neither runShellStep nor runAgentStep catch it:
+  // it is the orchestrator's responsibility to turn that exception into a
+  // step failure, not to let it abort the whole runPipeline with an uncaught
+  // rejection.
+  test('an unresolved reference fails only the step, runPipeline does not reject', async () => {
     const record = await run(`
 name: demo
 description: d
@@ -182,16 +182,16 @@ version: 1
 steps:
   - id: a
     type: shell
-    run: echo {{params.no_declarado}}
+    run: echo {{params.undeclared}}
 `);
     expect(record.status).toBe('failed');
     expect(record.steps.a!.status).toBe('failed');
-    expect(record.steps.a!.error).toContain('no_declarado');
+    expect(record.steps.a!.error).toContain('undeclared');
   });
 });
 
-describe('runPipeline — cascada de saltos', () => {
-  test('un when falso salta el paso y sus dependientes', async () => {
+describe('runPipeline — skip cascade', () => {
+  test('a false when skips the step and its dependents', async () => {
     const record = await run(`
 name: demo
 description: d
@@ -217,7 +217,7 @@ steps:
     expect(record.status).toBe('success');
   });
 
-  test('un paso independiente no se ve afectado por el salto de otro', async () => {
+  test('an independent step is not affected by the skip of another step', async () => {
     const record = await run(`
 name: demo
 description: d
@@ -239,7 +239,7 @@ steps:
     expect(record.steps.c!.status).toBe('success');
   });
 
-  test('un fallo con on_error continue también salta a los dependientes', async () => {
+  test('a failure with on_error continue also skips the dependents', async () => {
     const record = await run(`
 name: demo
 description: d
@@ -261,11 +261,11 @@ steps:
     expect(record.steps.c!.status).toBe('success');
   });
 
-  test('la cascada es transitiva: el dependiente de un dependiente también se salta', async () => {
-    // a falla -> b se salta en cascada (depende de a) -> c se salta en
-    // cascada (depende de b, no de a directamente). c nunca aparece en
-    // graph.dependents.get('a'), solo en graph.dependents.get('b'): si el
-    // salto no se propagara de verdad nivel a nivel, c se ejecutaría.
+  test('the cascade is transitive: the dependent of a dependent is skipped too', async () => {
+    // a fails -> b is skipped by cascade (depends on a) -> c is skipped by
+    // cascade (depends on b, not on a directly). c never appears in
+    // graph.dependents.get('a'), only in graph.dependents.get('b'): if the
+    // skip did not really propagate level by level, c would run.
     const record = await run(`
 name: demo
 description: d
@@ -294,11 +294,11 @@ steps:
   });
 });
 
-describe('runPipeline — reanudación', () => {
-  test('resume no re-ejecuta los pasos ya completados', async () => {
-    // El paso `a` deja una marca cada vez que se ejecuta. Tras reanudar,
-    // el contador debe seguir teniendo una sola marca.
-    const counter = join(root, 'contador.txt');
+describe('runPipeline — resume', () => {
+  test('resume does not re-run steps that already completed', async () => {
+    // Step `a` leaves a mark each time it runs. After resuming, the counter
+    // must still have a single mark.
+    const counter = join(root, 'counter.txt');
     const yaml = (bCommand: string) => `
 name: demo
 description: d
@@ -317,11 +317,11 @@ steps:
     expect(first.status).toBe('failed');
     expect(await Bun.file(counter).text()).toBe('x');
 
-    // Nota: `bCommand` se inserta como escalar YAML sin comillas. Un
-    // `true`/`false` desnudo ahí lo parsearía el YAML como booleano (mismo
-    // tipo de defecto señalado para `retry: { ..., on: any }`) y `run:
-    // z.string()` lo rechazaría antes de llegar a ejecutarse. `exit 0` no
-    // colisiona con ninguna palabra clave de YAML.
+    // Note: `bCommand` is inserted as an unquoted YAML scalar. A bare
+    // `true`/`false` there would be parsed by YAML as a boolean (same kind of
+    // defect noted for `retry: { ..., on: any }`) and `run: z.string()` would
+    // reject it before it ever ran. `exit 0` does not collide with any YAML
+    // keyword.
     const resumed = await runPipeline({
       pipeline: parsePipeline(yaml('exit 0')),
       repoRoot: root, store, params: {}, secrets: {}, resumeFrom: first,
@@ -332,7 +332,7 @@ steps:
     expect(await Bun.file(counter).text()).toBe('x');
   });
 
-  test('resume rechaza un run de otra versión del pipeline', async () => {
+  test('resume rejects a run from another pipeline version', async () => {
     const first = await run(`
 name: demo
 description: d
@@ -355,10 +355,10 @@ steps:
 `),
         repoRoot: root, store, params: {}, secrets: {}, resumeFrom: first,
       }),
-    ).rejects.toThrow(/versión/);
+    ).rejects.toThrow(/version/);
   });
 
-  test('resume puede desbloquear pasos que antes se saltaron por cascada', async () => {
+  test('resume can unblock steps that were previously skipped by cascade', async () => {
     const yaml = (aCommand: string) => `
 name: demo
 description: d
@@ -381,17 +381,17 @@ steps:
 `;
 
     const first = await run(yaml('exit 1'));
-    // Único fallo del run: on_error: continue en "a" — tolerado, el
-    // agregado es success aunque b/c se saltaran en cascada.
+    // The run's only failure: on_error: continue on "a" — tolerated, the
+    // aggregate is success even though b/c were skipped by cascade.
     expect(first.status).toBe('success');
     expect(first.steps.a!.status).toBe('failed');
     expect(first.steps.b!.status).toBe('skipped');
     expect(first.steps.c!.status).toBe('skipped');
 
-    // `aCommand` se inserta como escalar YAML sin comillas: se escribe
-    // directamente con comillas simples reales alrededor del JSON (en vez
-    // de comillas dobles sin envolver) para que `sh` no se las coma — mismo
-    // defecto que shell.test.ts ya documenta para `runShellStep`.
+    // `aCommand` is inserted as an unquoted YAML scalar: it is written
+    // directly with real single quotes around the JSON (instead of unwrapped
+    // double quotes) so `sh` does not eat them — same defect shell.test.ts
+    // already documents for `runShellStep`.
     const resumed = await runPipeline({
       pipeline: parsePipeline(yaml(`echo '{"n":1}'`)),
       repoRoot: root, store, params: {}, secrets: {}, resumeFrom: first,
@@ -401,16 +401,16 @@ steps:
     expect(resumed.steps.a!.status).toBe('success');
     expect(resumed.steps.b!.status).toBe('success');
     expect(resumed.steps.c!.status).toBe('success');
-    // El run original no debe quedar mutado por la reanudación. (Y, con el
-    // criterio nuevo, nunca fue 'failed' — su único fallo fue tolerado.)
+    // The original run must not be mutated by the resume. (And, under the new
+    // criterion, it was never 'failed' — its only failure was tolerated.)
     expect(first.status).toBe('success');
     expect(first.steps.b!.status).toBe('skipped');
   });
 
-  test('la credencial del .env (agentAuth) llega al runner de los pasos agent', async () => {
+  test('the .env credential (agentAuth) reaches the runner of the agent steps', async () => {
     const pipelineDir = join(root, 'pipelines', 'demo');
     mkdirSync(pipelineDir, { recursive: true });
-    writeFileSync(join(pipelineDir, 'a.md'), 'Hola.');
+    writeFileSync(join(pipelineDir, 'a.md'), 'Hello.');
     const pipeline = parsePipeline(`
 name: demo
 description: d
@@ -428,20 +428,21 @@ steps:
     };
     const record = await runPipeline({
       pipeline, repoRoot: root, store, params: {}, secrets: {},
-      agentAuth: { ANTHROPIC_API_KEY: 'ap-test-del-env' }, agentRunner,
+      agentAuth: { ANTHROPIC_API_KEY: 'ap-test-from-env' }, agentRunner,
     });
     expect(record.status).toBe('success');
-    expect(received).toEqual({ ANTHROPIC_API_KEY: 'ap-test-del-env' });
+    expect(received).toEqual({ ANTHROPIC_API_KEY: 'ap-test-from-env' });
   });
 
-  test('resume acumula el coste de un paso previo y uno nuevo, a través de la rama agent (prompt real + agentRunner inyectado)', async () => {
-    // Único test de este bloque que ejercita la rama `agent` de `executeOnce`:
-    // lee un fichero de prompt real de disco (no se stubea esa lectura) y
-    // pasa por un `agentRunner` inyectado — sin red, sin SDK real.
+  test('resume accumulates the cost of a previous step and a new one, through the agent branch (real prompt + injected agentRunner)', async () => {
+    // The only test in this block that exercises the `agent` branch of
+    // `executeOnce`: it reads a real prompt file from disk (that read is not
+    // stubbed) and goes through an injected `agentRunner` — no network, no
+    // real SDK.
     const pipelineDir = join(root, 'pipelines', 'demo');
     mkdirSync(pipelineDir, { recursive: true });
-    writeFileSync(join(pipelineDir, 'a.md'), 'Preséntate.');
-    writeFileSync(join(pipelineDir, 'b.md'), 'Resumen sobre {{params.tema}}.');
+    writeFileSync(join(pipelineDir, 'a.md'), 'Introduce yourself.');
+    writeFileSync(join(pipelineDir, 'b.md'), 'Summary about {{params.topic}}.');
 
     const pipeline = parsePipeline(`
 name: demo
@@ -464,23 +465,23 @@ steps:
 
     const agentRunner: NonNullable<RunOptions['agentRunner']> = async (step, ctx) => {
       if (step.id === 'a') {
-        // Paso previo al resume: siempre tiene éxito, con un coste fijo.
+        // Step prior to the resume: always succeeds, with a fixed cost.
         return { ok: true, outputs: {}, log: '', durationMs: 1, costUsd: 0.5 };
       }
-      // Paso 'b': se captura lo que de verdad recibió el runner, para
-      // probar que orchestrate.ts leyó el fichero real de disco y montó el
-      // scope correcto — no solo que "pasa por la rama agent".
+      // Step 'b': capture what the runner really received, to prove that
+      // orchestrate.ts read the real file from disk and built the right
+      // scope — not just that it "goes through the agent branch".
       capturedPromptText = ctx.promptText;
       capturedScope = ctx.scope;
       if (bShouldFail) {
-        return { ok: false, error: 'fallo simulado', transient: false, log: '', durationMs: 1 };
+        return { ok: false, error: 'simulated failure', transient: false, log: '', durationMs: 1 };
       }
-      // Paso nuevo, ejecutado solo en la reanudación: coste distinto.
+      // New step, run only on resume: different cost.
       return { ok: true, outputs: {}, log: '', durationMs: 1, costUsd: 0.25 };
     };
 
     const first = await runPipeline({
-      pipeline, repoRoot: root, store, params: { tema: 'pruebas' }, secrets: {}, agentRunner,
+      pipeline, repoRoot: root, store, params: { topic: 'testing' }, secrets: {}, agentRunner,
     });
     expect(first.status).toBe('failed');
     expect(first.steps.a!.status).toBe('success');
@@ -489,47 +490,47 @@ steps:
 
     bShouldFail = false;
     const resumed = await runPipeline({
-      pipeline, repoRoot: root, store, params: { tema: 'pruebas' }, secrets: {},
+      pipeline, repoRoot: root, store, params: { topic: 'testing' }, secrets: {},
       resumeFrom: first, agentRunner,
     });
 
     expect(resumed.status).toBe('success');
     expect(resumed.steps.b!.status).toBe('success');
-    // 'a' no se re-ejecuta: su coste es el heredado del run anterior.
+    // 'a' is not re-run: its cost is the one inherited from the previous run.
     expect(resumed.steps.a!.costUsd).toBe(0.5);
-    // 'b' sí se re-ejecuta en esta pasada: coste nuevo.
+    // 'b' is re-run in this pass: new cost.
     expect(resumed.steps.b!.costUsd).toBe(0.25);
-    // El coste de un paso previo (nunca re-ejecutado) y el de uno nuevo se
-    // suman en el total: ni se resetea el histórico ni se pierde el nuevo.
+    // The cost of a previous step (never re-run) and that of a new one are
+    // added into the total: the history is not reset and the new one is not
+    // lost.
     expect(resumed.totalCostUsd).toBe(0.75);
 
-    // El texto del prompt es exactamente el contenido leído de disco (sin
-    // interpolar: eso es responsabilidad del runner, no de orchestrate.ts),
-    // y el scope que recibió el runner permite reconstruirlo interpolado
-    // con la misma función que usa runAgentStep — prueba que la lectura del
-    // fichero y el scope realmente llegaron bien a la rama agent.
-    expect(capturedPromptText).toBe('Resumen sobre {{params.tema}}.');
-    expect(interpolate(capturedPromptText!, capturedScope!)).toBe('Resumen sobre pruebas.');
+    // The prompt text is exactly the content read from disk (uninterpolated:
+    // that is the runner's responsibility, not orchestrate.ts's), and the
+    // scope the runner received allows rebuilding it interpolated with the
+    // same function runAgentStep uses — proof that the file read and the scope
+    // really made it to the agent branch.
+    expect(capturedPromptText).toBe('Summary about {{params.topic}}.');
+    expect(interpolate(capturedPromptText!, capturedScope!)).toBe('Summary about testing.');
   });
 });
 
-// Regresión: `runAgentStep` calculaba `AgentOutcome.denials` correctamente
-// pero `runPipeline` nunca lo copiaba al `StepRecord`
-// persistido — el `const record: StepRecord = { ... }` de este módulo no lo
-// referenciaba, y `StepRecord` ni siquiera declaraba el campo. El resultado:
-// una denegación real del hook PreToolUse desaparecía sin dejar rastro
-// entre el valor de retorno de `runAgentStep` y `.runs/`, invisible vía
-// `pipelines show` — justo lo que tiene que ser visible. Este
-// test ejercita el camino completo (agentRunner inyectado -> runPipeline ->
-// store.writeStep -> disco) en vez de solo construir un StepRecord a mano,
-// para que una futura regresión de este mismo tipo (un campo de
-// AgentOutcome que deja de llegar al record persistido) la detecte esta
-// suite, no una ejecución real contra un pipeline en producción.
-describe('runPipeline — persistencia de denials de un paso agent', () => {
-  test('una denegación del hook PreToolUse sobrevive hasta el StepRecord leído de disco', async () => {
+// Regression: `runAgentStep` computed `AgentOutcome.denials` correctly but
+// `runPipeline` never copied it into the persisted `StepRecord` — this
+// module's `const record: StepRecord = { ... }` did not reference it, and
+// `StepRecord` did not even declare the field. The result: a real PreToolUse
+// hook denial vanished without a trace between the return value of
+// `runAgentStep` and `.runs/`, invisible via `pipelines show` — exactly what
+// has to be visible. This test exercises the whole path (injected
+// agentRunner -> runPipeline -> store.writeStep -> disk) instead of just
+// building a StepRecord by hand, so that a future regression of this same
+// kind (an AgentOutcome field that stops reaching the persisted record) is
+// caught by this suite, not by a real run against a production pipeline.
+describe('runPipeline — persistence of denials of an agent step', () => {
+  test('a PreToolUse hook denial survives all the way to the StepRecord read from disk', async () => {
     const pipelineDir = join(root, 'pipelines', 'demo');
     mkdirSync(pipelineDir, { recursive: true });
-    writeFileSync(join(pipelineDir, 'a.md'), 'Escanea el repo.');
+    writeFileSync(join(pipelineDir, 'a.md'), 'Scan the repo.');
 
     const pipeline = parsePipeline(`
 name: demo
@@ -548,7 +549,7 @@ steps:
       log: '',
       durationMs: 1,
       denials: [
-        { toolName: 'Read', toolUseId: 't1', reason: 'fuera de cwd', source: 'both' },
+        { toolName: 'Read', toolUseId: 't1', reason: 'outside cwd', source: 'both' },
       ],
     });
 
@@ -556,22 +557,22 @@ steps:
       pipeline, repoRoot: root, store, params: {}, secrets: {}, agentRunner,
     });
 
-    // 1. El RunRecord que runPipeline devuelve ya lo lleva (store.writeStep
-    //    muta run.steps in situ antes de persistir).
+    // 1. The RunRecord that runPipeline returns already carries it
+    //    (store.writeStep mutates run.steps in place before persisting).
     expect(record.steps.a!.denials).toEqual([
-      { toolName: 'Read', toolUseId: 't1', reason: 'fuera de cwd', source: 'both' },
+      { toolName: 'Read', toolUseId: 't1', reason: 'outside cwd', source: 'both' },
     ]);
 
-    // 2. Y, más importante — lo que de verdad se escribió en `.runs/` y es
-    //    lo que `pipelines show` acaba leyendo: un StepRecord recién leído
-    //    de disco (no el objeto en memoria) también lo conserva.
+    // 2. And, more importantly — what was really written to `.runs/` and is
+    //    what `pipelines show` ends up reading: a StepRecord freshly read from
+    //    disk (not the in-memory object) keeps it too.
     const reread = await store.readRun(pipeline.name, record.id);
     expect(reread?.steps.a!.denials).toEqual([
-      { toolName: 'Read', toolUseId: 't1', reason: 'fuera de cwd', source: 'both' },
+      { toolName: 'Read', toolUseId: 't1', reason: 'outside cwd', source: 'both' },
     ]);
   });
 
-  test('un paso shell (sin hook) no lleva denials en su StepRecord', async () => {
+  test('a shell step (no hook) carries no denials in its StepRecord', async () => {
     const record = await run(`
 name: demo
 description: d
@@ -585,8 +586,8 @@ steps:
   });
 });
 
-describe('runPipeline — aislamiento de secretos', () => {
-  test('los secretos llegan al paso pero no al log del run', async () => {
+describe('runPipeline — secret isolation', () => {
+  test('secrets reach the step but not the run log', async () => {
     const record = await run(
       `
 name: demo
@@ -599,17 +600,17 @@ steps:
     type: shell
     run: echo "token=$MY_TOKEN"
 `,
-      { secrets: { MY_TOKEN: 'valor-secretisimo' } },
+      { secrets: { MY_TOKEN: 'super-secret-value' } },
     );
     expect(record.steps.a!.status).toBe('success');
     const log = await Bun.file(join(root, '.runs', 'demo', record.id, 'a.log')).text();
-    expect(log).not.toContain('valor-secretisimo');
-    expect(log).toContain('«redactado»');
+    expect(log).not.toContain('super-secret-value');
+    expect(log).toContain('[redacted]');
   });
 });
 
 describe('runPipeline — always', () => {
-  test('un paso always corre tras un fallo y no afecta el estado del run', async () => {
+  test('an always step runs after a failure and does not affect the run status', async () => {
     const marker = join(root, 'marker.txt');
     const record = await run(`
 name: demo
@@ -621,14 +622,14 @@ steps:
     run: exit 1
 always:
   - id: cleanup
-    run: printf hecho > ${marker}
+    run: printf done > ${marker}
 `);
     expect(record.status).toBe('failed');
     expect(record.steps.cleanup!.status).toBe('success');
-    expect(await Bun.file(marker).text()).toBe('hecho');
+    expect(await Bun.file(marker).text()).toBe('done');
   });
 
-  test('un paso always corre también cuando el run tiene éxito', async () => {
+  test('an always step also runs when the run succeeds', async () => {
     const record = await run(`
 name: demo
 description: d
@@ -645,7 +646,7 @@ always:
     expect(record.steps.cleanup!.status).toBe('success');
   });
 
-  test('el fallo de un paso always no cambia el estado del run', async () => {
+  test('the failure of an always step does not change the run status', async () => {
     const record = await run(`
 name: demo
 description: d
@@ -662,7 +663,7 @@ always:
     expect(record.steps.cleanup!.status).toBe('failed');
   });
 
-  test('varios pasos always corren todos aunque uno falle', async () => {
+  test('several always steps all run even if one fails', async () => {
     const record = await run(`
 name: demo
 description: d

@@ -2,30 +2,30 @@ export type RunStatus = 'running' | 'success' | 'failed' | 'skipped';
 export type StepStatus = 'success' | 'failed' | 'skipped';
 
 /**
- * Una denegación del hook `PreToolUse` de un paso `agent` (`runner/agent.ts`,
- * `buildDenials`), persistida como parte de su `StepRecord` para que la capa
- * detectiva del sandbox de filesystem sea visible vía
- * `pipelines show`, no solo en memoria durante el run.
+ * A denial from the `PreToolUse` hook of an `agent` step (`runner/agent.ts`,
+ * `buildDenials`), persisted as part of its `StepRecord` so that the
+ * detective layer of the filesystem sandbox is visible via
+ * `pipelines show`, not only in memory during the run.
  *
- * Definido aquí (no en `runner/agent.ts`) para que `runner/agent.ts` pueda
- * importar este tipo sin crear un ciclo: `runner/agent.ts` ya depende de
- * `runs/store.ts` (para `redactSecrets`), que a su vez depende de este
- * fichero — si `Denial` viviera en `runner/agent.ts` e importara algo de
- * vuelta desde `runs/types.ts`, o si este fichero importara desde
- * `runner/agent.ts`, se cerraría el ciclo `runs/types.ts` -> `runner/agent.ts`
- * -> `runs/store.ts` -> `runs/types.ts`. `runs/types.ts` no importa nada hoy
- * (es una hoja del grafo de módulos) — mismo patrón que ya usa
- * `notify/dispatch.ts`, que importa `RunRecord` directamente desde este
- * fichero en vez de a través de `runs/store.ts`.
+ * Defined here (not in `runner/agent.ts`) so that `runner/agent.ts` can
+ * import this type without creating a cycle: `runner/agent.ts` already
+ * depends on `runs/store.ts` (for `redactSecrets`), which in turn depends on
+ * this file — if `Denial` lived in `runner/agent.ts` and imported something
+ * back from `runs/types.ts`, or if this file imported from
+ * `runner/agent.ts`, the cycle `runs/types.ts` -> `runner/agent.ts` ->
+ * `runs/store.ts` -> `runs/types.ts` would close. `runs/types.ts` imports
+ * nothing today (it is a leaf of the module graph) — same pattern
+ * `notify/dispatch.ts` already uses, which imports `RunRecord` directly from
+ * this file instead of through `runs/store.ts`.
  */
 export type Denial = {
   toolName: string;
   toolUseId: string;
   reason?: string;
-  /** 'hook-log': solo el hook lo registró. 'sdk-result': solo permission_denials
-   *  lo registró (señal de que algo ajeno al propio hook denegó — o de que el
-   *  hook falló abierto sin que su log lo capturara). 'both': ambas fuentes
-   *  coinciden, el caso normal de una denegación real del hook. */
+  /** 'hook-log': only the hook recorded it. 'sdk-result': only permission_denials
+   *  recorded it (a sign that something other than the hook itself denied — or
+   *  that the hook failed open without its log capturing it). 'both': both
+   *  sources agree, the normal case of a real denial by the hook. */
   source: 'hook-log' | 'sdk-result' | 'both';
 };
 
@@ -34,29 +34,29 @@ export type StepRecord = {
   status: StepStatus;
   startedAt: string;
   durationMs: number;
-  /** Outputs validados contra el contrato. Vacío si el paso no declara ninguno. */
+  /** Outputs validated against the contract. Empty if the step declares none. */
   outputs: Record<string, unknown>;
   effects: string[];
-  /** Intentos consumidos, incluido el primero. */
+  /** Attempts used, including the first. */
   attempts: number;
   costUsd?: number;
   inputTokens?: number;
   outputTokens?: number;
   toolsUsed?: string[];
   error?: string;
-  /** Motivo del salto, cuando status es 'skipped'. */
+  /** Reason for the skip, when status is 'skipped'. */
   skipReason?: string;
-  /** Denegaciones del hook PreToolUse de un paso agent — ver `Denial`. */
+  /** Denials from the PreToolUse hook of an agent step — see `Denial`. */
   denials?: Denial[];
 };
 
 /**
- * Rastro del canal de `notify:` de un run: qué canal se invocó, con qué
- * código salió, cuándo, y la cola de su salida (stdout+stderr, redactada con
- * los secretos del canal). Antes el motor descartaba esa salida (`stdout:
- * 'ignore'`) y un envío de correo no dejaba ninguna prueba de haber
- * ocurrido — el script bash al que sustituye sí escribía `notify sent (200)
- * id=…`. Destapado al migrar un pipeline real.
+ * Trace of a run's `notify:` channel: which channel was invoked, what code it
+ * exited with, when, and the tail of its output (stdout+stderr, redacted with
+ * the channel's secrets). The engine used to discard that output (`stdout:
+ * 'ignore'`) and an email send left no proof of having happened — the bash
+ * script it replaces did write `notify sent (200) id=…`. Uncovered while
+ * migrating a real pipeline.
  */
 export type NotifyRecord = {
   channel: string;
@@ -77,15 +77,16 @@ export type RunRecord = {
   totalCostUsd?: number;
   skipReason?: string;
   /**
-   * El run se lanzó con `run --force`, saltándose la evaluación de `when:`.
-   * Solo presente cuando es cierto: un run normal no lleva el campo.
+   * The run was launched with `run --force`, skipping the evaluation of `when:`.
+   * Only present when true: a normal run doesn't carry the field.
    *
-   * Se persiste porque un run forzado NO demuestra que las guardas habrían
-   * dejado pasar, y sin la marca el historial de `.runs/` no distingue "corrió
-   * porque tocaba" de "corrió porque alguien insistió" — justo la clase de
-   * ambigüedad que este proyecto paga cara cuando lee su propio pasado.
+   * It is persisted because a forced run does NOT prove the guards would have
+   * let it through, and without the mark the `.runs/` history can't tell "it
+   * ran because it was due" from "it ran because someone insisted" — exactly
+   * the kind of ambiguity this project pays dearly for when it reads its own
+   * past.
    */
   forced?: boolean;
-  /** Rastro del canal de notify, si se invocó — ver `NotifyRecord`. */
+  /** Trace of the notify channel, if it was invoked — see `NotifyRecord`. */
   notify?: NotifyRecord;
 };

@@ -22,9 +22,9 @@ import {
 import { redactSecrets } from '../runs/store.ts';
 import { captureRoots, evaluateToolCall, type FsRoots } from './fs-guard.ts';
 import type { HookInput, HookJSONOutput } from '@anthropic-ai/claude-agent-sdk';
-// `Denial` vive en `runs/types.ts` (no aquí) para evitar un ciclo de
-// módulos — ver el comentario junto a su definición allí. Se re-exporta
-// desde este fichero por comodidad de quien ya importa tipos de agent.ts.
+// `Denial` lives in `runs/types.ts` (not here) to avoid a module cycle —
+// see the comment next to its definition there. It is re-exported from this
+// file for the convenience of whoever already imports types from agent.ts.
 import type { Denial } from '../runs/types.ts';
 export type { Denial } from '../runs/types.ts';
 
@@ -36,10 +36,10 @@ export type JsonSchemaObject = {
 };
 
 /**
- * Firma mínima que el runner necesita del SDK; inyectable para los tests.
- * Los mensajes son `SDKMessage`, el tipo real que exporta el propio SDK — no
- * una forma inventada — así que un fake de test o un cambio futuro del SDK
- * que no encaje falla en `tsc`, no en producción.
+ * Minimal signature the runner needs from the SDK; injectable for tests.
+ * The messages are `SDKMessage`, the real type the SDK itself exports — not
+ * an invented shape — so a test fake or a future SDK change that does not fit
+ * fails in `tsc`, not in production.
  */
 export type QueryFn = (args: {
   prompt: string;
@@ -48,11 +48,11 @@ export type QueryFn = (args: {
 
 export type AgentStepContext = StepContext & {
   repoRoot: string;
-  /** Contenido del fichero de prompt, ya leído de disco. */
+  /** Content of the prompt file, already read from disk. */
   promptText: string;
-  /** Registro `mcp_servers` del pipeline; el paso activa un subconjunto por nombre. */
+  /** The pipeline's `mcp_servers` registry; the step enables a subset by name. */
   mcpServers: Record<string, McpServerConfig>;
-  /** Credencial de Claude tomada del `.env` del repo de datos; solo llega a los pasos `agent`. */
+  /** Claude credential taken from the data repo's `.env`; it only reaches `agent` steps. */
   agentAuth?: Record<string, string>;
   queryFn?: QueryFn;
 };
@@ -62,20 +62,19 @@ export type AgentOutcome = StepOutcome & {
   inputTokens?: number;
   outputTokens?: number;
   toolsUsed?: string[];
-  /** Denegaciones del hook PreToolUse durante este paso — ver buildDenials. */
+  /** Denials from the PreToolUse hook during this step — see buildDenials. */
   denials?: Denial[];
 };
 
 /**
- * Cruza el log propio del hook (motivo, por tool_use_id) contra
- * `result.permission_denials` del SDK (recuento autoritativo, sin motivo).
- * Un desajuste entre las dos fuentes es la señal más valiosa: una entrada
- * de `hookLog` sin pareja en `sdkDenials` sugiere que el hook denegó pero el
- * SDK no lo registró (inesperado); una entrada de `sdkDenials` sin pareja en
- * `hookLog` sugiere que algo ajeno al propio hook produjo la denegación —
- * en ambos casos, exactamente el tipo de discrepancia que un fallo-abierto
- * silencioso produciría — y el sandbox nunca debe fallar abierto sin que
- * se note.
+ * Cross-checks the hook's own log (reason, by tool_use_id) against the SDK's
+ * `result.permission_denials` (authoritative count, no reason). A mismatch
+ * between the two sources is the most valuable signal: a `hookLog` entry with
+ * no match in `sdkDenials` suggests the hook denied but the SDK did not
+ * record it (unexpected); an `sdkDenials` entry with no match in `hookLog`
+ * suggests something other than the hook itself produced the denial — in
+ * both cases, exactly the kind of discrepancy a silent fail-open would
+ * produce — and the sandbox must never fail open without it being noticed.
  */
 function buildDenials(
   hookLog: Map<string, { toolName: string; reason: string }>,
@@ -100,26 +99,26 @@ function buildDenials(
 }
 
 /**
- * El SDK entrega el nombre de una tool MCP en su forma CUALIFICADA
- * (`mcp__<servidor>__<tool>`, p. ej. `mcp__playwright__browser_take_screenshot`),
- * pero `TOOL_FS_PROFILES` (fs-guard.ts) está indexada por el sufijo
- * DESNUDO (`browser_take_screenshot`) — igual que ya hacen el gobierno
- * estático de `tools:` en `schema/pipeline.ts` (`parsePipeline`) y la deriva
- * de esquema de `doctor` (`preflight/check.ts`), ambos quitando el mismo
- * prefijo antes de consultar la tabla. Este hook era el único de los tres
- * consumidores que NO lo hacía, y sin esta normalización TODA llamada a una tool MCP real caía
- * en `if (!profile) return deny('tool desconocida para el motor')` de
- * `evaluateToolCall`, denegando en la práctica las 18+ tools de Playwright
- * que un pipeline real concede — fallando cerrado (nunca una fuga de
- * seguridad), pero dejando la mitad MCP de la tabla sin aplicar nunca.
+ * The SDK delivers the name of an MCP tool in its QUALIFIED form
+ * (`mcp__<server>__<tool>`, e.g. `mcp__playwright__browser_take_screenshot`),
+ * but `TOOL_FS_PROFILES` (fs-guard.ts) is indexed by the BARE suffix
+ * (`browser_take_screenshot`) — just as the static governance of `tools:` in
+ * `schema/pipeline.ts` (`parsePipeline`) and the schema drift check of
+ * `doctor` (`preflight/check.ts`) already do, both stripping the same prefix
+ * before consulting the table. This hook was the only one of the three
+ * consumers that did NOT, and without this normalization EVERY call to a real
+ * MCP tool fell into `if (!profile) return deny('unknown tool for the
+ * engine')` of `evaluateToolCall`, in practice denying the 18+ Playwright
+ * tools a real pipeline grants — failing closed (never a security leak), but
+ * leaving the MCP half of the table never applied.
  *
- * Solo se quita el prefijo para un servidor que ESTE paso activó de verdad
- * (`mcpServerNames`, `step.mcpServers`) — nunca a ciegas para cualquier
- * `mcp__<algo>__`: si se quitara sin comprobar el nombre del servidor, una
- * tool de un servidor no gobernado o inesperado podría heredar por accidente
- * el perfil de una tool de Playwright que solo comparte sufijo. Un nombre
- * nativo sin prefijo (`Read`, `Bash`...) no casa con ningún patrón y se
- * devuelve tal cual.
+ * The prefix is only stripped for a server THIS step really enabled
+ * (`mcpServerNames`, `step.mcpServers`) — never blindly for any
+ * `mcp__<something>__`: if it were stripped without checking the server name,
+ * a tool from an ungoverned or unexpected server could accidentally inherit
+ * the profile of a Playwright tool that merely shares the suffix. A native
+ * name with no prefix (`Read`, `Bash`...) matches no pattern and is returned
+ * as is.
  */
 function normalizeToolName(toolName: string, mcpServerNames: readonly string[]): string {
   for (const server of mcpServerNames) {
@@ -130,15 +129,15 @@ function normalizeToolName(toolName: string, mcpServerNames: readonly string[]):
 }
 
 /**
- * Construye el hook `PreToolUse` para un paso, cerrado sobre `roots`, un
- * log mutable de denegaciones (`hookLog`, poblado como efecto lateral cada
- * vez que el hook deniega — `buildDenials` lo consume al final del paso) y
- * los nombres de servidor MCP que el paso activó (`mcpServerNames`, para
- * `normalizeToolName`). El cuerpo entero está envuelto en un único
- * `try/catch` que nunca deja escapar una excepción — `evaluateToolCall` ya
- * no lanza por su cuenta, pero esta capa es la red de seguridad si algo en
- * el futuro rompiera esa garantía sin que un test lo detectara primero: el
- * sandbox nunca falla abierto, ante cualquier duda deniega.
+ * Builds the `PreToolUse` hook for a step, closed over `roots`, a mutable
+ * denial log (`hookLog`, populated as a side effect every time the hook
+ * denies — `buildDenials` consumes it at the end of the step) and the MCP
+ * server names the step enabled (`mcpServerNames`, for
+ * `normalizeToolName`). The whole body is wrapped in a single `try/catch`
+ * that never lets an exception escape — `evaluateToolCall` no longer throws
+ * on its own, but this layer is the safety net if something in the future
+ * broke that guarantee before a test caught it: the sandbox never fails
+ * open, and when in doubt it denies.
  */
 function makePreToolUseHook(
   roots: FsRoots,
@@ -148,11 +147,11 @@ function makePreToolUseHook(
   return async (input, toolUseId) => {
     try {
       if (input.hook_event_name !== 'PreToolUse') return {};
-      // `hookLog`/el resultado final SIEMPRE usan el nombre tal cual lo
-      // reportó el SDK (`input.tool_name`, cualificado si es MCP) — es lo
-      // que `result.permission_denials` también usa, así que `buildDenials`
-      // los empareja por el mismo nombre. Solo la CONSULTA a
-      // `TOOL_FS_PROFILES` usa el sufijo normalizado.
+      // `hookLog`/the final result ALWAYS use the name exactly as the SDK
+      // reported it (`input.tool_name`, qualified if MCP) — that is what
+      // `result.permission_denials` uses too, so `buildDenials` pairs them by
+      // the same name. Only the LOOKUP in `TOOL_FS_PROFILES` uses the
+      // normalized suffix.
       const normalized = normalizeToolName(input.tool_name, mcpServerNames);
       const result = evaluateToolCall(normalized, input.tool_input, roots);
       if (result.allowed) {
@@ -167,7 +166,7 @@ function makePreToolUseHook(
         },
       };
     } catch (err) {
-      const reason = `error interno del hook — se deniega por defecto (${(err as Error).message})`;
+      const reason = `internal hook error — denied by default (${(err as Error).message})`;
       if (toolUseId) hookLog.set(toolUseId, { toolName: (input as { tool_name?: string }).tool_name ?? '?', reason });
       return {
         hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason },
@@ -177,17 +176,16 @@ function makePreToolUseHook(
 }
 
 /**
- * Categorías de error que el propio SDK asigna a un turno de `assistant`
- * fallido (`SDKAssistantMessage.error`, `sdk.d.ts` línea ~2933) o a un
- * reintento interno que el propio CLI realiza (`SDKAPIRetryMessage.error`,
- * línea ~2924) — mismo tipo `SDKAssistantMessageError` en ambos sitios
- * (línea ~2976). Son las tres categorías cuyo origen es el lado del
- * servidor/red, no el contenido de la petición: la misma petición puede
- * tener éxito en un segundo intento. El resto de categorías del enum
- * ('authentication_failed', 'oauth_org_not_allowed', 'billing_error',
- * 'invalid_request', 'model_not_found', 'max_output_tokens') son de
- * configuración, credenciales o contenido — reintentar la misma petición no
- * las resuelve.
+ * Error categories the SDK itself assigns to a failed `assistant` turn
+ * (`SDKAssistantMessage.error`, `sdk.d.ts` line ~2933) or to an internal
+ * retry the CLI itself performs (`SDKAPIRetryMessage.error`, line ~2924) —
+ * same `SDKAssistantMessageError` type in both places (line ~2976). These
+ * are the three categories whose origin is the server/network side, not the
+ * content of the request: the same request can succeed on a second attempt.
+ * The rest of the enum's categories ('authentication_failed',
+ * 'oauth_org_not_allowed', 'billing_error', 'invalid_request',
+ * 'model_not_found', 'max_output_tokens') are about configuration,
+ * credentials or content — retrying the same request does not resolve them.
  */
 const TRANSIENT_ASSISTANT_ERRORS: ReadonlySet<SDKAssistantMessageError> = new Set([
   'rate_limit',
@@ -196,14 +194,14 @@ const TRANSIENT_ASSISTANT_ERRORS: ReadonlySet<SDKAssistantMessageError> = new Se
 ]);
 
 /**
- * Subtipos de `SDKResultError` (`sdk.d.ts` línea ~4352) que NO son un fallo
- * transitorio del lado del servidor bajo ninguna interpretación: agotar el
- * número de turnos, el presupuesto en USD o los reintentos de salida
- * estructurada son condiciones de configuración o de contenido, no de red —
- * repetir la misma petición no las resuelve. Solo `error_during_execution`
- * es un cajón de sastre que puede o no ser un error de API real; para ese
- * caso se recurre al respaldo de coincidencia de texto (`isTransientText`)
- * cuando no se ha observado ninguna categoría estructurada durante el flujo.
+ * Subtypes of `SDKResultError` (`sdk.d.ts` line ~4352) that are NOT a
+ * transient server-side failure under any interpretation: running out of
+ * turns, of the USD budget or of structured-output retries are configuration
+ * or content conditions, not network ones — repeating the same request does
+ * not resolve them. Only `error_during_execution` is a catch-all that may or
+ * may not be a real API error; for that case the text-matching fallback
+ * (`isTransientText`) is used when no structured category was observed
+ * during the stream.
  */
 const NON_TRANSIENT_RESULT_SUBTYPES: ReadonlySet<SDKResultError['subtype']> = new Set([
   'error_max_turns',
@@ -212,22 +210,22 @@ const NON_TRANSIENT_RESULT_SUBTYPES: ReadonlySet<SDKResultError['subtype']> = ne
 ]);
 
 /**
- * Respaldo de coincidencia de texto para dos casos que no traen una
- * categoría estructurada del SDK: una excepción lanzada por `queryFn` (fallo
- * de transporte antes de que exista ningún mensaje) y un `SDKResultError`
- * con `subtype: 'error_during_execution'` en el que nunca se observó
- * `SDKAssistantMessage.error` ni `SDKAPIRetryMessage.error` durante el flujo.
+ * Text-matching fallback for two cases that carry no structured category
+ * from the SDK: an exception thrown by `queryFn` (transport failure before
+ * any message exists) and an `SDKResultError` with `subtype:
+ * 'error_during_execution'` where neither `SDKAssistantMessage.error` nor
+ * `SDKAPIRetryMessage.error` was ever observed during the stream.
  *
- * Se comparan como fragmentos delimitados, no como subcadena libre: un
- * `.includes('429')` ingenuo confundiría el código HTTP 429 con, por
- * ejemplo, el número "14290" en "processed 14290 items". El delimitador no
- * puede ser el `\b` nativo de JavaScript porque trata `_` como carácter de
- * palabra, y los tipos de error reales de la API de Anthropic son snake_case
- * (`overloaded_error`, `rate_limit_error`): con `\b`, `/\boverloaded\b/` NO
- * casa dentro de "overloaded_error" porque no hay límite de palabra entre
- * "d" y "_". Aquí el límite se define como "no alfanumérico" (incluye `_`,
- * espacios, `:`, inicio/fin de cadena), así que un patrón aislado por
- * guiones bajos sigue casando.
+ * They are compared as delimited fragments, not as a free substring: a naive
+ * `.includes('429')` would confuse HTTP code 429 with, for example, the
+ * number "14290" in "processed 14290 items". The delimiter cannot be
+ * JavaScript's native `\b` because it treats `_` as a word character, and the
+ * real error types of the Anthropic API are snake_case (`overloaded_error`,
+ * `rate_limit_error`): with `\b`, `/\boverloaded\b/` does NOT match inside
+ * "overloaded_error" because there is no word boundary between "d" and "_".
+ * Here the boundary is defined as "non-alphanumeric" (it includes `_`,
+ * spaces, `:`, start/end of string), so a pattern isolated by underscores
+ * still matches.
  */
 const TRANSIENT_TEXT_PATTERNS = [
   'overloaded',
@@ -241,22 +239,21 @@ const TRANSIENT_TEXT_PATTERNS = [
   '503',
 ];
 
-/** ¿Aparece `pattern` en `text` delimitado por caracteres no alfanuméricos (o los extremos de la cadena)? */
+/** Does `pattern` appear in `text` delimited by non-alphanumeric characters (or the string's ends)? */
 function containsDelimited(text: string, pattern: string): boolean {
   const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`).test(text);
 }
 
 /**
- * Un texto libre se clasifica como transitorio solo si casa con un patrón
- * conocido. Un error sin reconocer se clasifica como NO transitorio
- * (permanente): un paso agéntico puede tener `Bash` u otras herramientas con
- * efectos reales en `tools`, así que reintentar a ciegas ante un error que
- * no se entiende arriesga repetir esos efectos y gastar presupuesto de la
- * API sin garantía de éxito. La clasificación conservadora es detener la
- * ejecución y dejar que una persona decida, no reintentar por defecto. Mismo
- * default seguro que usa `classifyResultError` para su propia categoría
- * "sin reconocer".
+ * Free text is classified as transient only if it matches a known pattern.
+ * An unrecognized error is classified as NOT transient (permanent): an agent
+ * step may have `Bash` or other tools with real effects in `tools`, so
+ * blindly retrying on an error that is not understood risks repeating those
+ * effects and spending API budget with no guarantee of success. The
+ * conservative classification is to stop the run and let a person decide,
+ * not to retry by default. Same safe default `classifyResultError` uses for
+ * its own "unrecognized" category.
  */
 function isTransientText(message: string): boolean {
   const lower = message.toLowerCase();
@@ -264,19 +261,19 @@ function isTransientText(message: string): boolean {
 }
 
 /**
- * Clasifica un `SDKResultError` como transitorio o permanente. `subtype`
- * manda primero, no `lastStructuredError`: los tres subtipos de agotamiento
- * (turnos, presupuesto, reintentos de salida estructurada) son SIEMPRE
- * permanentes con independencia de lo que haya pasado por el camino — si un
- * turno intermedio vio 'overloaded' y el propio CLI lo reintentó con éxito
- * (ver `SDKAPIRetryMessage` más abajo), pero la query acabó agotando turnos
- * de todos modos, el motivo real del fallo es "se acabaron los turnos", no
- * "el servidor estaba sobrecargado" — ese hipo ya quedó absorbido y
- * reintentar nuestro paso desde cero no lo va a arreglar solo por eso. Por
- * eso `lastStructuredError` solo se consulta dentro de la categoría
- * ambigua `error_during_execution`; si tampoco hay ninguna, cae al
- * respaldo de texto sobre `errors`. Un `subtype`/categoría sin reconocer cae
- * del lado seguro (no transitorio), igual que `isTransientText`.
+ * Classifies an `SDKResultError` as transient or permanent. `subtype` comes
+ * first, not `lastStructuredError`: the three exhaustion subtypes (turns,
+ * budget, structured-output retries) are ALWAYS permanent regardless of what
+ * happened along the way — if an intermediate turn saw 'overloaded' and the
+ * CLI itself retried it successfully (see `SDKAPIRetryMessage` below), but
+ * the query ended up running out of turns anyway, the real reason for the
+ * failure is "ran out of turns", not "the server was overloaded" — that
+ * hiccup was already absorbed and retrying our step from scratch will not fix
+ * it just because of that. That is why `lastStructuredError` is only
+ * consulted inside the ambiguous `error_during_execution` category; if there
+ * is none either, it falls back to the text match over `errors`. An
+ * unrecognized `subtype`/category falls on the safe side (not transient),
+ * just like `isTransientText`.
  */
 function classifyResultError(
   result: SDKResultError,
@@ -294,7 +291,7 @@ function typeToSchema(type: OutputType): unknown {
   return { type };
 }
 
-/** Traduce el contrato `outputs` a un JSON Schema para `outputFormat` del SDK. */
+/** Translates the `outputs` contract into a JSON Schema for the SDK's `outputFormat`. */
 export function outputsToJsonSchema(
   contract: Record<string, OutputType>,
 ): JsonSchemaObject {
@@ -311,48 +308,47 @@ export function outputsToJsonSchema(
 }
 
 /**
- * Variables de red no-secretas que se reenvían a TODO servidor MCP
- * declarado, además de los nombres explícitos de `env` de cada uno. El
- * `command` típico de un servidor MCP es `npx`, que resuelve el paquete
- * contra el registro en cada arranque; sin esto, un pipeline detrás de un
- * proxy corporativo falla a arrancar el servidor con un error de red que
- * nada en el YAML explica, y no hay forma de declararlas vía `env` porque
- * ese campo solo resuelve nombres presentes en `requires.env` (pensado para
- * secretos, no para configuración de red). Lista distinta de
- * `AGENT_AUTH_ENV_KEYS` en `shell.ts` a propósito: esas llevan credenciales
- * (`ANTHROPIC_API_KEY`...) que un servidor MCP genérico no necesita ver;
- * estas no son secretas, así que se reenvían siempre, no solo cuando el
- * pipeline las declara.
+ * Non-secret network variables forwarded to EVERY declared MCP server, in
+ * addition to the explicit `env` names of each one. An MCP server's typical
+ * `command` is `npx`, which resolves the package against the registry on
+ * every start; without this, a pipeline behind a corporate proxy fails to
+ * start the server with a network error nothing in the YAML explains, and
+ * there is no way to declare them via `env` because that field only resolves
+ * names present in `requires.env` (meant for secrets, not network
+ * configuration). A different list from `AGENT_AUTH_ENV_KEYS` in `shell.ts`
+ * on purpose: those carry credentials (`ANTHROPIC_API_KEY`...) that a generic
+ * MCP server does not need to see; these are not secret, so they are always
+ * forwarded, not only when the pipeline declares them.
  */
 const MCP_NETWORK_ENV_KEYS = ['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'SSL_CERT_FILE'];
 
 /**
- * Resuelve los nombres de `step.mcpServers` contra el registro `mcp_servers`
- * del pipeline, en la forma `McpStdioServerConfig` que espera `Options`
- * (`sdk.d.ts` ~1167). El tipo de retorno se ancla a `Options['mcpServers']`
- * del propio SDK (no a una forma inventada): si una versión futura del SDK
- * cambia esa forma, esto rompe `tsc`, no un cron a las 3am — mismo criterio
- * que ya rige `SDKMessage` en el resto de este módulo. `parsePipeline` ya
- * garantiza que todo nombre referenciado por un paso existe en el registro
- * — el `!` de abajo se apoya en esa garantía, no es una suposición de este
- * módulo.
+ * Resolves the names in `step.mcpServers` against the pipeline's
+ * `mcp_servers` registry, into the `McpStdioServerConfig` shape `Options`
+ * expects (`sdk.d.ts` ~1167). The return type is anchored to the SDK's own
+ * `Options['mcpServers']` (not an invented shape): if a future SDK version
+ * changes that shape, this breaks `tsc`, not a 3am cron — same criterion
+ * that already governs `SDKMessage` in the rest of this module.
+ * `parsePipeline` already guarantees that every name a step references
+ * exists in the registry — the `!` below relies on that guarantee, it is not
+ * an assumption of this module.
  *
- * `command`/`args` se interpolan contra `scope` igual que `cwd`/`prompt`
- * (mismo mecanismo, misma razón: un `command` o `args` dependiente de
- * `{{params.*}}` sin hardcodear una ruta de máquina, p. ej. un binario
- * instalado en una ruta de usuario distinta en cada equipo). El grafo de
- * dependencias NO ve estas referencias — mismo límite ya aceptado para el
- * contenido de los ficheros de prompt: un servidor MCP
- * cuyo `command` dependiera de la salida de OTRO paso queda fuera de lo que
- * este campo cubre.
+ * `command`/`args` are interpolated against `scope` just like `cwd`/`prompt`
+ * (same mechanism, same reason: a `command` or `args` that depends on
+ * `{{params.*}}` without hardcoding a machine path, e.g. a binary installed
+ * at a different user path on each machine). The dependency graph does NOT
+ * see these references — same limit already accepted for the content of
+ * prompt files: an MCP server whose `command` depended on the output of
+ * ANOTHER step is outside what this field covers.
  *
- * `env` de cada servidor son NOMBRES (ver `mcpServerSchema` en
- * `schema/pipeline.ts`), resueltos aquí contra `secrets` — los mismos
- * valores que ya filtró `requires.env`. Un nombre sin valor en `secrets`
- * (declarado en el servidor pero no en `requires.env` del pipeline) se omite
- * en vez de lanzar: el servidor MCP arrancará sin esa variable y fallará con
- * su propio error de autenticación, que es más diagnosticable para quien
- * escribe el pipeline que una excepción genérica de este runner.
+ * Each server's `env` entries are NAMES (see `mcpServerSchema` in
+ * `schema/pipeline.ts`), resolved here against `secrets` — the same values
+ * `requires.env` already filtered. A name with no value in `secrets`
+ * (declared on the server but not in the pipeline's `requires.env`) is
+ * omitted instead of throwing: the MCP server will start without that
+ * variable and fail with its own authentication error, which is more
+ * diagnosable for whoever writes the pipeline than a generic exception from
+ * this runner.
  */
 function resolveMcpServers(
   names: string[],
@@ -382,51 +378,51 @@ function resolveMcpServers(
 }
 
 /**
- * Separa el front matter YAML (delimitado por `---` al principio del
- * fichero) del cuerpo de un agente en Markdown. El cuerpo es el prompt del
- * agente tal cual lo espera `AgentDefinition.prompt`.
+ * Splits the YAML front matter (delimited by `---` at the start of the file)
+ * from the body of a Markdown agent. The body is the agent's prompt exactly
+ * as `AgentDefinition.prompt` expects it.
  *
- * Un fichero SIN delimitadores `---` no es un error: se trata como si todo
- * fuera cuerpo (front matter vacío) — es el caso normal de un prompt sin
- * metadatos, y `loadRepoAgents` debe seguir cargándolo.
+ * A file WITHOUT `---` delimiters is not an error: it is treated as if all of
+ * it were body (empty front matter) — the normal case of a prompt with no
+ * metadata, and `loadRepoAgents` must keep loading it.
  *
- * Cuando SÍ hay delimitadores pero lo de dentro no sirve como front matter
- * — YAML sintácticamente inválido, o YAML válido que no es un mapeo
- * clave-valor (una lista, un escalar...) — esta función lanza. Es
- * intencional: `loadRepoAgents` atrapa esa excepción por fichero, para que
- * un agente roto se omita con un aviso en vez de tumbar a los demás.
+ * When there ARE delimiters but what is inside is not usable as front matter
+ * — syntactically invalid YAML, or valid YAML that is not a key-value mapping
+ * (a list, a scalar...) — this function throws. That is intentional:
+ * `loadRepoAgents` catches that exception per file, so that a broken agent is
+ * skipped with a warning instead of taking the others down.
  */
 function parseAgentMarkdown(text: string): { frontMatter: Record<string, unknown>; body: string } {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text);
   if (!match) return { frontMatter: {}, body: text };
   const parsed: unknown = parseYaml(match[1] ?? '');
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('el front matter no es un mapeo YAML de clave: valor');
+    throw new Error('the front matter is not a YAML key: value mapping');
   }
   return { frontMatter: parsed as Record<string, unknown>, body: match[2] ?? '' };
 }
 
 /**
- * Carga los agentes propios del repo de pipelines (`<repoRoot>/agents/*.md`)
- * en la forma que espera `Options.agents` del SDK (`AgentDefinition`,
- * `sdk.d.ts` ~38-70): `description` del front matter y el cuerpo Markdown
- * como `prompt`. El nombre del agente es el nombre de fichero sin `.md`,
- * igual que ya hace `preflight` (`markdownNames` en `preflight/check.ts`)
- * para el check `✓ agent <name> repo` de `doctor` — así que un agente que
- * pasa esa comprobación es exactamente el que aquí se carga y se pasa al
- * SDK. Antes de esta función `AgentStepContext.repoRoot` se recibía pero
- * nunca se leía: el runner nunca llegaba a inyectar los agentes del repo.
+ * Loads the pipeline repo's own agents (`<repoRoot>/agents/*.md`) into the
+ * shape the SDK's `Options.agents` expects (`AgentDefinition`, `sdk.d.ts`
+ * ~38-70): `description` from the front matter and the Markdown body as
+ * `prompt`. The agent's name is the file name without `.md`, just as
+ * `preflight` already does (`markdownNames` in `preflight/check.ts`) for
+ * `doctor`'s `✓ agent <name> repo` check — so an agent that passes that check
+ * is exactly the one loaded here and passed to the SDK. Before this function
+ * `AgentStepContext.repoRoot` was received but never read: the runner never
+ * got to inject the repo's agents.
  *
- * Un directorio `agents/` ausente es normal (no todo pipeline trae agentes
- * propios) y no lanza, igual que `markdownNames`.
+ * A missing `agents/` directory is normal (not every pipeline brings its own
+ * agents) and does not throw, just like `markdownNames`.
  *
- * La carga de cada fichero es independiente: es descubrimiento best-effort,
- * no una puerta de validación. Un fichero que no se puede leer o cuyo front
- * matter no se puede interpretar se OMITE con un aviso que nombra el
- * fichero y el motivo — nunca aborta el directorio entero. Antes, una
- * excepción de `parseAgentMarkdown` en un solo `.md` roto escapaba del
- * bucle y descartaba también los agentes válidos ya cargados; un paso que
- * ni siquiera usaba el agente roto fallaba igualmente.
+ * Loading each file is independent: it is best-effort discovery, not a
+ * validation gate. A file that cannot be read or whose front matter cannot be
+ * interpreted is SKIPPED with a warning naming the file and the reason —
+ * it never aborts the whole directory. Before, an exception from
+ * `parseAgentMarkdown` on a single broken `.md` escaped the loop and also
+ * discarded the valid agents already loaded; a step that did not even use
+ * the broken agent failed anyway.
  */
 export async function loadRepoAgents(repoRoot: string): Promise<Record<string, AgentDefinition>> {
   let entries: string[];
@@ -449,7 +445,7 @@ export async function loadRepoAgents(repoRoot: string): Promise<Record<string, A
       ({ frontMatter, body } = parseAgentMarkdown(text));
     } catch (err) {
       console.warn(
-        `Aviso: se omite el agente "${name}" (${path}): ${(err as Error).message}`,
+        `Warning: skipping agent "${name}" (${path}): ${(err as Error).message}`,
       );
       continue;
     }
@@ -473,16 +469,15 @@ export async function loadRepoAgents(repoRoot: string): Promise<Record<string, A
 }
 
 /**
- * Redacta el `reason` de cada denegación (donde exista) — igual criterio que
- * el resto de `redactOutcome`, aplicado aparte porque `denials` es un array
- * anidado que `redactSecrets` (pensado para texto plano) no puede tocar por
- * sí solo. Necesario porque `reason` (`evaluateToolCall`, fs-guard.ts)
- * incrusta la ruta cruda tal cual la pidió el modelo (`"${raw}" resuelve
- * fuera de toda raíz permitida...`), y un prompt agéntico SÍ puede
- * interpolar `{{secrets.X}}` en su propio texto (ver el comentario sobre
- * `scope`/`secrets` en `runAgentStep`) — así que un secreto que acabe dentro
- * de una ruta denegada llegaría en claro hasta el `run.json` de ese run
- * dentro de `.runs/` sin este paso.
+ * Redacts the `reason` of each denial (where present) — same criterion as the
+ * rest of `redactOutcome`, applied separately because `denials` is a nested
+ * array that `redactSecrets` (meant for plain text) cannot touch on its own.
+ * Necessary because `reason` (`evaluateToolCall`, fs-guard.ts) embeds the raw
+ * path exactly as the model asked for it (`"${raw}" resolves outside every
+ * allowed root...`), and an agent prompt CAN interpolate `{{secrets.X}}` in
+ * its own text (see the comment about `scope`/`secrets` in `runAgentStep`) —
+ * so a secret that ends up inside a denied path would reach that run's
+ * `run.json` inside `.runs/` in the clear without this redaction.
  */
 function redactDenials(denials: Denial[] | undefined, values: string[]): Denial[] | undefined {
   if (!denials) return denials;
@@ -492,24 +487,23 @@ function redactDenials(denials: Denial[] | undefined, values: string[]): Denial[
 }
 
 /**
- * Redacta los valores de secreto de un AgentOutcome antes de que salga de
- * esta función, en cada camino de retorno de `runAgentStep` (éxito, fallo,
- * timeout, incumplimiento de contrato). Mismo criterio que `redactOutcome`
- * en `shell.ts`: el valor de secreto
- * existe en claro solo dentro de esta función (hay que pasarlo al SDK vía
- * `env`), así que es también el único punto donde hay que garantizar que no
- * sobreviva a la salida — de aquí en adelante el outcome se escribe en
- * `.runs/` y se imprime por la CLI. Se redactan `log`, `error`, los valores
- * de texto dentro de `outputs` y el `reason` de cada denegación
- * (`denials[].reason`, ver `redactDenials`); un paso agéntico con `Bash` en
- * `tools` puede ecoar un secreto en su propio resultado exactamente igual
- * que un paso `shell`, así que el mismo tratamiento aplica aquí.
+ * Redacts the secret values of an AgentOutcome before it leaves this
+ * function, on every return path of `runAgentStep` (success, failure,
+ * timeout, contract violation). Same criterion as `redactOutcome` in
+ * `shell.ts`: the secret value exists in the clear only inside this function
+ * (it has to be passed to the SDK via `env`), so it is also the only point
+ * where it must be guaranteed not to survive the output — from here on the
+ * outcome is written to `.runs/` and printed by the CLI. `log`, `error`, the
+ * text values inside `outputs` and the `reason` of each denial
+ * (`denials[].reason`, see `redactDenials`) are redacted; an agent step with
+ * `Bash` in `tools` can echo a secret in its own result exactly like a
+ * `shell` step, so the same treatment applies here.
  *
- * Las dos ramas que hacen `{ ...outcome, ... }` (éxito sin incumplimiento de
- * contrato, y fallo) NO heredan `denials` ya redactado solo por el spread:
- * `outcome.denials` viaja tal cual dentro de ese spread salvo que se
- * sobrescriba explícitamente aquí — de ahí el `denials: redactDenials(...)`
- * en las tres ramas, no solo en la que construye un objeto nuevo.
+ * The two branches that do `{ ...outcome, ... }` (success with no contract
+ * violation, and failure) do NOT inherit already-redacted `denials` just from
+ * the spread: `outcome.denials` travels as is inside that spread unless it is
+ * explicitly overwritten here — hence the `denials: redactDenials(...)` in
+ * all three branches, not only in the one that builds a new object.
  */
 function redactOutcome(outcome: AgentOutcome, secrets: Record<string, string>): AgentOutcome {
   const values = Object.values(secrets);
@@ -517,11 +511,11 @@ function redactOutcome(outcome: AgentOutcome, secrets: Record<string, string>): 
     const redacted = redactOutputValues(outcome.outputs, values);
     if (!redacted.ok) {
       const issues = redacted.violatingFields.map(
-        (field) => `el campo "${field}" contiene un valor de secreto`,
+        (field) => `field "${field}" contains a secret value`,
       );
       return {
         ok: false,
-        error: redactSecrets(`Contrato incumplido: ${issues.join('; ')}`, values),
+        error: redactSecrets(`Contract not met: ${issues.join('; ')}`, values),
         transient: false,
         log: redactSecrets(outcome.log, values),
         durationMs: outcome.durationMs,
@@ -548,54 +542,54 @@ function redactOutcome(outcome: AgentOutcome, secrets: Record<string, string>): 
 }
 
 /**
- * Ejecuta un paso agéntico contra el Claude Agent SDK.
+ * Runs an agent step against the Claude Agent SDK.
  *
- * `permissionMode: 'bypassPermissions'` es deliberado: una ejecución
- * desatendida no tiene a nadie que apruebe nada. El control real de lo que
- * el paso puede hacer es `tools` (decisión 15): `allowedTools` por sí solo
- * NO restringe nada — es solo la lista que se auto-aprueba sin preguntar
- * (`sdk.d.ts` ~1369-1371, "To restrict which tools are available, use the
- * `tools` option instead") — así que se pasan ambos: `tools` para que el
- * SDK no exponga al modelo nada fuera de lo declarado en el YAML, y
- * `allowedTools` para que lo declarado no dispare un prompt de permiso que,
- * bajo `bypassPermissions`, nunca tendría quien lo respondiera.
+ * `permissionMode: 'bypassPermissions'` is deliberate: an unattended run has
+ * nobody to approve anything. The real control over what the step can do is
+ * `tools` (decision 15): `allowedTools` on its own restricts NOTHING — it is
+ * only the list that is auto-approved without asking (`sdk.d.ts`
+ * ~1369-1371, "To restrict which tools are available, use the `tools` option
+ * instead") — so both are passed: `tools` so the SDK exposes nothing to the
+ * model outside what the YAML declares, and `allowedTools` so that what is
+ * declared does not trigger a permission prompt that, under
+ * `bypassPermissions`, nobody would ever answer.
  *
- * `strictMcpConfig: true` es la misma lógica aplicada a `mcpServers`: sin
- * ella, `Options.mcpServers` es ADITIVO a cualquier `.mcp.json` de proyecto,
- * servidor MCP de usuario o de plugin que ya esté configurado en la máquina
- * que ejecuta el pipeline (`sdk.d.ts` ~2006) — el pipeline declararía un
- * servidor y el paso arrancaría ese MÁS los que hubiera alrededor, sin que
- * `mcp_servers:` ni `doctor` supieran nada de ellos. Verificado en una
- * revisión de este mismo cambio: un `.mcp.json` de otro repo con
- * credenciales de base de datos en claro en sus `args` es exactamente la
- * clase de servidor "ambiental" que esto evita cargar.
+ * `strictMcpConfig: true` is the same logic applied to `mcpServers`: without
+ * it, `Options.mcpServers` is ADDITIVE to any project `.mcp.json`, user MCP
+ * server or plugin MCP server already configured on the machine running the
+ * pipeline (`sdk.d.ts` ~2006) — the pipeline would declare one server and the
+ * step would start that one PLUS whatever was lying around, without
+ * `mcp_servers:` or `doctor` knowing anything about them. Verified in a
+ * review of this same change: a `.mcp.json` from another repo with database
+ * credentials in the clear in its `args` is exactly the kind of "ambient"
+ * server this avoids loading.
  *
- * `settingSources: []`: sin fuentes ambientales, ni `user` ni `project`.
- * Antes se pasaba `['user']` sin justificación escrita — cargaba el
- * `~/.claude/settings.json` GLOBAL del operador, hooks incluidos. Verificado
- * en vivo: basta un plugin instalado que traiga un hook `SessionStart`
- * bloqueante para colgar un run desatendido, el mismo tipo de cuelgue que el
- * script bash original evitaba a propósito con `--setting-sources project`.
- * Mismo criterio que `strictMcpConfig: true`: un pipeline no hereda nada de
- * la máquina que lo ejecuta salvo lo que su propio YAML declara.
+ * `settingSources: []`: no ambient sources, neither `user` nor `project`.
+ * It used to pass `['user']` with no written justification — it loaded the
+ * operator's GLOBAL `~/.claude/settings.json`, hooks included. Verified live:
+ * a single installed plugin that ships a blocking `SessionStart` hook is
+ * enough to hang an unattended run, the same kind of hang the original bash
+ * script deliberately avoided with `--setting-sources project`. Same
+ * criterion as `strictMcpConfig: true`: a pipeline inherits nothing from the
+ * machine running it except what its own YAML declares.
  */
 export async function runAgentStep(
   step: AgentStep,
   ctx: AgentStepContext,
 ): Promise<AgentOutcome> {
   const started = Date.now();
-  // Copia local del scope, solo para el prompt: `ctx.scope` en sí nunca
-  // lleva `secrets` (lo construye orchestrate.ts sin ese campo), así que
-  // `{{secrets.X}}` no puede resolver en ningún otro sitio (`cwd:` de este
-  // mismo paso, `run:`/guarda `shell:` de cualquier otro): un secreto solo
-  // llega al prompt del paso agéntico que lo pide.
+  // Local copy of the scope, only for the prompt: `ctx.scope` itself never
+  // carries `secrets` (orchestrate.ts builds it without that field), so
+  // `{{secrets.X}}` cannot resolve anywhere else (`cwd:` of this same step,
+  // `run:`/`shell:` guard of any other): a secret only reaches the prompt of
+  // the agent step that asks for it.
   const prompt = interpolate(ctx.promptText, { ...ctx.scope, secrets: ctx.secrets });
   const cwd = step.cwd ? interpolate(step.cwd, ctx.scope) : ctx.defaultCwd;
   const additionalDirs = step.additionalDirs.map((d) => interpolate(d, ctx.scope));
-  // Resolución de raíces ANTES de crear el AbortController/timer: si
-  // `captureRoots` lanza (una raíz no existe), el paso debe cerrarse como
-  // error de configuración sin fugar un timer de hasta 50 minutos que nadie
-  // limpiaría. Por eso el orden de estas líneas importa.
+  // Resolve the roots BEFORE creating the AbortController/timer: if
+  // `captureRoots` throws (a root does not exist), the step must close as a
+  // configuration error without leaking a timer of up to 50 minutes that
+  // nobody would clean up. That is why the order of these lines matters.
   const roots = captureRoots(cwd, additionalDirs);
   const hookLog = new Map<string, { toolName: string; reason: string }>();
   const agents = await loadRepoAgents(ctx.repoRoot);
@@ -609,7 +603,7 @@ export async function runAgentStep(
     allowedTools: step.tools,
     tools: step.tools,
     cwd,
-    additionalDirectories: additionalDirs, // informativo para el SDK/modelo — la aplicación real es el hook
+    additionalDirectories: additionalDirs, // informational for the SDK/model — the real enforcement is the hook
     env: composeAgentEnv(ctx.secrets, ctx.agentAuth),
     settingSources: [],
     permissionMode: 'bypassPermissions',
@@ -625,38 +619,37 @@ export async function runAgentStep(
   if (Object.keys(mcpServers).length > 0) options.mcpServers = mcpServers;
   if (step.maxCostUsd !== undefined) options.maxBudgetUsd = step.maxCostUsd;
 
-  // `options` se construye como `Record<string, unknown>` para coincidir con
-  // la firma de `QueryFn` (la que se testea), mientras que `query()` real
-  // espera `Options`, un tipo con decenas de campos concretos. No hace falta
-  // ningún cast para pasar de uno a otro: en `Options` (SDK 0.3.223) todos
-  // los campos de primer nivel son opcionales, así que TypeScript no exige
-  // que la firma de índice de `Record<string, unknown>` sea compatible con
-  // el tipo concreto de cada campo — solo comprueba que no falte ningún
-  // campo obligatorio, y no hay ninguno. El valor de retorno de `query()`
-  // tampoco necesita cast: `Query` extiende `AsyncGenerator<SDKMessage,
-  // void>`, que ya es un `AsyncIterable<SDKMessage>` — exactamente lo que
-  // `QueryFn` declara. Verificado quitando ambos casts y comprobando que
-  // `bun run typecheck` sigue limpio: no hacían falta y no ocultaban ningún
-  // error real.
+  // `options` is built as `Record<string, unknown>` to match the signature of
+  // `QueryFn` (the one under test), while the real `query()` expects
+  // `Options`, a type with dozens of concrete fields. No cast is needed to go
+  // from one to the other: in `Options` (SDK 0.3.223) all top-level fields
+  // are optional, so TypeScript does not require the index signature of
+  // `Record<string, unknown>` to be compatible with each field's concrete
+  // type — it only checks that no required field is missing, and there is
+  // none. The return value of `query()` needs no cast either: `Query`
+  // extends `AsyncGenerator<SDKMessage, void>`, which is already an
+  // `AsyncIterable<SDKMessage>` — exactly what `QueryFn` declares. Verified by
+  // removing both casts and checking that `bun run typecheck` stays clean:
+  // they were not needed and were not hiding any real error.
   const run = ctx.queryFn ?? ((args) => query(args));
 
   const toolsUsed: string[] = [];
   const transcript: string[] = [];
   let result: SDKResultMessage | undefined;
-  // Última categoría de error estructurada vista en el flujo, de
-  // `SDKAssistantMessage.error` o `SDKAPIRetryMessage.error` (ver
-  // `classifyResultError`). Se sobrescribe con la más reciente: si el CLI
-  // reintentó internamente varias veces, la categoría más próxima al fallo
-  // final es la más representativa de por qué terminó fallando.
+  // Last structured error category seen in the stream, from
+  // `SDKAssistantMessage.error` or `SDKAPIRetryMessage.error` (see
+  // `classifyResultError`). It is overwritten with the most recent one: if the
+  // CLI retried internally several times, the category closest to the final
+  // failure is the most representative of why it ended up failing.
   let lastStructuredError: SDKAssistantMessageError | undefined;
 
   try {
     for await (const message of run({ prompt, options })) {
       if (message.type === 'assistant') {
-        // El uso de herramientas viaja dentro de los bloques de contenido
-        // del mensaje `assistant` (`BetaContentBlock` con
-        // `type: 'tool_use'`), no como mensajes `tool_use` sueltos — el SDK
-        // real no los emite así.
+        // Tool usage travels inside the content blocks of the `assistant`
+        // message (`BetaContentBlock` with `type: 'tool_use'`), not as
+        // standalone `tool_use` messages — the real SDK does not emit them
+        // that way.
         for (const block of message.message.content) {
           if (block.type === 'tool_use' && !toolsUsed.includes(block.name)) {
             toolsUsed.push(block.name);
@@ -676,7 +669,7 @@ export async function runAgentStep(
     return redactOutcome(
       {
         ok: false,
-        error: controller.signal.aborted ? `timeout tras ${ctx.timeoutMs} ms` : message,
+        error: controller.signal.aborted ? `timed out after ${ctx.timeoutMs} ms` : message,
         transient: controller.signal.aborted || isTransientText(message),
         log: transcript.join('\n'),
         durationMs: Date.now() - started,
@@ -690,18 +683,18 @@ export async function runAgentStep(
   clearTimeout(timer);
 
   if (!result) {
-    // El flujo terminó (sin lanzar) sin emitir nunca un mensaje `result`. Es
-    // una condición sin reconocer, no un artefacto de transporte conocido:
-    // no hay nada en los tipos del SDK que la documente como transitoria, y
-    // no se puede distinguir "el agente no hizo nada" de "hizo todo y perdió
-    // el mensaje final". El mismo criterio que rige el resto de esta
-    // clasificación aplica aquí: ante lo desconocido, NO transitorio — un
-    // paso agéntico puede tener `Bash` con efectos reales en `tools`, y
-    // reintentar a ciegas arriesga repetirlos.
+    // The stream ended (without throwing) never having emitted a `result`
+    // message. It is an unrecognized condition, not a known transport
+    // artifact: nothing in the SDK types documents it as transient, and
+    // "the agent did nothing" cannot be told apart from "it did everything
+    // and lost the final message". The same criterion that governs the rest
+    // of this classification applies here: when in doubt, NOT transient — an
+    // agent step may have `Bash` with real effects in `tools`, and retrying
+    // blindly risks repeating them.
     return redactOutcome(
       {
         ok: false,
-        error: 'el SDK terminó el flujo sin emitir ningún mensaje de resultado',
+        error: 'the SDK ended the stream without emitting any result message',
         transient: false,
         log: transcript.join('\n'),
         durationMs: Date.now() - started,
@@ -726,7 +719,7 @@ export async function runAgentStep(
     return redactOutcome(
       {
         ok: false,
-        error: result.errors.join('; ') || `fallo del SDK: ${result.subtype}`,
+        error: result.errors.join('; ') || `SDK failure: ${result.subtype}`,
         transient: classifyResultError(result, lastStructuredError),
         log,
         durationMs,
@@ -747,7 +740,7 @@ export async function runAgentStep(
     return redactOutcome(
       {
         ok: false,
-        error: 'el paso declara outputs pero el resultado no es JSON válido',
+        error: 'the step declares outputs but the result is not valid JSON',
         transient: false,
         log,
         durationMs,

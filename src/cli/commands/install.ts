@@ -24,24 +24,24 @@ export function registerInstall(program: Command): void {
   program
     .command('install')
     .argument('<name>')
-    .option('--set <clave=valor>', 'valor de un param (repetible)', collectSetFlag, [] as string[])
-    .option('--force', 'instala pese a doctor en rojo o a un job ajeno sospechoso', false)
-    .option('--dry-run', 'muestra los ficheros del job que escribiría y no toca nada', false)
-    .description('Instala el pipeline como job programado (launchd en macOS, systemd en Linux)')
+    .option('--set <key=value>', 'value of a param (repeatable)', collectSetFlag, [] as string[])
+    .option('--force', 'install despite a red doctor or a suspicious foreign job', false)
+    .option('--dry-run', 'show the job files it would write and touch nothing', false)
+    .description('Install the pipeline as a scheduled job (launchd on macOS, systemd on Linux)')
     .action(async (name: string, opts: { set: string[]; force: boolean; dryRun: boolean }) => {
       await withContext(async (ctx) => {
-        // Lo primero: en una plataforma sin programador, el error tiene que
-        // decirlo antes que cualquier otra cosa.
+        // First thing: on a platform with no scheduler, the error has to say
+        // so before anything else.
         const backend = schedulerFor();
         const pipeline = await loadPipeline(ctx, name);
 
-        // `triggers.cron` es la ÚNICA fuente de la cadencia:
-        // sin él no hay nada que instalar, y duplicarlo en un flag reabriría la
-        // discrepancia YAML/plist que este comando existe para cerrar.
+        // `triggers.cron` is the ONLY source of the cadence: without it there
+        // is nothing to install, and duplicating it in a flag would reopen the
+        // YAML/plist discrepancy this command exists to close.
         if (pipeline.triggers.length === 0) {
           console.error(
-            `El pipeline "${name}" no declara ningún "triggers.cron", así que no hay cadencia que ` +
-              `instalar. Añádelo al pipeline.yaml y repite.`,
+            `Pipeline "${name}" does not declare any "triggers.cron", so there is no cadence to ` +
+              `install. Add it to pipeline.yaml and try again.`,
           );
           process.exitCode = EXIT_FAILURE;
           return;
@@ -49,17 +49,17 @@ export function registerInstall(program: Command): void {
         const intervals = pipeline.triggers.flatMap((trigger) =>
           cronToCalendarIntervals(trigger.cron),
         );
-        // `MAX_CALENDAR_INTERVALS` ya se aplica POR TRIGGER dentro de
-        // `cronToCalendarIntervals` (una expansión enorme en un solo
-        // `triggers.cron` suele pedir un paso con slash, que este subconjunto
-        // no soporta a propósito), pero varios triggers pequeños pueden sumar
-        // igualmente un plist de decenas de horarios que nadie revisa — el
-        // mismo problema por otra vía, así que el tope se aplica también al
-        // TOTAL combinado.
+        // `MAX_CALENDAR_INTERVALS` is already applied PER TRIGGER inside
+        // `cronToCalendarIntervals` (a huge expansion in a single
+        // `triggers.cron` usually asks for a slash step, which this subset
+        // deliberately does not support), but several small triggers can still
+        // add up to a plist with dozens of schedules that nobody reviews — the
+        // same problem by another route, so the cap is also applied to the
+        // combined TOTAL.
         if (intervals.length > MAX_CALENDAR_INTERVALS) {
           console.error(
-            `Los "triggers.cron" declarados suman ${intervals.length} horarios combinados, más del ` +
-              `máximo de ${MAX_CALENDAR_INTERVALS} en total. Declara menos triggers o simplifícalos.`,
+            `The declared "triggers.cron" add up to ${intervals.length} combined schedules, more than the ` +
+              `maximum of ${MAX_CALENDAR_INTERVALS} in total. Declare fewer triggers or simplify them.`,
           );
           process.exitCode = EXIT_FAILURE;
           return;
@@ -74,33 +74,32 @@ export function registerInstall(program: Command): void {
         const blocked = hasBlockingFailures(report);
         if (blocked && !opts.force) {
           printPreflight(report);
-          console.error('\nEsta máquina no puede ejecutar el pipeline. Usa --force para instalar igualmente.');
+          console.error('\nThis machine cannot run the pipeline. Use --force to install anyway.');
           process.exitCode = EXIT_FAILURE;
           return;
         }
         if (blocked) {
-          // "--force lo salta, AVISANDO": instalar en silencio
-          // pese a checks en rojo fabricaría un camino nuevo indistinguible de
-          // una instalación limpia, justo lo contrario de para qué existe
-          // `--force`.
+          // "--force skips it, WITH A WARNING": installing silently despite
+          // red checks would create a new path indistinguishable from a clean
+          // install, exactly the opposite of what `--force` is for.
           printPreflight(report);
-          console.error('\n--force: se instala igualmente pese a los checks en rojo de arriba.');
+          console.error('\n--force: installing anyway despite the red checks above.');
         }
 
-        // Puertas propias de la plataforma (en systemd, el "linger": sin él el
-        // temporizador no se dispara con la sesión cerrada). Mismo trato que el
-        // preflight, pero el ensayo las muestra y NUNCA se bloquea por ellas.
+        // Platform-specific gates (in systemd, "linger": without it the timer
+        // does not fire with the session closed). Same treatment as the
+        // preflight, but the dry run shows them and NEVER blocks on them.
         const failedChecks = (await backend.preInstallChecks()).filter((check) => !check.ok);
         for (const check of failedChecks) {
-          console.error(`  ${KO} ${check.name}: ${check.detail}${check.fix ? `\n    arréglalo con: ${check.fix}` : ''}`);
+          console.error(`  ${KO} ${check.name}: ${check.detail}${check.fix ? `\n    fix it with: ${check.fix}` : ''}`);
         }
         if (failedChecks.length > 0 && !opts.dryRun) {
           if (!opts.force) {
-            console.error('\nEsta máquina no está lista para programar el pipeline. Usa --force para instalar igualmente.');
+            console.error('\nThis machine is not ready to schedule the pipeline. Use --force to install anyway.');
             process.exitCode = EXIT_FAILURE;
             return;
           }
-          console.error('\n--force: se instala igualmente pese a los checks en rojo de arriba.');
+          console.error('\n--force: installing anyway despite the red checks above.');
         }
 
         const overrides = parseSetFlags(opts.set);
@@ -109,12 +108,12 @@ export function registerInstall(program: Command): void {
           overrides,
         });
 
-        // El PATH del job tiene que cubrir todo lo que puede necesitar
-        // arrancar en marcha: los binarios de `requires.bin` Y el `command` de
-        // cada `mcp_servers` — `preflight/check.ts` ya trata `server.command`
-        // como binario requerido (ver su check `kind: 'mcp'`); hasta ahora
-        // aquí no, y solo funcionaba cuando ese comando compartía directorio
-        // con algún bin ya declarado.
+        // The job's PATH has to cover everything it may need to start up on
+        // the fly: the `requires.bin` binaries AND the `command` of each
+        // `mcp_servers` — `preflight/check.ts` already treats `server.command`
+        // as a required binary (see its `kind: 'mcp'` check); until now it did
+        // not here, and it only worked when that command shared a directory
+        // with some already declared bin.
         const requiredBinaries = [
           ...pipeline.requires.bin,
           ...Object.values(pipeline.mcpServers).map((server) => server.command),
@@ -122,42 +121,43 @@ export function registerInstall(program: Command): void {
         const bunPath = jobBunPath();
         const path = computePath(requiredBinaries, (bin) => Bun.which(bin), [dirname(bunPath)]);
 
-        // Cinturón, no solo el suelo de `computePath`: valida contra el PATH
-        // QUE SE VA A ESCRIBIR, no contra el del operador que ejecuta
-        // `install` — la regla general que deja el incidente de origen (un
-        // plist cuyo PATH no podía ni lanzar `sh`; hoy, el intérprete de la
-        // plataforma: `sh` en macOS, `bash` en Linux). `doctor`/`preflight`, más
-        // arriba, valida binarios contra el PATH del OPERADOR: puede estar en
-        // verde y aun así el PATH calculado para el job fallar, si este
-        // proceso ve binarios que el entorno del job no vería.
+        // Belt and braces, not just `computePath`'s floor: it validates against
+        // the PATH THAT WILL BE WRITTEN, not against that of the operator
+        // running `install` — the general rule left by the originating
+        // incident (a plist whose PATH could not even launch `sh`; today, the
+        // platform's interpreter: `sh` on macOS, `bash` on Linux).
+        // `doctor`/`preflight`, further up, validates binaries against the
+        // OPERATOR's PATH: it can be green and the PATH computed for the job
+        // can still fail, if this process sees binaries that the job's
+        // environment would not.
         const unresolved = unresolvedInPath(path, requiredBinaries, (bin, p) =>
           Bun.which(bin, { PATH: p }),
         );
         if (unresolved.length > 0) {
           console.error(
-            `El PATH calculado para el job no resuelve: ${unresolved.join(', ')}. El job instalado ` +
-              `fallaría al arrancar cualquier paso "shell" o guarda "shell:". Esto no debería pasar — ` +
-              `revisa "requires.bin" y "mcp_servers" del pipeline.`,
+            `The PATH computed for the job does not resolve: ${unresolved.join(', ')}. The installed job ` +
+              `would fail when starting any "shell" step or "shell:" guard. This should not happen — ` +
+              `check the pipeline's "requires.bin" and "mcp_servers".`,
           );
-          console.error(`  PATH calculado: ${path}`);
+          console.error(`  computed PATH: ${path}`);
           process.exitCode = EXIT_FAILURE;
           return;
         }
 
         const label = labelFor(name);
         const home = userHome();
-        // Solo rutas de fichero, no de red — `foreignJobsMentioning` busca
-        // coincidencias literales en el contenido de los ficheros de otros jobs.
+        // File paths only, not network ones — `foreignJobsMentioning` looks for
+        // literal matches in the contents of other jobs' files.
         const paths = Object.values(params).filter((value) => value.startsWith('/'));
         const agents = await backend.readUserJobs();
-        // Dos redes distintas y complementarias, no una repetida: la de rutas ve
-        // que dos jobs pisan los mismos ficheros; la de nombres ve que dos jobs
-        // hacen el mismo trabajo aunque no compartan un solo fichero. Desde que
-        // cada pipeline tiene espacio propio, un relevo cae SOLO en la segunda.
-        // La consulta de deshabilitados es PEREZOSA: solo se pregunta al
-        // programador si de verdad hay algún homónimo que filtrar. Así el caso
-        // corriente —que no lo hay— no lo toca en absoluto, y `install --dry-run`
-        // sigue cumpliendo su contrato de no invocarlo (hay un test que lo exige).
+        // Two different and complementary nets, not a repeated one: the paths
+        // one sees that two jobs step on the same files; the names one sees
+        // that two jobs do the same work even if they share not a single file.
+        // Since every pipeline has its own space, a predecessor job being
+        // replaced is caught ONLY by the second. The disabled query is LAZY: the scheduler is only asked if
+        // there really is a homonym to filter. That way the usual case — where
+        // there is none — does not touch it at all, and `install --dry-run`
+        // keeps honoring its contract of not invoking it (a test requires it).
         const named = jobsNamedAfter(name, agents, label, []);
         const homonyms =
           named.length === 0
@@ -165,35 +165,35 @@ export function registerInstall(program: Command): void {
             : jobsNamedAfter(name, agents, label, await backend.disabledLabels(named));
         if (homonyms.length > 0) {
           const warning =
-            `Hay otros jobs de ${backend.label}, no deshabilitados, que llevan el nombre de este pipeline: ${homonyms.join(', ')}.\n` +
-            `Si son el predecesor al que este pipeline releva, harán el mismo trabajo dos veces. ` +
-            // Sin repetir: en launchd la pista es la misma frase para todos.
+            `There are other ${backend.label} jobs, not disabled, named after this pipeline: ${homonyms.join(', ')}.\n` +
+            `If they are the predecessor this pipeline replaces, they will do the same work twice. ` +
+            // Deduplicated: in launchd the hint is the same sentence for every job.
             [...new Set(homonyms.map((homonym) => backend.retireHint(homonym)))].join(' ');
           if (!opts.force) {
-            console.error(`${warning} Revísalos, o repite con --force.`);
+            console.error(`${warning} Check them, or run again with --force.`);
             process.exitCode = EXIT_FAILURE;
             return;
           }
-          console.error(`${warning}\n--force: se instala igualmente.`);
+          console.error(`${warning}\n--force: installing anyway.`);
         }
 
         const foreign = foreignJobsMentioning(paths, agents, label);
         if (foreign.length > 0) {
           const warning =
-            `Otros jobs de ${backend.label} mencionan rutas de este pipeline: ${foreign.join(', ')}.\n` +
-            `Si trabajan sobre lo mismo a la vez, se pisarán.`;
+            `Other ${backend.label} jobs mention paths of this pipeline: ${foreign.join(', ')}.\n` +
+            `If they work on the same thing at the same time, they will step on each other.`;
           if (!opts.force) {
-            console.error(`${warning} Revísalos, o repite con --force.`);
+            console.error(`${warning} Check them, or run again with --force.`);
             process.exitCode = EXIT_FAILURE;
             return;
           }
-          console.error(`${warning}\n--force: se instala igualmente.`);
+          console.error(`${warning}\n--force: installing anyway.`);
         } else {
-          // Antes, sin coincidencias, este escaneo no decía nada: no había
-          // forma de saber si de verdad se había comprobado algo o si la red
-          // estaba echada en el vacío (p. ej. `~/Library/LaunchAgents` recién
-          // creado en una máquina limpia).
-          console.log(`  escaneados ${agents.length} job(s) de ${backend.label}, ninguno coincide`);
+          // Before, with no matches, this scan said nothing: there was no way
+          // to know whether anything had really been checked or whether the scan
+          // had nothing to look at (e.g. a freshly created
+          // `~/Library/LaunchAgents` on a clean machine).
+          console.log(`  scanned ${agents.length} ${backend.label} job(s), none match`);
         }
 
         const files = backend.jobFiles({
@@ -207,98 +207,99 @@ export function registerInstall(program: Command): void {
           generatedAt: new Date().toISOString(),
           guards: pipeline.when,
         });
-        // Se comprueba ANTES de escribir: la etiqueta es determinista
-        // (`labelFor`, un pipeline -> unos ficheros fijos), así que la
-        // existencia previa del primero es exactamente "ya había un job con
-        // esta etiqueta cargado". El reemplazo sigue
-        // ocurriendo igual y sin pedir --force (adoptar el job propio es
-        // correcto), pero hay que decirlo — el incidente de origen fue justo un
-        // plist desviado que nadie notó durante diez días.
+        // Checked BEFORE writing: the label is deterministic (`labelFor`, one
+        // pipeline -> fixed files), so the prior existence of the first one is
+        // exactly "there was already a job with this label loaded". The
+        // replacement still happens the same way and without asking for
+        // --force (adopting your own job is correct), but it has to be said —
+        // the originating incident was precisely a drifted plist that nobody
+        // noticed for ten days.
         const replacing = await Bun.file(files[0]!.path).exists();
 
         /**
-         * Resumen que imprimen tanto la instalación real como el ensayo
-         * (`--dry-run`), para que lo que ves antes de tocar sea literalmente lo
-         * que verás después. Closure y no función suelta: captura todo lo que ya
-         * está calculado en este punto del comando.
+         * Summary printed by both the real install and the dry run
+         * (`--dry-run`), so that what you see before touching is literally what
+         * you will see afterwards. A closure and not a loose function: it
+         * captures everything already computed at this point of the command.
          */
         const timezone = await currentTimezone();
         const printInstallSummary = (headline: string, suffix: string): void => {
           console.log(headline);
-          // Una línea por fichero, con su extensión como rótulo: «plist» en
-          // launchd, «service» y «timer» en systemd.
+          // One line per file, with its extension as the label: "plist" in
+          // launchd, "service" and "timer" in systemd.
           for (const file of files) {
             console.log(`  ${extname(file.path).slice(1).padEnd(8)} ${file.path}${suffix}`);
           }
-          console.log(`  horarios ${intervals.length} (de ${pipeline.triggers.map((t) => t.cron).join(', ')})`);
+          console.log(`  times    ${intervals.length} (from ${pipeline.triggers.map((t) => t.cron).join(', ')})`);
           console.log(`  PATH     ${path}`);
           console.log(`  log      ${backend.logPath(home, name)}`);
-          console.log(`  zona     ${timezone}`);
+          console.log(`  timezone ${timezone}`);
 
           for (const impact of unsetParamImpacts(pipeline, params)) {
             if (impact.skippedSteps.length > 0) {
               console.log(
-                `  aviso: el param "${impact.param}" no tiene valor — se saltará: ${impact.skippedSteps.join(', ')}`,
+                `  warning: param "${impact.param}" has no value — will be skipped: ${impact.skippedSteps.join(', ')}`,
               );
             }
             if (impact.uncertainSteps.length > 0) {
               console.log(
-                `  aviso: el param "${impact.param}" no tiene valor — pasos cuyo "when:" depende de él: ${impact.uncertainSteps.join(', ')}`,
+                `  warning: param "${impact.param}" has no value — steps whose "when:" depends on it: ${impact.uncertainSteps.join(', ')}`,
               );
             }
             if (impact.skippedSteps.length === 0 && impact.uncertainSteps.length === 0) {
-              console.log(`  aviso: el param "${impact.param}" no tiene valor — ningún paso depende de él`);
+              console.log(`  warning: param "${impact.param}" has no value — no step depends on it`);
             }
           }
         };
 
-        // El ensayo corta AQUÍ: después de haber validado exactamente lo mismo
-        // que una instalación de verdad (cron, PATH, params, doctor, jobs
-        // ajenos) y antes del primer efecto. Ni los ficheros del job, ni
-        // `.params.local.json` aunque haya `--set`, ni el programador: un ensayo
-        // que deja rastro persistente deja de serlo, y este flag existe para
-        // poder mirar antes de tocar. Comparar el plist generado contra el que ya corre es lo
-        // que caza un artefacto desviado, y como entrada de checklist se salta.
+        // The dry run stops HERE: after having validated exactly the same as a
+        // real install (cron, PATH, params, doctor, foreign jobs) and before
+        // the first effect. Not the job files, not `.params.local.json` even
+        // with `--set`, not the scheduler: a dry run that leaves a persistent
+        // trace stops being one, and this flag exists to be able to look before
+        // touching. Comparing the generated plist against the one already
+        // running is what catches a drifted artifact, and as a checklist item
+        // it gets skipped.
         if (opts.dryRun) {
-          // En launchd el plist sale tal cual, como siempre; en los demás,
-          // cada fichero lleva delante su ruta para saber cuál es cuál.
+          // In launchd the plist comes out as is, as always; in the other backends,
+          // each file is preceded by its path to tell which is which.
           for (const file of files) {
             if (backend.kind !== 'launchd') console.log(`# ${file.path}`);
             console.log(file.contents);
           }
           printInstallSummary(
             replacing
-              ? `(--dry-run) reemplazaría el job que ya existe: ${label}`
-              : `(--dry-run) instalaría ${label}`,
-            ' (no escrito)',
+              ? `(--dry-run) would replace the job that already exists: ${label}`
+              : `(--dry-run) would install ${label}`,
+            ' (not written)',
           );
           return;
         }
 
-        // El directorio puede no existir todavía (primera instalación en una
-        // máquina limpia): sin `recursive: true` la escritura sale con un
-        // ENOENT crudo. Se hace ANTES de `writeLocalParams` (ver más abajo) a
-        // propósito: si esto falla, no debe quedar nada escrito.
-        // El directorio del log también: systemd no lo crea, y sin él el
-        // servicio falla al abrir la salida antes de ejecutar nada.
+        // The directory may not exist yet (first install on a clean machine):
+        // without `recursive: true` the write fails with a raw ENOENT. Done
+        // BEFORE `writeLocalParams` (see below) on purpose: if this fails,
+        // nothing should be left written.
+        // The log's directory too: systemd does not create it, and without it
+        // the service fails to open its output before running anything.
         await mkdir(dirname(backend.logPath(home, name)), { recursive: true });
         for (const file of files) {
           await mkdir(dirname(file.path), { recursive: true });
           await writeFile(file.path, file.contents, 'utf8');
         }
 
-        // Se escribe DESPUÉS del job a propósito: antes se escribía primero,
-        // así que un aborto entre medias (p. ej. el `mkdir` de arriba
-        // fallando por permisos) dejaba `.params.local.json` actualizado sin
-        // ningún job instalado — estado a medias, peor que no haber hecho nada.
+        // Written AFTER the job on purpose: it used to be written first, so an
+        // abort in between (e.g. the `mkdir` above failing on permissions) left
+        // `.params.local.json` updated with no job installed — a half state,
+        // worse than having done nothing.
         await writeLocalParams(ctx.root, name, overrides);
 
         const { code, stderr } = await backend.activate(label, files);
         if (code !== 0) {
           console.error(
-            `${backend.label} no pudo cargar el job (código ${code}); ` +
-              (files.length === 1 ? 'el fichero del job está en ' : 'los ficheros del job están en ') +
-              `${files.map((file) => file.path).join(' y ')}.`,
+            `${backend.label} could not load the job (code ${code}); ` +
+              (files.length === 1 ? 'the job file is at ' : 'the job files are at ') +
+              `${files.map((file) => file.path).join(' and ')}.`,
           );
           if (stderr) console.error(`  ${backend.label}: ${stderr}`);
           process.exitCode = EXIT_FAILURE;
@@ -307,8 +308,8 @@ export function registerInstall(program: Command): void {
 
         printInstallSummary(
           replacing
-            ? `${OK} reemplazado el job que ya existía: ${label}`
-            : `${OK} instalado ${label}`,
+            ? `${OK} replaced the job that already existed: ${label}`
+            : `${OK} installed ${label}`,
           '',
         );
       });

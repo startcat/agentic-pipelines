@@ -8,10 +8,10 @@ description: d
 version: 1
 params:
   docs_repo:
-    description: ruta
+    description: path
     required: true
   deploy_url:
-    description: url opcional de deploy
+    description: optional deploy url
 steps:
   - id: build
     type: shell
@@ -23,49 +23,49 @@ steps:
 `);
 
 describe('unsetParamImpacts', () => {
-  // El segundo incidente del 2026-08-29: faltaba un param opcional, el paso
-  // `deploy` se saltaba limpiamente cada noche, y nada lo dijo nunca. El
-  // `when` de `deploy` es una referencia PELADA (`{{params.deploy_url}}`),
-  // así que aquí sí se puede afirmar con certeza que el paso se saltará.
-  test('nombra el param sin valor y el paso que se saltará por su culpa (referencia pelada)', () => {
+  // The second incident of 2026-08-29: an optional param was missing, the
+  // `deploy` step was skipped cleanly every night, and nothing ever said so.
+  // The `when` of `deploy` is a BARE reference (`{{params.deploy_url}}`), so
+  // here it can be asserted for certain that the step will be skipped.
+  test('names the param without a value and the step that will be skipped because of it (bare reference)', () => {
     expect(unsetParamImpacts(PIPELINE, { docs_repo: '/repos/docs' })).toEqual([
       { param: 'deploy_url', skippedSteps: ['deploy'], uncertainSteps: [] },
     ]);
   });
 
-  test('un param sin valor del que no depende ningún paso se reporta sin pasos', () => {
+  test('a param without a value that no step depends on is reported with no steps', () => {
     const p = parsePipeline(`
 name: demo
 description: d
 version: 1
 params:
-  suelto:
-    description: no lo usa ningún when
+  loose:
+    description: no when uses it
 steps:
   - id: a
     type: shell
     run: 'true'
 `);
-    expect(unsetParamImpacts(p, {})).toEqual([{ param: 'suelto', skippedSteps: [], uncertainSteps: [] }]);
+    expect(unsetParamImpacts(p, {})).toEqual([{ param: 'loose', skippedSteps: [], uncertainSteps: [] }]);
   });
 
-  test('con todos los params resueltos no hay nada que avisar', () => {
+  test('with all params resolved there is nothing to warn about', () => {
     expect(unsetParamImpacts(PIPELINE, { docs_repo: '/r', deploy_url: 'https://x' })).toEqual([]);
   });
 
-  // `evaluateWhen` trata una referencia
-  // ausente como `undefined`, y con `!=` la comparación `undefined != "yes"`
-  // da `true` — el paso SE EJECUTA, no se salta. Afirmar "se saltará" aquí
-  // sería mentir, así que debe caer en `uncertainSteps`, no en
+  // `evaluateWhen` treats a missing reference as `undefined`, and with `!=`
+  // the comparison `undefined != "yes"` gives `true` — the step RUNS, it is
+  // not skipped. Asserting "it will be skipped" here would be lying, so it
+  // must fall into `uncertainSteps`, not
   // `skippedSteps`.
-  test('un "when" con comparación (!=) no afirma que el paso se vaya a saltar', () => {
+  test('a "when" with a comparison (!=) does not claim the step will be skipped', () => {
     const p = parsePipeline(`
 name: demo
 description: d
 version: 1
 params:
   dry_run:
-    description: modo simulación
+    description: dry-run mode
 steps:
   - id: deploy
     type: shell
@@ -77,21 +77,21 @@ steps:
     ]);
   });
 
-  // Dos params sin valor pueden depender del mismo paso a la vez (aquí,
-  // ambos lados de una comparación entre dos referencias — sintaxis que
-  // `evaluateWhen` rechazaría en runtime, pero `unsetParamImpacts` solo
-  // escanea texto en vez de evaluar, así que debe seguir nombrando el paso
-  // bajo CADA uno de los dos params por separado).
-  test('dos params sin valor sobre el mismo paso generan un impacto cada uno', () => {
+  // Two params without a value can depend on the same step at once (here,
+  // both sides of a comparison between two references — syntax that
+  // `evaluateWhen` would reject at runtime, but `unsetParamImpacts` only
+  // scans text instead of evaluating, so it must still name the step under
+  // EACH of the two params separately).
+  test('two params without a value on the same step produce one impact each', () => {
     const p = parsePipeline(`
 name: demo
 description: d
 version: 1
 params:
   a:
-    description: uno
+    description: one
   b:
-    description: otro
+    description: other
 steps:
   - id: build
     type: shell

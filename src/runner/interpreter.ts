@@ -1,19 +1,19 @@
 /**
- * Intérprete de los pasos `shell` y de las guardas `shell:`.
+ * Interpreter for `shell` steps and `shell:` guards.
  *
- * En macOS `/bin/sh` es bash en modo POSIX y acepta `set -o pipefail`. En
- * Ubuntu `/bin/sh` es dash, que lo rechaza («Illegal option -o pipefail»), y
- * la regla R3 del linter exige `set -euo pipefail` al abrir todo `run:`
- * multilínea. Por eso en Linux se usa `bash --posix`, que reproduce la
- * semántica del `sh` de macOS; en macOS no cambia nada.
+ * On macOS `/bin/sh` is bash in POSIX mode and accepts `set -o pipefail`. On
+ * Ubuntu `/bin/sh` is dash, which rejects it ("Illegal option -o pipefail"),
+ * and linter rule R3 requires `set -euo pipefail` at the top of every
+ * multi-line `run:`. That is why Linux uses `bash --posix`, which reproduces
+ * the semantics of macOS `sh`; on macOS nothing changes.
  */
 
-/** `sh` en darwin, `bash` en cualquier otra plataforma. */
+/** `sh` on darwin, `bash` on any other platform. */
 export function shellInterpreter(platform: NodeJS.Platform = process.platform): 'sh' | 'bash' {
   return platform === 'darwin' ? 'sh' : 'bash';
 }
 
-/** El argv con el que se lanza un comando de shell. */
+/** The argv used to launch a shell command. */
 export function shellArgv(command: string, platform: NodeJS.Platform = process.platform): string[] {
   return platform === 'darwin' ? ['sh', '-c', command] : ['bash', '--posix', '-c', command];
 }

@@ -1,45 +1,45 @@
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 
-// `.strict()`: un canal tiene tres campos — `type` y `run`, obligatorios, más
-// `env`, opcional con `.default([])`. Un typo en `type` o `run` ya fallaría
-// igualmente como "Required" nombrando el campo correcto, pero un typo en
-// `env` (p. ej. `enviroment: [...]`) NO fallaría así sin `.strict()`: la
-// clave desconocida se descartaría en silencio y el `env` real quedaría en
-// `[]` sin avisar. `.strict()` es aquí la defensa principal contra ese caso
-// del campo opcional, no solo un cierre residual sobre los dos obligatorios
-// — por el mismo motivo que el resto de este fichero: ninguna clave
-// desconocida debe desaparecer en silencio.
+// `.strict()`: a channel has three fields — `type` and `run`, required, plus
+// `env`, optional with `.default([])`. A typo in `type` or `run` would fail
+// anyway as "Required" naming the right field, but a typo in `env` (e.g.
+// `enviroment: [...]`) would NOT fail that way without `.strict()`: the
+// unknown key would be dropped silently and the real `env` would stay `[]`
+// without warning. `.strict()` is here the main defense against that
+// optional-field case, not just a leftover catch-all over the two required
+// ones — for the same reason as the rest of this file: no unknown key
+// must disappear silently.
 const channelSchema = z
   .object({
     type: z.literal('shell'),
     run: z.string(),
     /**
-     * Nombres de secretos que este canal necesita, nunca valores — mismo
-     * patrón que `requires.env` de un pipeline y `mcp_servers.<x>.env`.
-     * Resueltos contra el `.env` del repo de datos solo cuando el canal se
-     * invoca de verdad (`dispatchNotify`), nunca expuestos al
-     * pipeline que disparó el notify.
+     * Names of secrets this channel needs, never values — same pattern as
+     * a pipeline's `requires.env` and `mcp_servers.<x>.env`. Resolved
+     * against the data repo's `.env` only when the channel is actually
+     * invoked (`dispatchNotify`), never exposed to the pipeline that
+     * triggered the notify.
      */
     env: z.array(z.string()).default([]),
   })
   .strict();
 
-// La clave YAML es `on_error` ("defaults: { on_error: stop, ... }"),
-// coherente con el resto del formato, ya snake_case: `stale_count`,
-// `pr_url`, `last_success`. El campo interno se expone como `onError`
-// porque los identificadores van en camelCase inglés (convención de todo
-// el código); `parseRepoConfig` hace ese mapeo explícito
-// abajo, igual que `parsePipeline` en `schema/pipeline.ts`.
+// The YAML key is `on_error` ("defaults: { on_error: stop, ... }"),
+// consistent with the rest of the format, already snake_case: `stale_count`,
+// `pr_url`, `last_success`. The internal field is exposed as `onError`
+// because identifiers are English camelCase (convention across the whole
+// code); `parseRepoConfig` does that mapping explicitly below, like
+// `parsePipeline` in `schema/pipeline.ts`.
 //
-// `.strict()` en `repoConfigSchema`, en el objeto `defaults` y en las dos
-// formas anidadas (`retry` en su rama objeto, `notify`): sin esto, Zod
-// descarta cualquier clave desconocida en silencio — que es exactamente el
-// defecto que `on_error` destapó, y que sin `.strict()` seguiría abierto
-// para cualquier otra clave o typo (`onError`, `retries`, `notifi`, una
-// clave de nivel raíz inventada). `pipeline.ts` ya aplica el mismo
-// tratamiento a su `pipelineSchema`/`defaultsSchema`/pasos; esto lo iguala
-// aquí, en el hermano que valida `pipelines.yaml`.
+// `.strict()` on `repoConfigSchema`, on the `defaults` object and on the two
+// nested shapes (`retry` in its object branch, `notify`): without it, Zod
+// drops any unknown key silently — which is exactly the defect `on_error`
+// uncovered, and which without `.strict()` would stay open for any other
+// key or typo (`onError`, `retries`, `notifi`, an invented root-level key).
+// `pipeline.ts` already applies the same treatment to its
+// `pipelineSchema`/`defaultsSchema`/steps; this matches it here, in the
+// sibling that validates `pipelines.yaml`.
 const repoConfigSchema = z
   .object({
     channels: z.record(channelSchema).default({}),
@@ -53,12 +53,12 @@ const repoConfigSchema = z
           ])
           .optional(),
         timeout: z.string().optional(),
-        // Misma forma que `pipelineSchema.notify` en `schema/pipeline.ts`,
-        // incluido `stale_after` — ver el comentario de allí.
+        // Same shape as `pipelineSchema.notify` in `schema/pipeline.ts`,
+        // including `stale_after` — see the comment there.
         notify: z
           .object({
             on: z.array(z.enum(['failed', 'success', 'skipped'])),
-            stale_after: z.string().regex(/^\d+(s|m|h)$/, 'debe ser un número seguido de s, m o h (p. ej. 72h)').optional(),
+            stale_after: z.string().regex(/^\d+(s|m|h)$/, 'must be a number followed by s, m or h (e.g. 72h)').optional(),
             channel: z.string(),
           })
           .strict()
@@ -81,12 +81,12 @@ export type RepoConfig = {
   };
 };
 
-/** Parsea `pipelines.yaml`, la configuración común del repo de datos. */
+/** Parses `pipelines.yaml`, the shared configuration of the data repo. */
 export function parseRepoConfig(yamlText: string): RepoConfig {
   const result = repoConfigSchema.safeParse(parseYaml(yamlText) ?? {});
   if (!result.success) {
     const issues = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
-    throw new Error(`pipelines.yaml inválido:\n  - ${issues.join('\n  - ')}`);
+    throw new Error(`Invalid pipelines.yaml:\n  - ${issues.join('\n  - ')}`);
   }
   const { channels, defaults } = result.data;
   return {

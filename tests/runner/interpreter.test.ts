@@ -8,32 +8,32 @@ async function run(command: string): Promise<{ code: number; out: string }> {
   return { code: await proc.exited, out };
 }
 
-describe('intérprete de los pasos shell', () => {
-  test('en darwin sigue siendo sh -c', () => {
+describe('shell step interpreter', () => {
+  test('on darwin it is still sh -c', () => {
     expect(shellInterpreter('darwin')).toBe('sh');
     expect(shellArgv('x', 'darwin')).toEqual(['sh', '-c', 'x']);
   });
 
-  test('en linux es bash --posix -c', () => {
+  test('on linux it is bash --posix -c', () => {
     expect(shellInterpreter('linux')).toBe('bash');
     expect(shellArgv('x', 'linux')).toEqual(['bash', '--posix', '-c', 'x']);
   });
 
-  test('pipefail activo: una tubería que falla corta el script', async () => {
+  test('pipefail is on: a failing pipeline stops the script', async () => {
     const { code, out } = await run('set -euo pipefail; false | true; echo NO');
     expect(code).not.toBe(0);
     expect(out).not.toContain('NO');
   });
 
-  test('una tubería sana llega al final', async () => {
+  test('a healthy pipeline reaches the end', async () => {
     const { code, out } = await run('set -euo pipefail; true | true; echo OK');
     expect(code).toBe(0);
     expect(out).toContain('OK');
   });
 });
 
-describe('unresolvedInPath con intérprete', () => {
-  test('comprueba el intérprete indicado en vez de sh', () => {
-    expect(unresolvedInPath('/nada', [], () => null, 'bash')).toEqual(['bash']);
+describe('unresolvedInPath with interpreter', () => {
+  test('checks the given interpreter instead of sh', () => {
+    expect(unresolvedInPath('/nothing', [], () => null, 'bash')).toEqual(['bash']);
   });
 });

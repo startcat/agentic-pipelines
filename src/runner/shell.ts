@@ -13,45 +13,45 @@ export class ContractError extends Error {
 
 export type StepContext = {
   scope: InterpolationScope;
-  /** Solo los secretos declarados en `requires.env` del pipeline. */
+  /** Only the secrets declared in the pipeline's `requires.env`. */
   secrets: Record<string, string>;
   defaultCwd: string;
   timeoutMs: number;
 };
 
 /**
- * Variables del proceso que un paso necesita para funcionar. Todo lo demás se
- * descarta: sin esta lista, el intérprete (`sh` en macOS, `bash` en Linux) no
- * encontraría ni sus propios binarios; con `process.env` entero, un paso
- * vería credenciales de pipelines vecinos.
+ * Process variables a step needs to work. Everything else is dropped:
+ * without this list, the interpreter (`sh` on macOS, `bash` on Linux) would
+ * not even find its own binaries; with the whole `process.env`, a step would
+ * see credentials of neighboring pipelines.
  */
 const BASE_ENV_KEYS = ['PATH', 'HOME', 'SHELL', 'USER', 'TZ', 'TMPDIR'];
 
 /**
- * Locale de TODO subproceso que arranca el motor, fijado en vez de heredado
- * — `LANG`/`LC_ALL` salieron a propósito de `BASE_ENV_KEYS`, no se olvidaron.
+ * Locale of EVERY subprocess the engine starts, fixed instead of inherited
+ * — `LANG`/`LC_ALL` left `BASE_ENV_KEYS` on purpose, they were not forgotten.
  *
- * Heredarlo hacía que un pipeline se comportara distinto según quién lo
- * lanzara: una terminal exporta `LANG` (UTF-8), un plist de launchd solo
- * declara `PATH` y `HOME`, así que en cron los subprocesos caían al locale C.
- * En C, el `.` de una expresión regular casa UN BYTE, y un carácter acentuado
- * en UTF-8 son dos — un patrón que casa a mano falla en cron, en silencio.
- * Pasó de verdad: una guarda `shell:` de un pipeline real con `.ltima
- * revisió` saltó el pipeline diez noches seguidas.
+ * Inheriting it made a pipeline behave differently depending on who launched
+ * it: a terminal exports `LANG` (UTF-8), a launchd plist only declares `PATH`
+ * and `HOME`, so under cron the subprocesses fell back to the C locale. In C,
+ * the `.` of a regular expression matches ONE BYTE, and an accented character
+ * in UTF-8 is two — a pattern that matches by hand fails under cron, silently.
+ * It really happened: a `shell:` guard in a real pipeline with `.ltima
+ * revisió` skipped the pipeline ten nights in a row.
  *
- * `C.UTF-8` y no `en_US.UTF-8` porque da las dos mitades que hacen falta:
- * semántica de carácter UTF-8 en las regex, y colación bytewise como la del
- * locale C — así fijarlo no reordena ningún `sort` de un pipeline que hoy ya
- * corre bajo cron. Mismo criterio que `settingSources: []` y
- * `strictMcpConfig: true`: el motor no hereda la configuración de la máquina.
+ * `C.UTF-8` and not `en_US.UTF-8` because it gives the two halves that are
+ * needed: UTF-8 character semantics in regexes, and bytewise collation like
+ * the C locale's — so fixing it does not reorder any `sort` of a pipeline
+ * that already runs under cron today. Same criterion as `settingSources: []`
+ * and `strictMcpConfig: true`: the engine does not inherit the machine's
+ * configuration.
  *
- * Nota de portabilidad: `C.UTF-8` existe en macOS (verificado con `locale -a`)
- * y en glibc >= 2.35; en una distro más vieja habría que revisar esta
- * constante.
+ * Portability note: `C.UTF-8` exists on macOS (verified with `locale -a`) and
+ * on glibc >= 2.35; on an older distro this constant would need a review.
  */
 const FIXED_LOCALE_ENV = { LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' };
 
-/** Entorno del proceso hijo: base mínima, locale fijo y los secretos declarados. */
+/** Environment of the child process: minimal base, fixed locale and the declared secrets. */
 export function composeEnv(secrets: Record<string, string>): Record<string, string> {
   const env: Record<string, string> = {};
   for (const key of BASE_ENV_KEYS) {
@@ -62,25 +62,25 @@ export function composeEnv(secrets: Record<string, string>): Record<string, stri
 }
 
 /**
- * Variables de autenticación y red que necesita el subproceso del SDK del
- * Agent (el CLI de Claude Code que arranca `query()`), verificadas contra el
- * propio bundle instalado (`@anthropic-ai/claude-agent-sdk/sdk.mjs`): las
- * ocho aparecen literalmente ahí. `Options.env` del SDK REEMPLAZA el entorno
- * del subproceso entero, no lo fusiona con `process.env` (`sdk.d.ts`
- * ~1436-1441) — sin esto, un paso agéntico en una máquina autenticada por
- * `ANTHROPIC_API_KEY` fallaría siempre al autenticar, aunque `doctor` haya
- * dado el visto bueno viendo esa misma variable en ESTE proceso.
+ * Authentication and network variables the Agent SDK subprocess needs (the
+ * Claude Code CLI that `query()` starts), verified against the installed
+ * bundle itself (`@anthropic-ai/claude-agent-sdk/sdk.mjs`): all eight appear
+ * there literally. The SDK's `Options.env` REPLACES the whole subprocess
+ * environment, it does not merge it with `process.env` (`sdk.d.ts`
+ * ~1436-1441) — without this, an agent step on a machine authenticated via
+ * `ANTHROPIC_API_KEY` would always fail to authenticate, even though
+ * `doctor` gave the green light by seeing that same variable in THIS process.
  *
- * Por qué esta lista es distinta de `BASE_ENV_KEYS`/`composeEnv` en vez de
- * reutilizarla tal cual: `composeEnv` es correcta para el intérprete de shell en
- * `runShellStep`, que ejecuta el `run:` del propio YAML del pipeline — un
- * payload que no es de confianza, así que ahí no se debe aflojar la lista.
- * El subproceso del SDK, en cambio, es NUESTRO propio proceso (el CLI que
- * nosotros arrancamos), y necesita la credencial con la que se autentica
- * contra la API. La tensión real, y por eso la lista sigue siendo estrecha
- * y no un `...process.env` en bruto: el `Bash` de un paso agéntico hereda
- * este mismo entorno, así que ensancharlo aquí sería la misma fuga que
- * `composeEnv` evita para el intérprete de shell, solo que con un vector distinto.
+ * Why this list differs from `BASE_ENV_KEYS`/`composeEnv` instead of reusing
+ * it as is: `composeEnv` is correct for the shell interpreter in
+ * `runShellStep`, which runs the `run:` from the pipeline's own YAML — an
+ * untrusted payload, so the list must not be loosened there. The SDK
+ * subprocess, on the other hand, is OUR own process (the CLI we start), and
+ * it needs the credential it authenticates against the API with. The real
+ * tension, and why the list is still narrow and not a raw `...process.env`:
+ * the `Bash` of an agent step inherits this same environment, so widening it
+ * here would be the same leak `composeEnv` avoids for the shell interpreter,
+ * just through a different vector.
  */
 const AGENT_AUTH_ENV_KEYS = [
   'ANTHROPIC_API_KEY',
@@ -94,13 +94,14 @@ const AGENT_AUTH_ENV_KEYS = [
 ];
 
 /**
- * Entorno del subproceso del SDK del Agent: la misma base mínima y el mismo
- * locale fijo que `composeEnv`, más las variables de autenticación/red de
- * `AGENT_AUTH_ENV_KEYS`, más la credencial del `.env` del repo de datos
- * (`agentAuth`, que gana a la del entorno: bajo launchd el entorno no la
- * trae), más los secretos declarados. Los secretos se aplican al final para
- * que, si un pipeline declarase un secreto con el mismo nombre que una de
- * estas variables, gane el valor declarado — igual que ya hace `composeEnv`.
+ * Environment of the Agent SDK subprocess: the same minimal base and the
+ * same fixed locale as `composeEnv`, plus the authentication/network
+ * variables of `AGENT_AUTH_ENV_KEYS`, plus the credential from the data
+ * repo's `.env` (`agentAuth`, which wins over the one in the environment:
+ * under launchd the environment does not carry it), plus the declared
+ * secrets. Secrets are applied last so that, if a pipeline declared a secret
+ * with the same name as one of these variables, the declared value wins —
+ * just as `composeEnv` already does.
  */
 export function composeAgentEnv(
   secrets: Record<string, string>,
@@ -126,7 +127,7 @@ function matchesType(value: unknown, type: OutputType): boolean {
   return Array.isArray(value) && value.every((v) => matchesType(v, element));
 }
 
-/** Nombre legible del tipo recibido, en el mismo vocabulario que `OutputType`. */
+/** Readable name of the received type, in the same vocabulary as `OutputType`. */
 function describeReceivedType(value: unknown): string {
   if (value === null) return 'null';
   if (Array.isArray(value)) {
@@ -141,27 +142,28 @@ function describeReceivedType(value: unknown): string {
 }
 
 /**
- * Extracto del valor recibido, o `''` si no hay nada que añadir, decidido por
- * CONCEPTO — no por si el nombre del campo o la forma del valor «huelen» a
- * secreto (esa heurística se quitó: dejaba pasar una credencial a mitad de
- * frase bajo un campo de nombre inocente, p.ej. `summary: "Payment created
- * with key sk_live_…"`, que sí entraba en el extracto de 40 caracteres).
+ * Excerpt of the received value, or `''` if there is nothing to add, decided
+ * by CONCEPT — not by whether the field name or the shape of the value
+ * "smell" like a secret (that heuristic was removed: it let a credential in
+ * the middle of a sentence through under an innocent-looking field name, e.g.
+ * `summary: "Payment created with key sk_live_..."`, which did fit in the
+ * 40-character excerpt).
  *
- * La regla es por tipo:
- * - `string`: NUNCA su contenido, solo cuántos caracteres tiene. Es el único
- *   tipo que puede llevar texto arbitrario — una URL con credenciales, un
- *   JWT, una clave a mitad de frase — así que es el único que hay que ocultar
- *   siempre, sin excepción y sin heurística.
- * - `number` / `boolean`: el valor entero. Ninguno de los dos puede llevar
- *   texto, así que no hay nada que ocultar.
- * - `null`: nada que añadir — el tipo ya lo dice todo.
- * - `array` / `object`: como mucho la forma (longitud, o las claves de primer
- *   nivel), nunca los valores — cualquiera de ellos podría ser el string
- *   peligroso de más arriba.
+ * The rule is by type:
+ * - `string`: NEVER its content, only how many characters it has. It is the
+ *   only type that can carry arbitrary text — a URL with credentials, a JWT,
+ *   a key in the middle of a sentence — so it is the only one that must
+ *   always be hidden, with no exception and no heuristic.
+ * - `number` / `boolean`: the whole value. Neither can carry text, so there
+ *   is nothing to hide.
+ * - `null`: nothing to add — the type already says it all.
+ * - `array` / `object`: at most the shape (length, or the count of top-level
+ *   keys), never the values — any of them could be the dangerous string
+ *   above.
  */
 function excerptOf(value: unknown): string {
   if (typeof value === 'string') {
-    return ` (${value.length} caracteres)`;
+    return ` (${value.length} characters)`;
   }
   if (typeof value === 'number' || typeof value === 'boolean') {
     return ` (${value})`;
@@ -173,19 +175,20 @@ function excerptOf(value: unknown): string {
     return ` (length ${value.length})`;
   }
   const keys = Object.keys(value as Record<string, unknown>);
-  // Solo el NÚMERO de claves: una clave puede ser el propio secreto (un mapa
-  // indexado por token o por email), y listarlas todas no tiene tope.
-  return keys.length === 1 ? ' (1 clave)' : ` (${keys.length} claves)`;
+  // Only the NUMBER of keys: a key can be the secret itself (a map indexed by
+  // token or by email), and listing them all has no upper bound.
+  return keys.length === 1 ? ' (1 key)' : ` (${keys.length} keys)`;
 }
 
 /**
- * Valida una salida contra el contrato `outputs` y descarta lo no declarado.
- * Descartar en vez de propagar mantiene honesto el contrato: un paso posterior
- * solo puede depender de lo que el YAML declara.
+ * Validates an output against the `outputs` contract and drops what is not
+ * declared. Dropping instead of propagating keeps the contract honest: a
+ * later step can only depend on what the YAML declares.
  *
- * El mensaje de cada violación de tipo nombra el paso, el campo, el tipo
- * esperado, el tipo recibido y un extracto acotado del valor. Antes de esto, todas las violaciones de tipo llegaban al correo como el
- * mismo «Contrato incumplido» genérico, sin decir qué falló.
+ * The message of each type violation names the step, the field, the expected
+ * type, the received type and a bounded excerpt of the value. Before this,
+ * every type violation reached the email as the same generic "Contract not
+ * met", without saying what failed.
  */
 export function validateOutputs(
   raw: unknown,
@@ -194,7 +197,7 @@ export function validateOutputs(
 ): Record<string, unknown> {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     throw new ContractError(
-      `Contrato incumplido en «${stepId}»: la salida debe ser un objeto JSON; se recibió ${Array.isArray(raw) ? 'un array' : typeof raw}`,
+      `Contract not met in "${stepId}": the output must be a JSON object; received ${Array.isArray(raw) ? 'an array' : typeof raw}`,
     );
   }
   const source = raw as Record<string, unknown>;
@@ -203,29 +206,29 @@ export function validateOutputs(
 
   for (const [name, type] of Object.entries(contract)) {
     if (!(name in source)) {
-      issues.push(`falta el campo "${name}" (${type})`);
+      issues.push(`missing field "${name}" (${type})`);
       continue;
     }
     const value = source[name];
     if (!matchesType(value, type)) {
-      issues.push(`${name} esperaba ${type}, recibió ${describeReceivedType(value)}${excerptOf(value)}`);
+      issues.push(`${name} expected ${type}, received ${describeReceivedType(value)}${excerptOf(value)}`);
       continue;
     }
     result[name] = value;
   }
 
   if (issues.length > 0) {
-    throw new ContractError(`Contrato incumplido en «${stepId}»: ${issues.join('; ')}`);
+    throw new ContractError(`Contract not met in "${stepId}": ${issues.join('; ')}`);
   }
   return result;
 }
 
 /**
- * ¿Aparece literalmente alguno de los secretos dentro de `text`? Exportada
- * (junto con `redactOutputValues`) para que `agent.ts` la reutilice en vez
- * de mantener una segunda copia: es lógica de seguridad que se ejecuta al
- * redactar `outputs`, así que una sola implementación evita que un runner se
- * quede con una regla más débil que el otro si algún día se refuerza aquí.
+ * Does any of the secrets appear literally inside `text`? Exported (along
+ * with `redactOutputValues`) so `agent.ts` reuses it instead of keeping a
+ * second copy: it is security logic that runs when redacting `outputs`, so a
+ * single implementation prevents one runner from being left with a weaker
+ * rule than the other if it is ever tightened here.
  */
 export function containsSecret(text: string, secrets: string[]): boolean {
   return secrets.some((secret) => secret !== '' && text.includes(secret));
@@ -236,22 +239,22 @@ export type OutputRedactionResult =
   | { ok: false; violatingFields: string[] };
 
 /**
- * Redacta los valores de secreto que puedan aparecer dentro de `outputs`.
- * `outputs` se valida contra el `stdout` crudo del proceso (no contra `log`,
- * que ya está redactado), así que un paso que ecoa su propio secreto en un
- * campo declarado llegaría intacto hasta aquí si no se tratara aparte.
+ * Redacts the secret values that may appear inside `outputs`. `outputs` is
+ * validated against the process's raw `stdout` (not against `log`, which is
+ * already redacted), so a step that echoes its own secret into a declared
+ * field would reach this point intact if it were not handled separately.
  *
- * Los campos `string` (y los elementos `string` de un array) se sustituyen
- * en el sitio por REDACTION, igual que en `log`/`error`. Los campos
- * `number`/`boolean` (y sus formas en array) no admiten esa sustitución sin
- * romper el tipo que el propio contrato declaró — un número no puede valer
- * «redactado» — así que si contienen un secreto se reportan como campo en
- * violación: el llamante debe convertir el resultado en un fallo del paso
- * en vez de dejar pasar el valor crudo.
+ * `string` fields (and the `string` elements of an array) are replaced in
+ * place with REDACTION, just as in `log`/`error`. `number`/`boolean` fields
+ * (and their array forms) do not allow that replacement without breaking the
+ * type the contract itself declared — a number cannot be "[redacted]" — so if
+ * they contain a secret they are reported as a violating field: the caller
+ * must turn the result into a step failure instead of letting the raw value
+ * through.
  *
- * Exportada por el mismo motivo que `containsSecret`: `agent.ts` la
- * reutiliza en vez de duplicarla, así que la regla de qué se redacta y qué
- * hace fallar el paso vive en un único sitio para los dos runners.
+ * Exported for the same reason as `containsSecret`: `agent.ts` reuses it
+ * instead of duplicating it, so the rule of what is redacted and what fails
+ * the step lives in one place for both runners.
  */
 export function redactOutputValues(
   outputs: Record<string, unknown>,
@@ -283,20 +286,20 @@ export function redactOutputValues(
 }
 
 /**
- * Redacta los valores de secreto de un StepOutcome antes de que salga de esta
- * función. Este es el único punto del motor donde un valor de secreto existe
- * en claro (hay que pasarlo al proceso hijo), así que es también el único
- * punto donde hay que garantizar que no sobreviva a la salida: de aquí en
- * adelante el outcome se escribe en `.runs/` y se imprime por la CLI. Se
- * redactan `log`, `error` y los valores de texto dentro de `outputs` — no
- * basta con `log`, porque `outputs` se construye a partir del `stdout` sin
- * redactar (ver `redactOutputValues`).
+ * Redacts the secret values of a StepOutcome before it leaves this function.
+ * This is the only point in the engine where a secret value exists in the
+ * clear (it has to be passed to the child process), so it is also the only
+ * point where it must be guaranteed not to survive the output: from here on
+ * the outcome is written to `.runs/` and printed by the CLI. `log`, `error`
+ * and the text values inside `outputs` are redacted — `log` alone is not
+ * enough, because `outputs` is built from the unredacted `stdout` (see
+ * `redactOutputValues`).
  *
- * Si `outputs` trae un secreto en un campo `number`/`boolean` que no se
- * puede redactar en el sitio, el outcome se convierte aquí mismo en un
- * fallo del paso (contrato incumplido) en vez de devolver el valor crudo.
- * Toda la lógica de secretos vive en esta única función: ningún otro sitio
- * de `runShellStep` decide si algo se redacta o se rechaza.
+ * If `outputs` carries a secret in a `number`/`boolean` field that cannot be
+ * redacted in place, the outcome is turned right here into a step failure
+ * (contract not met) instead of returning the raw value. All the secret
+ * logic lives in this single function: no other place in `runShellStep`
+ * decides whether something is redacted or rejected.
  */
 function redactOutcome(outcome: StepOutcome, secrets: Record<string, string>): StepOutcome {
   const values = Object.values(secrets);
@@ -304,11 +307,11 @@ function redactOutcome(outcome: StepOutcome, secrets: Record<string, string>): S
     const redacted = redactOutputValues(outcome.outputs, values);
     if (!redacted.ok) {
       const issues = redacted.violatingFields.map(
-        (field) => `el campo "${field}" contiene un valor de secreto`,
+        (field) => `field "${field}" contains a secret value`,
       );
       return {
         ok: false,
-        error: redactSecrets(`Contrato incumplido: ${issues.join('; ')}`, values),
+        error: redactSecrets(`Contract not met: ${issues.join('; ')}`, values),
         transient: false,
         log: redactSecrets(outcome.log, values),
         durationMs: outcome.durationMs,
@@ -328,40 +331,40 @@ function redactOutcome(outcome: StepOutcome, secrets: Record<string, string>): S
 }
 
 /**
- * Mensaje de un `Bun.spawn` que ni llegó a arrancar.
+ * Message for a `Bun.spawn` that did not even start.
  *
- * El caso corriente —y el que motivó separarlo— es un `cwd` que no existe:
- * `posix_spawn` falla con ENOENT y Bun lo reporta nombrando el ejecutable
- * (`posix_spawn \'sh\'`; en Linux, `bash`), no el directorio. El mensaje crudo
- * dice entonces que no encuentra el intérprete, que está donde siempre, y
- * manda a quien lo lea a buscar un problema de PATH inexistente. Pasó de
- * verdad el 2026-08-31, validando el canal de notify: ese texto es el que
- * viaja en el correo de una fallada nocturna, así que es lo primero que se ve
- * y lo último que conviene que mienta.
+ * The usual case —and the one that motivated splitting it out— is a `cwd`
+ * that does not exist: `posix_spawn` fails with ENOENT and Bun reports it
+ * naming the executable (`posix_spawn \'sh\'`; on Linux, `bash`), not the
+ * directory. The raw message then says it cannot find the interpreter, which
+ * is where it always was, and sends whoever reads it looking for a PATH
+ * problem that does not exist. It really happened on 2026-08-31, validating
+ * the notify channel: that text is what travels in the email of a nightly
+ * failure, so it is the first thing seen and the last that should lie.
  *
- * `cwdExists` se pasa desde fuera en vez de comprobarlo aquí para que la
- * decisión sea pura y se pueda probar sin tocar el disco.
+ * `cwdExists` is passed in instead of checked here so the decision is pure
+ * and can be tested without touching the disk.
  */
 export function launchFailureMessage(cwd: string, cause: string, cwdExists: boolean): string {
   if (!cwdExists) {
-    return `el directorio de trabajo no existe: ${cwd} (el sistema lo reportó como: ${cause})`;
+    return `the working directory does not exist: ${cwd} (the system reported: ${cause})`;
   }
-  return `no se pudo lanzar el comando: ${cause}`;
+  return `could not launch the command: ${cause}`;
 }
 
 /**
- * Ejecuta un paso `shell`. Si el paso declara `outputs`, su stdout se parsea
- * como JSON y se valida; si no, stdout solo se registra en el log.
+ * Runs a `shell` step. If the step declares `outputs`, its stdout is parsed
+ * as JSON and validated; otherwise, stdout is only recorded in the log.
  */
-/** Líneas de stderr que caben en el `error` de un paso fallido. */
+/** Lines of stderr that fit in the `error` of a failed step. */
 const STDERR_TAIL_LINES = 5;
 const STDERR_TAIL_MAX_CHARS = 400;
 
 /**
- * Las últimas líneas no vacías de stderr, en una sola línea separada por
- * " / ", con tope de caracteres. Cinco líneas bastan para el motivo de un
- * `exit 1` escrito a mano (un `echo … >&2` antes de salir); el log completo
- * sigue en el fichero del paso.
+ * The last non-empty lines of stderr, on a single line separated by " / ",
+ * with a character cap. Five lines are enough for the reason behind a
+ * hand-written `exit 1` (an `echo ... >&2` before exiting); the full log
+ * stays in the step's file.
  */
 export function stderrTail(stderr: string): string {
   const lines = stderr
@@ -373,38 +376,39 @@ export function stderrTail(stderr: string): string {
 }
 
 /**
- * Margen entre matar el grupo de procesos con `SIGTERM` y rematarlo con
- * `SIGKILL` si sigue vivo. Acota la espera de las tuberías del paso: sin
- * esto, un hijo que atrapa `SIGTERM` (visto de verdad con `claude` colgado en
- * red) dejaría a `runShellStep` esperando indefinidamente a que cierre su
- * copia heredada de stdout/stderr, con el `timeout` del pipeline convertido
- * en decorativo.
+ * Margin between killing the process group with `SIGTERM` and finishing it
+ * off with `SIGKILL` if it is still alive. It bounds the wait on the step's
+ * pipes: without it, a child that traps `SIGTERM` (really seen with `claude`
+ * hung on the network) would leave `runShellStep` waiting indefinitely for it
+ * to close its inherited copy of stdout/stderr, turning the pipeline's
+ * `timeout` into a decoration.
  */
 const KILL_ESCALATION_GRACE_MS = 300;
 
 /**
- * Mata el GRUPO de procesos del paso, no solo el intérprete que lo encabeza.
+ * Kills the step's process GROUP, not just the interpreter heading it.
  *
- * `proc.kill()` a secas solo envía la señal al PID del intérprete: si el `run:` del
- * paso arranca algo en segundo plano (`caffeinate -i claude -p … &`, el
- * patrón headless de `aeacc-nightly`/`hub-maintenance`), ese hijo hereda la
- * tubería de stdout/stderr y sigue vivo tras matar al intérprete, así que el motor
- * se queda esperando a que EL cierre su copia del fd — el `timeout` del
- * pipeline no interrumpe nada, solo tarda lo que tarde el huérfano.
+ * A bare `proc.kill()` only sends the signal to the interpreter's PID: if the
+ * step's `run:` starts something in the background (`caffeinate -i claude -p
+ * ... &`, the headless pattern of `aeacc-nightly`/`hub-maintenance`), that
+ * child inherits the stdout/stderr pipe and stays alive after the interpreter
+ * is killed, so the engine keeps waiting for IT to close its copy of the fd —
+ * the pipeline's `timeout` interrupts nothing, it just takes as long as the
+ * orphan takes.
  *
- * El grupo existe porque `runShellStep` arranca el intérprete con `detached: true`
- * (`setsid`, `pid === pgid`): matar con PID negativo llega a todo el grupo,
- * huérfanos en segundo plano incluidos, porque heredan el mismo `pgid` salvo
- * que ellos mismos llamen a `setpgid`. Si el grupo ya no existe (el proceso
- * murió por su cuenta entre medias), `process.kill` lanza y aquí se ignora:
- * no hay nada que matar.
+ * The group exists because `runShellStep` starts the interpreter with
+ * `detached: true` (`setsid`, `pid === pgid`): killing with a negative PID
+ * reaches the whole group, background orphans included, because they inherit
+ * the same `pgid` unless they call `setpgid` themselves. If the group no
+ * longer exists (the process died on its own in between), `process.kill`
+ * throws and it is ignored here: there is nothing to kill.
  */
 function killProcessGroup(pid: number, signal: NodeJS.Signals): void {
   try {
     process.kill(-pid, signal);
   } catch {
-    // El grupo ya no existe (el proceso terminó por su cuenta) o nunca llegó
-    // a arrancar como líder de grupo (spawn falló antes del setsid).
+    // The group no longer exists (the process ended on its own) or never
+    // started as a group leader (spawn failed before setsid).
   }
 }
 
@@ -421,17 +425,17 @@ export async function runShellStep(
   let exitCode: number;
   let timedOut = false;
 
-  // El timeout se aplica matando el proceso, no con AbortSignal: es el
-  // comportamiento uniforme en todas las versiones de Bun y deja el stdout
-  // producido hasta ese momento disponible para el log.
+  // The timeout is applied by killing the process, not with AbortSignal: it
+  // is the uniform behavior across all Bun versions and leaves the stdout
+  // produced up to that point available for the log.
   //
-  // El tipo se anota explícitamente con los mismos literales ('ignore',
-  // 'pipe', 'pipe') que se pasan a `Bun.spawn` más abajo: `ReturnType<typeof
-  // Bun.spawn>` no sirve aquí porque `Bun.spawn` es una función genérica y,
-  // sin argumentos que instancien sus parámetros, `ReturnType` los deja sin
-  // resolver a sus valores por defecto — `proc.stdout`/`proc.stderr` quedan
-  // tipados como `number | ReadableStream | undefined` en vez de
-  // `ReadableStream`, lo que no compila más abajo.
+  // The type is annotated explicitly with the same literals ('ignore',
+  // 'pipe', 'pipe') passed to `Bun.spawn` below: `ReturnType<typeof
+  // Bun.spawn>` does not work here because `Bun.spawn` is a generic function
+  // and, without arguments to instantiate its parameters, `ReturnType` leaves
+  // them unresolved at their default values — `proc.stdout`/`proc.stderr`
+  // end up typed as `number | ReadableStream | undefined` instead of
+  // `ReadableStream`, which does not compile further down.
   let proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'>;
   try {
     proc = Bun.spawn(shellArgv(command), {
@@ -439,9 +443,9 @@ export async function runShellStep(
       env: { ...composeEnv(ctx.secrets), ...refEnv },
       stdout: 'pipe',
       stderr: 'pipe',
-      // `setsid()`: el intérprete nace como líder de su propio grupo (pid === pgid),
-      // así que matar el grupo entero (ver `killProcessGroup`) es posible
-      // aunque el paso arranque hijos en segundo plano.
+      // `setsid()`: the interpreter is born as the leader of its own group
+      // (pid === pgid), so killing the whole group (see `killProcessGroup`)
+      // is possible even if the step starts children in the background.
       detached: true,
     });
   } catch (err) {
@@ -477,16 +481,16 @@ export async function runShellStep(
 
   if (timedOut) {
     return redactOutcome(
-      { ok: false, error: `timeout tras ${ctx.timeoutMs} ms`, transient: true, log, durationMs },
+      { ok: false, error: `timed out after ${ctx.timeoutMs} ms`, transient: true, log, durationMs },
       ctx.secrets,
     );
   }
 
   if (exitCode !== 0) {
-    // El error lleva la cola de stderr, no solo el código: `failureReason`
-    // (notify/dispatch.ts) lo pone en el correo, y «verdict: exit code 1»
-    // sin las líneas que el paso escribió a stderr obligaba a ir a mirar el
-    // log a mano (pasó en un ensayo al migrar un pipeline real).
+    // The error carries the stderr tail, not just the code: `failureReason`
+    // (notify/dispatch.ts) puts it in the email, and "verdict: exit code 1"
+    // without the lines the step wrote to stderr forced going to look at the
+    // log by hand (it happened in a trial run when migrating a real pipeline).
     const tail = stderrTail(stderr);
     return redactOutcome(
       {
@@ -509,7 +513,7 @@ export async function runShellStep(
     return redactOutcome(
       {
         ok: false,
-        error: 'el paso declara outputs pero su stdout no es JSON válido',
+        error: 'the step declares outputs but its stdout is not valid JSON',
         transient: false,
         log,
         durationMs,

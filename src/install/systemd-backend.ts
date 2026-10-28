@@ -1,6 +1,6 @@
 /**
- * systemd (temporizadores de usuario) detrás de `SchedulerBackend`: une el
- * módulo puro (`systemd.ts`) con los efectos (`systemctl.ts`).
+ * systemd (user timers) behind `SchedulerBackend`: joins the pure module
+ * (`systemd.ts`) with the effects (`systemctl.ts`).
  */
 import { homedir, userInfo } from 'node:os';
 import { readdir, readFile, unlink } from 'node:fs/promises';
@@ -9,7 +9,7 @@ import type { SchedulerBackend } from './backend.ts';
 import { lingerEnabled, systemctlUser, userBusError } from './systemctl.ts';
 import { systemdJobFiles, systemdLogPath, userUnitDir } from './systemd.ts';
 
-/** $HOME manda (como en la shell); `homedir()` es el respaldo. */
+/** $HOME wins (as in the shell); `homedir()` is the fallback. */
 function userHome(): string {
   return process.env.HOME || homedir();
 }
@@ -65,7 +65,7 @@ export const systemdBackend: SchedulerBackend = {
           contents: await readFile(join(dir, entry), 'utf8'),
         });
       } catch {
-        // Una unidad ilegible no debe tumbar la instalación.
+        // An unreadable unit must not bring the installation down.
       }
     }
     return jobs;
@@ -85,14 +85,14 @@ export const systemdBackend: SchedulerBackend = {
         ok: linger === true,
         detail:
           linger === true
-            ? 'activado'
-            : 'desactivado: sin sesión abierta, el temporizador no se dispara',
+            ? 'enabled'
+            : 'disabled: without an open session, the timer does not fire',
         ...(linger === true ? {} : { fix: `sudo loginctl enable-linger ${user}` }),
       },
     ];
   },
 
-  // Los ficheros ya los ha escrito `install`; aquí solo se registran y arrancan.
+  // `install` has already written the files; here they are only registered and started.
   async activate(label) {
     const reload = await systemctlUser(['daemon-reload']);
     if (reload.code !== 0) return failure(reload);
@@ -101,16 +101,16 @@ export const systemdBackend: SchedulerBackend = {
     return { code: 0, stderr: '' };
   },
 
-  // Nunca `mask`: dejaría la unidad bloqueada para una reinstalación posterior.
-  // El código de `disable` se ignora: puede no estar cargado.
+  // Never `mask`: it would leave the unit blocked for a later reinstall.
+  // The code of `disable` is ignored: it may not be loaded.
   async deactivate(label) {
     const disable = await systemctlUser(['disable', '--now', `${label}.timer`]);
     const dir = userUnitDir(userHome(), process.env);
     await removeIfExists(join(dir, `${label}.service`));
     await removeIfExists(join(dir, `${label}.timer`));
     await systemctlUser(['daemon-reload']);
-    // Sin bus de usuario `disable` no pudo hablar con systemd: los ficheros
-    // ya no están, pero el temporizador puede seguir cargado en memoria.
+    // Without a user bus `disable` could not talk to systemd: the files are
+    // gone, but the timer may still be loaded in memory.
     const warning = disable.code !== 0 ? userBusError(disable.stderr.trim()) : null;
     return warning ? { warning } : {};
   },
@@ -133,6 +133,6 @@ export const systemdBackend: SchedulerBackend = {
   },
 
   retireHint(label) {
-    return `Retíralo con "systemctl --user disable --now ${label}.timer".`;
+    return `Disable it with "systemctl --user disable --now ${label}.timer".`;
   },
 };

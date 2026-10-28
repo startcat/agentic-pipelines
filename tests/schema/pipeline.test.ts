@@ -3,16 +3,16 @@ import { parsePipeline, PipelineParseError, type AgentStep } from '../../src/sch
 
 const MINIMAL = `
 name: demo
-description: Un pipeline mínimo
+description: A minimal pipeline
 version: 1
 steps:
   - id: hello
     type: shell
-    run: echo hola
+    run: echo hello
 `;
 
 describe('parsePipeline', () => {
-  test('acepta un pipeline mínimo y aplica los valores por defecto', () => {
+  test('accepts a minimal pipeline and applies the defaults', () => {
     const p = parsePipeline(MINIMAL);
     expect(p.name).toBe('demo');
     expect(p.version).toBe(1);
@@ -24,7 +24,7 @@ describe('parsePipeline', () => {
     expect(step.timeout).toBe('15m');
   });
 
-  test('el tipo por defecto de un paso es agent', () => {
+  test('the default type of a step is agent', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -37,7 +37,7 @@ steps:
     expect(p.steps[0]!.type).toBe('agent');
   });
 
-  test('acepta max_cost_usd opcional en un paso agent', () => {
+  test('accepts an optional max_cost_usd in an agent step', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -52,7 +52,7 @@ steps:
     expect(step.maxCostUsd).toBe(2.5);
   });
 
-  test('max_cost_usd es undefined si no se declara', () => {
+  test('max_cost_usd is undefined if not declared', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -66,7 +66,7 @@ steps:
     expect(step.maxCostUsd).toBeUndefined();
   });
 
-  test('rechaza un max_cost_usd negativo o cero', () => {
+  test('rejects a negative or zero max_cost_usd', () => {
     expect(() =>
       parsePipeline(`
 name: demo
@@ -81,7 +81,7 @@ steps:
     ).toThrow(PipelineParseError);
   });
 
-  test('los defaults del pipeline se propagan a los pasos que no los declaran', () => {
+  test('the pipeline defaults propagate to the steps that do not declare them', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -105,7 +105,7 @@ steps:
     expect(p.steps[1]!.onError).toBe('stop');
   });
 
-  test('rechaza un paso agent sin prompt nombrando el campo', () => {
+  test('rejects an agent step without prompt naming the field', () => {
     try {
       parsePipeline(`
 name: demo
@@ -115,7 +115,7 @@ steps:
   - id: a
     agent: writer
 `);
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(PipelineParseError);
       const issues = (err as PipelineParseError).issues;
@@ -124,7 +124,7 @@ steps:
     }
   });
 
-  test('rechaza un paso shell sin run nombrando el campo', () => {
+  test('rejects a shell step without run naming the field', () => {
     try {
       parsePipeline(`
 name: demo
@@ -134,7 +134,7 @@ steps:
   - id: a
     type: shell
 `);
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(PipelineParseError);
       const issues = (err as PipelineParseError).issues;
@@ -143,7 +143,7 @@ steps:
     }
   });
 
-  test('rechaza ids de paso duplicados nombrando el id', () => {
+  test('rejects duplicate step ids naming the id', () => {
     try {
       parsePipeline(`
 name: demo
@@ -157,22 +157,22 @@ steps:
     type: shell
     run: 'true'
 `);
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(PipelineParseError);
       expect((err as PipelineParseError).issues.join(' ')).toContain('a');
     }
   });
 
-  test('rechaza YAML sintácticamente inválido', () => {
-    expect(() => parsePipeline('name: [sin cerrar')).toThrow(PipelineParseError);
+  test('rejects syntactically invalid YAML', () => {
+    expect(() => parsePipeline('name: [unclosed')).toThrow(PipelineParseError);
   });
 
-  // El formato usa `on_error` en todos sus ejemplos; antes de este arreglo
-  // el esquema aceptaba `onError` y Zod descartaba en silencio la clave
-  // `on_error` (y cualquier otro typo), sin avisar. `.strict()` convierte eso en
-  // un error que nombra la clave.
-  test('la clave YAML es on_error, tal como la documenta el formato, y sí tiene efecto', () => {
+  // The format uses `on_error` in all its examples; before this fix the
+  // schema accepted `onError` and Zod silently dropped the `on_error` key
+  // (and any other typo), without warning. `.strict()` turns that into an
+  // error that names the key.
+  test('the YAML key is on_error, as the format documents it, and it does take effect', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -186,7 +186,7 @@ steps:
     expect(p.steps[0]!.onError).toBe('continue');
   });
 
-  test('rechaza un typo en un campo de paso nombrando la clave desconocida', () => {
+  test('rejects a typo in a step field naming the unknown key', () => {
     try {
       parsePipeline(`
 name: demo
@@ -198,7 +198,7 @@ steps:
     run: 'true'
     outpus: { n: number }
 `);
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(PipelineParseError);
       const issues = (err as PipelineParseError).issues;
@@ -206,7 +206,7 @@ steps:
     }
   });
 
-  test('rechaza un typo en defaults nombrando la clave desconocida', () => {
+  test('rejects a typo in defaults naming the unknown key', () => {
     try {
       parsePipeline(`
 name: demo
@@ -219,7 +219,7 @@ steps:
     type: shell
     run: 'true'
 `);
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(PipelineParseError);
       const issues = (err as PipelineParseError).issues;
@@ -227,7 +227,7 @@ steps:
     }
   });
 
-  test('rechaza una clave desconocida a nivel de pipeline nombrándola', () => {
+  test('rejects an unknown key at pipeline level naming it', () => {
     try {
       parsePipeline(`
 name: demo
@@ -240,7 +240,7 @@ steps:
     type: shell
     run: 'true'
 `);
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(PipelineParseError);
       const issues = (err as PipelineParseError).issues;
@@ -248,7 +248,7 @@ steps:
     }
   });
 
-  test('acepta notify.on con failed (no failure) y lo expone tal cual', () => {
+  test('accepts notify.on with failed (not failure) and exposes it as is', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -264,7 +264,7 @@ steps:
     expect(p.notify).toEqual({ on: ['failed', 'success'], channel: 'telegram' });
   });
 
-  test('rechaza el nombre antiguo failure en notify.on', () => {
+  test('rejects the old name failure in notify.on', () => {
     expect(() =>
       parsePipeline(`
 name: demo
@@ -283,7 +283,7 @@ steps:
 });
 
 describe('mcp_servers', () => {
-  test('resuelve el registro del pipeline y los nombres activados por un paso', () => {
+  test('resolves the pipeline registry and the names enabled by a step', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -311,7 +311,7 @@ steps:
     expect((step as { mcpServers: string[] }).mcpServers).toEqual(['playwright']);
   });
 
-  test('un paso sin mcp_servers queda con una lista vacía', () => {
+  test('a step without mcp_servers ends up with an empty list', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -324,7 +324,7 @@ steps:
     expect((p.steps[0] as { mcpServers: string[] }).mcpServers).toEqual([]);
   });
 
-  test('args y env de un servidor por defecto son listas vacías', () => {
+  test('args and env of a server default to empty lists', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -340,7 +340,7 @@ steps:
     expect(p.mcpServers.bare).toEqual({ command: 'some-mcp-server', args: [], env: [] });
   });
 
-  test('rechaza un paso que referencia un servidor MCP no declarado, nombrando el paso y el índice', () => {
+  test('rejects a step that references an undeclared MCP server, naming the step and the index', () => {
     try {
       parsePipeline(`
 name: demo
@@ -352,17 +352,17 @@ steps:
     prompt: p.md
     mcp_servers: [playwright]
 `);
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(PipelineParseError);
       const issues = (err as PipelineParseError).issues;
       expect(issues).toEqual([
-        'steps.0.mcp_servers.0: servidor MCP "playwright" no declarado en mcp_servers',
+        'steps.0.mcp_servers.0: MCP server "playwright" not declared in mcp_servers',
       ]);
     }
   });
 
-  test('rechaza una tool mcp__ en tools sin el servidor activado en mcp_servers', () => {
+  test('rejects an mcp__ tool in tools without the server enabled in mcp_servers', () => {
     try {
       parsePipeline(`
 name: demo
@@ -378,17 +378,17 @@ steps:
     prompt: p.md
     tools: [Read, mcp__playwright__browser_navigate]
 `);
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(PipelineParseError);
       const issues = (err as PipelineParseError).issues;
       expect(issues).toEqual([
-        'steps.0.tools.1: la herramienta "mcp__playwright__browser_navigate" requiere activar su servidor en mcp_servers',
+        'steps.0.tools.1: the tool "mcp__playwright__browser_navigate" requires enabling its server in mcp_servers',
       ]);
     }
   });
 
-  test('acepta una tool mcp__ cuando su servidor está activado en mcp_servers', () => {
+  test('accepts an mcp__ tool when its server is enabled in mcp_servers', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -407,7 +407,7 @@ steps:
     expect((p.steps[0] as { tools: string[] }).tools).toContain('mcp__playwright__browser_navigate');
   });
 
-  test('rechaza un nombre de servidor MCP que no es kebab-case', () => {
+  test('rejects an MCP server name that is not kebab-case', () => {
     try {
       parsePipeline(`
 name: demo
@@ -421,7 +421,7 @@ steps:
     type: shell
     run: 'true'
 `);
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(PipelineParseError);
       const issues = (err as PipelineParseError).issues;
@@ -429,7 +429,7 @@ steps:
     }
   });
 
-  test('rechaza una clave desconocida dentro de un servidor MCP nombrándola', () => {
+  test('rejects an unknown key inside an MCP server naming it', () => {
     try {
       parsePipeline(`
 name: demo
@@ -443,7 +443,7 @@ steps:
     type: shell
     run: 'true'
 `);
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(PipelineParseError);
       const issues = (err as PipelineParseError).issues;
@@ -451,7 +451,7 @@ steps:
     }
   });
 
-  test('un servidor mcp_servers puede declarar kind: playwright, y una tool mcp__<servidor>__<sufijo> conocida para ese kind se acepta con el nombre de servidor que elija el autor', () => {
+  test('an mcp_servers server can declare kind: playwright, and an mcp__<server>__<suffix> tool known for that kind is accepted with whatever server name the author picks', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -471,7 +471,7 @@ steps:
     expect(p.mcpServers.pw!.kind).toBe('playwright');
   });
 
-  test('una tool mcp__<servidor>__<sufijo> cuyo servidor no declara kind: se rechaza', () => {
+  test('an mcp__<server>__<suffix> tool whose server does not declare kind: is rejected', () => {
     expect(() =>
       parsePipeline(`
 name: demo
@@ -491,7 +491,7 @@ steps:
     ).toThrow(/kind/);
   });
 
-  test('un sufijo mcp__<servidor>__<sufijo> que kind: playwright no reconoce se rechaza', () => {
+  test('an mcp__<server>__<suffix> suffix that kind: playwright does not recognize is rejected', () => {
     expect(() =>
       parsePipeline(`
 name: demo
@@ -507,12 +507,12 @@ steps:
     agent: writer
     prompt: p.md
     mcp_servers: [pw]
-    tools: [mcp__pw__no_existe_esta_tool]
+    tools: [mcp__pw__this_tool_does_not_exist]
 `),
-    ).toThrow(/no_existe_esta_tool/);
+    ).toThrow(/this_tool_does_not_exist/);
   });
 
-  test('mcp__<servidor>__browser_evaluate se rechaza con un motivo específico, aunque el servidor declare kind: playwright', () => {
+  test('mcp__<server>__browser_evaluate is rejected with a specific reason, even if the server declares kind: playwright', () => {
     expect(() =>
       parsePipeline(`
 name: demo
@@ -530,12 +530,12 @@ steps:
     mcp_servers: [pw]
     tools: [mcp__pw__browser_evaluate]
 `),
-    ).toThrow(/código.*arbitrario/);
+    ).toThrow(/arbitrary code/);
   });
 });
 
-describe('gobierno de tools: — deny-by-default', () => {
-  test('una tool nativa desconocida para el motor se rechaza con el nombre de la tool', () => {
+describe('tools: governance — deny-by-default', () => {
+  test('a native tool unknown to the engine is rejected with the tool name', () => {
     expect(() =>
       parsePipeline(`
 name: demo
@@ -550,7 +550,7 @@ steps:
     ).toThrow(/TotallyMadeUpTool/);
   });
 
-  test('Bash en tools: de un paso agent se rechaza, sugiriendo type: shell', () => {
+  test('Bash in tools: of an agent step is rejected, suggesting type: shell', () => {
     expect(() =>
       parsePipeline(`
 name: demo
@@ -565,7 +565,7 @@ steps:
     ).toThrow(/type: shell/);
   });
 
-  test('las tools nativas conocidas (Read/Write/Edit/NotebookEdit/Glob/Grep) nunca se rechazan por nombre', () => {
+  test('the known native tools (Read/Write/Edit/NotebookEdit/Glob/Grep) are never rejected by name', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -580,7 +580,7 @@ steps:
   });
 });
 
-describe('guardas de when — mensajes específicos', () => {
+describe('when guards — specific messages', () => {
   function parseWhen(guard: string): PipelineParseError {
     try {
       parsePipeline(`
@@ -594,39 +594,39 @@ steps:
     type: shell
     run: 'true'
 `);
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(PipelineParseError);
       return err as PipelineParseError;
     }
   }
 
-  test('un throttle.every mal formado nombra el campo throttle.every', () => {
-    const err = parseWhen('throttle: { every: "3 horas" }');
+  test('a malformed throttle.every names the field throttle.every', () => {
+    const err = parseWhen('throttle: { every: "3 hours" }');
     expect(err.issues.some((i) => i.includes('when.0') && i.includes('every'))).toBe(true);
   });
 
-  test('un between fuera de formato nombra el campo between', () => {
-    const err = parseWhen('between: "mañana"');
+  test('a badly formatted between names the field between', () => {
+    const err = parseWhen('between: "tomorrow"');
     expect(err.issues.some((i) => i.includes('when.0') && i.includes('between'))).toBe(true);
   });
 
-  test('un changed sin path nombra el campo changed.path', () => {
+  test('a changed without path names the field changed.path', () => {
     const err = parseWhen('changed: {}');
     expect(err.issues.some((i) => i.includes('when.0') && i.includes('path'))).toBe(true);
   });
 
-  test('una guarda sin ninguna clave reconocida lo dice explícitamente', () => {
+  test('a guard with no recognized key says so explicitly', () => {
     const err = parseWhen('foo: bar');
     expect(err.issues.some((i) => i.includes('when.0') && i.includes('throttle'))).toBe(true);
   });
 
-  test('una guarda con dos claves de tipo distinto lo dice explícitamente', () => {
+  test('a guard with two keys of different type says so explicitly', () => {
     const err = parseWhen('{ throttle: 4h, shell: "true" }');
     expect(err.issues.some((i) => i.includes('when.0'))).toBe(true);
   });
 
-  test('un shell válido sigue parseando con éxito (sin regresión)', () => {
+  test('a valid shell still parses successfully (no regression)', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -641,33 +641,32 @@ steps:
     expect(p.when).toEqual([{ shell: 'true' }]);
   });
 
-  // Las cuatro ramas de guarda (y los objetos anidados de throttle/changed)
-  // son `.strict()`: una clave desconocida ya no se descarta en silencio
-  // (comportamiento confirmado ANTES de este arreglo: `sinc` en vez de
-  // `since` parseaba sin error y la guarda anclaba en el default
-  // equivocado). Misma convención `.strict()` ya establecida en el resto del
-  // fichero.
-  test('un typo dentro de throttle (rama objeto) se rechaza, no se descarta en silencio', () => {
+  // The four guard branches (and the nested throttle/changed objects) are
+  // `.strict()`: an unknown key is no longer dropped silently (behavior
+  // confirmed BEFORE this fix: `sinc` instead of `since` parsed without
+  // error and the guard anchored on the wrong default). Same `.strict()`
+  // convention already established in the rest of the file.
+  test('a typo inside throttle (object branch) is rejected, not dropped silently', () => {
     const err = parseWhen('throttle: { every: "4h", sinc: last_attempt }');
     expect(err.issues.some((i) => i.includes('when.0'))).toBe(true);
   });
 
-  test('un typo dentro de changed se rechaza, no se descarta en silencio', () => {
+  test('a typo inside changed is rejected, not dropped silently', () => {
     const err = parseWhen('changed: { path: /x, sinc: last_attempt }');
     expect(err.issues.some((i) => i.includes('when.0'))).toBe(true);
   });
 
-  test('una clave extra a nivel de shell se rechaza', () => {
+  test('an extra key at shell level is rejected', () => {
     const err = parseWhen('{ shell: "true", extra: 1 }');
     expect(err.issues.some((i) => i.includes('when.0'))).toBe(true);
   });
 
-  test('una clave extra a nivel de between se rechaza', () => {
+  test('an extra key at between level is rejected', () => {
     const err = parseWhen('{ between: "07:00-23:00", extra: 1 }');
     expect(err.issues.some((i) => i.includes('when.0'))).toBe(true);
   });
 
-  test('throttle como duración simple (rama string, no objeto) sigue parseando con éxito', () => {
+  test('throttle as a simple duration (string branch, not object) still parses successfully', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -682,7 +681,7 @@ steps:
     expect(p.when).toEqual([{ throttle: '4h' }]);
   });
 
-  test('throttle con since correcto (sin typo) sigue parseando con éxito', () => {
+  test('throttle with a correct since (no typo) still parses successfully', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -697,7 +696,7 @@ steps:
     expect(p.when).toEqual([{ throttle: { every: '4h', since: 'last_attempt' } }]);
   });
 
-  test('changed con since correcto (sin typo) sigue parseando con éxito', () => {
+  test('changed with a correct since (no typo) still parses successfully', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -713,8 +712,8 @@ steps:
   });
 });
 
-describe('always — limpieza incondicional', () => {
-  test('acepta un bloque always y lo expone como pasos shell', () => {
+describe('always — unconditional cleanup', () => {
+  test('accepts an always block and exposes it as shell steps', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -734,7 +733,7 @@ always:
     });
   });
 
-  test('sin always declarado, la lista está vacía', () => {
+  test('without always declared, the list is empty', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -747,7 +746,7 @@ steps:
     expect(p.always).toEqual([]);
   });
 
-  test('un id de always duplicado con uno de steps se rechaza', () => {
+  test('an always id duplicated with one in steps is rejected', () => {
     expect(() =>
       parsePipeline(`
 name: demo
@@ -764,7 +763,7 @@ always:
     ).toThrow(PipelineParseError);
   });
 
-  test('dos entradas de always con el mismo id (sin colisión con steps) se rechazan', () => {
+  test('two always entries with the same id (no collision with steps) are rejected', () => {
     try {
       parsePipeline(`
 name: demo
@@ -780,7 +779,7 @@ always:
   - id: cleanup
     run: 'echo again'
 `);
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(PipelineParseError);
       expect(
@@ -791,7 +790,7 @@ always:
     }
   });
 
-  test('rechaza una clave desconocida dentro de always nombrándola', () => {
+  test('rejects an unknown key inside always naming it', () => {
     try {
       parsePipeline(`
 name: demo
@@ -806,7 +805,7 @@ always:
     run: 'true'
     when: "true"
 `);
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(PipelineParseError);
       expect((err as PipelineParseError).issues.some((i) => i.includes('when'))).toBe(true);
@@ -828,23 +827,24 @@ steps:
     run: 'true'
 `);
 
-  test('acepta una duración válida', () => {
+  test('accepts a valid duration', () => {
     const p = withNotify('  on: [success]\n  stale_after: 72h\n  channel: c');
     expect(p.notify?.staleAfter).toBe('72h');
   });
 
-  test('es opcional', () => {
+  test('is optional', () => {
     const p = withNotify('  on: [success]\n  channel: c');
     expect(p.notify?.staleAfter).toBeUndefined();
   });
 
-  test('rechaza una duración mal formada', () => {
-    expect(() => withNotify('  on: [success]\n  stale_after: 3 dias\n  channel: c')).toThrow(/stale_after/);
+  test('rejects a malformed duration', () => {
+    expect(() => withNotify('  on: [success]\n  stale_after: 3 days\n  channel: c')).toThrow(/stale_after/);
   });
 
-  // Sin `.strict()`, un `stale_after` mal escrito se ignoraría en silencio —
-  // justo la clase de fallo mudo que este campo existe para evitar.
-  test('rechaza una clave desconocida dentro de notify', () => {
+  // Without `.strict()`, a misspelled `stale_after` would be ignored
+  // silently — exactly the class of silent failure this field exists to
+  // avoid.
+  test('rejects an unknown key inside notify', () => {
     expect(() => withNotify('  on: [success]\n  stale_afer: 72h\n  channel: c')).toThrow();
   });
 });

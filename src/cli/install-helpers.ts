@@ -5,19 +5,19 @@ import { join } from 'node:path';
 import { stableBunPath } from '../install/common.ts';
 
 /**
- * El home del usuario: `$HOME` manda (como en la shell, y como en el backend de
- * systemd) y `homedir()` es el respaldo. Bun no sigue un `HOME` cambiado en
- * macOS, y los tests dependen de poder cambiarlo.
+ * The user's home: `$HOME` wins (as in the shell, and as in the systemd
+ * backend) and `homedir()` is the fallback. Bun does not follow a changed
+ * `HOME` on macOS, and the tests depend on being able to change it.
  */
 export function userHome(): string {
   return process.env.HOME || homedir();
 }
 
 /**
- * El `bun` que va al plist de un job. `install` lo escribe y el panel
- * (`web/facts.ts`) lo usa para generar el plist esperado: si cada uno lo
- * calculara por su cuenta, el panel marcaría como `drifted` un job recién
- * instalado, que es justo lo que pasó cuando solo `install` empezó a usar
+ * The `bun` that goes into a job's plist. `install` writes it and the
+ * dashboard (`web/facts.ts`) uses it to generate the expected plist: if each
+ * computed it on its own, the dashboard would flag a freshly installed job as
+ * `drifted`, which is exactly what happened when only `install` started using
  * `stableBunPath`.
  */
 export function jobBunPath(): string {
@@ -25,9 +25,10 @@ export function jobBunPath(): string {
 }
 
 /**
- * Fusiona los params de ESTE pipeline en `.params.local.json` sin tocar los de
- * los demás. Escritura atómica (temporal + rename) para que una interrupción
- * no deje el JSON a medias y deje sin arrancar a todos los pipelines del repo.
+ * Merges THIS pipeline's params into `.params.local.json` without touching
+ * the others'. Atomic write (temp file + rename) so an interruption does not
+ * leave the JSON half-written and stop every pipeline in the repo from
+ * starting.
  */
 export async function writeLocalParams(
   repoRoot: string,
@@ -39,10 +40,10 @@ export async function writeLocalParams(
   try {
     raw = await readFile(file, 'utf8');
   } catch (err) {
-    // Solo "no existe todavía" se traga en silencio: un JSON roto (por la
-    // razón que sea) debe lanzar, no reescribirse entero por encima —
-    // borraría los params de TODOS los demás pipelines del repo, no solo el
-    // que se está instalando ahora.
+    // Only "does not exist yet" is swallowed silently: a broken JSON (for
+    // whatever reason) must throw, not be rewritten over entirely — that
+    // would erase the params of ALL the other pipelines in the repo, not just
+    // the one being installed now.
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
   const all: Record<string, Record<string, string>> =
