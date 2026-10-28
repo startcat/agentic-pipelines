@@ -11,95 +11,95 @@ const scope = {
   },
 };
 
-describe('evaluateWhen — referencia sola', () => {
-  test('una cadena no vacía es cierta', () => {
+describe('evaluateWhen — bare reference', () => {
+  test('a non-empty string is truthy', () => {
     expect(evaluateWhen('{{draft.pr_url}}', scope)).toBe(true);
   });
-  test('un número distinto de cero es cierto', () => {
+  test('a non-zero number is truthy', () => {
     expect(evaluateWhen('{{scan.stale_count}}', scope)).toBe(true);
   });
-  test('cero es falso', () => {
+  test('zero is falsy', () => {
     expect(evaluateWhen('{{scan.zero}}', scope)).toBe(false);
   });
-  test('false es falso', () => {
+  test('false is falsy', () => {
     expect(evaluateWhen('{{scan.flag}}', scope)).toBe(false);
   });
-  test('null es falso', () => {
+  test('null is falsy', () => {
     expect(evaluateWhen('{{scan.nothing}}', scope)).toBe(false);
   });
-  test('una lista vacía es falsa', () => {
+  test('an empty list is falsy', () => {
     expect(evaluateWhen('{{scan.empty_list}}', scope)).toBe(false);
   });
-  test('una lista con elementos es cierta', () => {
+  test('a list with elements is truthy', () => {
     expect(evaluateWhen('{{scan.pages}}', scope)).toBe(true);
   });
-  test('un campo que no existe es falso, no un error', () => {
-    expect(evaluateWhen('{{scan.no_existe}}', scope)).toBe(false);
+  test('a field that does not exist is falsy, not an error', () => {
+    expect(evaluateWhen('{{scan.does_not_exist}}', scope)).toBe(false);
   });
-  test('acepta referencias a params', () => {
+  test('accepts references to params', () => {
     expect(evaluateWhen('{{params.mode}}', scope)).toBe(true);
   });
 });
 
-describe('evaluateWhen — comparación', () => {
-  test('compara números', () => {
+describe('evaluateWhen — comparison', () => {
+  test('compares numbers', () => {
     expect(evaluateWhen('{{scan.stale_count}} > 0', scope)).toBe(true);
     expect(evaluateWhen('{{scan.stale_count}} > 10', scope)).toBe(false);
     expect(evaluateWhen('{{scan.stale_count}} >= 7', scope)).toBe(true);
     expect(evaluateWhen('{{scan.stale_count}} < 10', scope)).toBe(true);
     expect(evaluateWhen('{{scan.stale_count}} <= 6', scope)).toBe(false);
   });
-  test('compara cadenas con == y !=', () => {
+  test('compares strings with == and !=', () => {
     expect(evaluateWhen('{{scan.name}} == "docs"', scope)).toBe(true);
     expect(evaluateWhen("{{scan.name}} != 'docs'", scope)).toBe(false);
   });
-  test('compara con literales booleanos', () => {
+  test('compares with boolean literals', () => {
     expect(evaluateWhen('{{scan.flag}} == false', scope)).toBe(true);
   });
-  test('una comparación de orden sobre un campo ausente es falsa', () => {
-    expect(evaluateWhen('{{scan.no_existe}} > 0', scope)).toBe(false);
+  test('an ordering comparison on an absent field is falsy', () => {
+    expect(evaluateWhen('{{scan.does_not_exist}} > 0', scope)).toBe(false);
   });
 });
 
-describe('evaluateWhen — formas rechazadas', () => {
-  test('rechaza operadores lógicos', () => {
+describe('evaluateWhen — rejected forms', () => {
+  test('rejects logical operators', () => {
     expect(() => evaluateWhen('{{scan.stale_count}} > 0 && {{draft.pr_url}}', scope)).toThrow(
       ExpressionError,
     );
   });
-  test('rechaza aritmética', () => {
+  test('rejects arithmetic', () => {
     expect(() => evaluateWhen('{{scan.stale_count}} + 1 > 0', scope)).toThrow(ExpressionError);
   });
-  test('rechaza comparar dos referencias entre sí', () => {
+  test('rejects comparing two references with each other', () => {
     expect(() => evaluateWhen('{{scan.stale_count}} > {{scan.zero}}', scope)).toThrow(
       ExpressionError,
     );
   });
-  test('rechaza texto que no contiene ninguna referencia', () => {
+  test('rejects text that contains no reference', () => {
     expect(() => evaluateWhen('1 > 0', scope)).toThrow(ExpressionError);
   });
 });
 
-describe('evaluateWhen — coerción de params', () => {
-  // `resolveParams` normaliza todo param a string, así que este bloque lo
-  // ejercita de verdad en vez de simular la forma con un scope escrito a
-  // mano — así queda pinneado el camino real de stringificación.
+describe('evaluateWhen — params coercion', () => {
+  // `resolveParams` normalizes every param to a string, so this block
+  // exercises it for real instead of simulating the shape with a
+  // hand-written scope — that way the real stringification path is pinned.
   const paramPipeline = parsePipeline(`
 name: demo
 description: d
 version: 1
 params:
   dry_run:
-    description: Si es un simulacro
+    description: Whether it is a dry run
     default: false
   retries:
-    description: Reintentos
+    description: Retries
     default: 0
   max:
-    description: Máximo
+    description: Maximum
     default: 3
   mode:
-    description: Modo de ejecución
+    description: Run mode
     default: full
 steps:
   - id: a
@@ -111,7 +111,7 @@ steps:
     steps: {},
   };
 
-  test('resolveParams entrega los params como string', () => {
+  test('resolveParams delivers params as strings', () => {
     expect(paramScope.params).toEqual({
       dry_run: 'false',
       retries: '0',
@@ -120,39 +120,39 @@ steps:
     });
   });
 
-  test('un param de origen booleano es falso, no la cadena "false"', () => {
+  test('a param of boolean origin is falsy, not the string "false"', () => {
     expect(evaluateWhen('{{params.dry_run}}', paramScope)).toBe(false);
     expect(evaluateWhen('{{params.dry_run}} == false', paramScope)).toBe(true);
   });
 
-  test('un param de origen numérico es falso en cero y compara numéricamente', () => {
+  test('a param of numeric origin is falsy at zero and compares numerically', () => {
     expect(evaluateWhen('{{params.retries}}', paramScope)).toBe(false);
     expect(evaluateWhen('{{params.max}} > 1', paramScope)).toBe(true);
     expect(evaluateWhen('{{params.retries}} == 0', paramScope)).toBe(true);
   });
 
-  test('un param de origen cadena se comporta igual que antes (sin regresión)', () => {
+  test('a param of string origin behaves as before (no regression)', () => {
     expect(evaluateWhen('{{params.mode}}', paramScope)).toBe(true);
   });
 });
 
-describe('evaluateWhen — orden: ausente vs. no numérico', () => {
-  test('un campo ausente en una comparación de orden sigue siendo falso', () => {
-    expect(evaluateWhen('{{scan.no_existe}} > 0', scope)).toBe(false);
+describe('evaluateWhen — ordering: absent vs. non-numeric', () => {
+  test('an absent field in an ordering comparison is still falsy', () => {
+    expect(evaluateWhen('{{scan.does_not_exist}} > 0', scope)).toBe(false);
   });
 
-  test('un campo presente pero no numérico en una comparación de orden revienta, nombrando el valor', () => {
+  test('a present but non-numeric field in an ordering comparison blows up, naming the value', () => {
     expect(() => evaluateWhen('{{scan.name}} > 0', scope)).toThrow(ExpressionError);
     expect(() => evaluateWhen('{{scan.name}} > 0', scope)).toThrow(/scan\.name.*"docs"/);
   });
 
-  test('un literal no numérico en una comparación de orden también revienta', () => {
-    expect(() => evaluateWhen('{{scan.stale_count}} > "siete"', scope)).toThrow(ExpressionError);
+  test('a non-numeric literal in an ordering comparison also blows up', () => {
+    expect(() => evaluateWhen('{{scan.stale_count}} > "seven"', scope)).toThrow(ExpressionError);
   });
 });
 
-describe('evaluateWhen — las salidas de pasos no se coaccionan', () => {
-  test('una salida de paso que es la cadena "0" sigue siendo verdadera', () => {
+describe('evaluateWhen — step outputs are not coerced', () => {
+  test('a step output that is the string "0" is still truthy', () => {
     const stepScope: InterpolationScope = { params: {}, steps: { x: { count: '0' } } };
     expect(evaluateWhen('{{x.count}}', stepScope)).toBe(true);
   });

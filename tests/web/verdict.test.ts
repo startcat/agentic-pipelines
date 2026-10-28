@@ -2,13 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import type { Health } from '../../src/health/evaluate.ts';
 import type { RunRecord } from '../../src/runs/types.ts';
 import {
-  etiquetaDisparo,
-  etiquetaTrabajo,
-  veredicto,
-  resumenPanel,
+  triggerLabel,
+  workLabel,
+  verdict,
+  panelSummary,
 } from '../../src/web/verdict.ts';
 
-function salud(over: Partial<Health> = {}): Health {
+function health(over: Partial<Health> = {}): Health {
   return { trigger: 'installed', work: 'working', consecutiveSkips: 0, contradiction: false, ...over };
 }
 
@@ -19,176 +19,176 @@ function run(over: Partial<RunRecord> = {}): RunRecord {
   };
 }
 
-describe('etiquetas', () => {
-  test('cada estado de disparo tiene su palabra en castellano', () => {
-    expect(etiquetaDisparo('no-trigger')).toBe('sin cron');
-    expect(etiquetaDisparo('not-installed')).toBe('no instalado');
-    expect(etiquetaDisparo('disabled')).toBe('deshabilitado');
-    expect(etiquetaDisparo('drifted')).toBe('desviado');
-    expect(etiquetaDisparo('installed')).toBe('cargado');
+describe('labels', () => {
+  test('each trigger state has its word', () => {
+    expect(triggerLabel('no-trigger')).toBe('no cron');
+    expect(triggerLabel('not-installed')).toBe('not installed');
+    expect(triggerLabel('disabled')).toBe('disabled');
+    expect(triggerLabel('drifted')).toBe('drifted');
+    expect(triggerLabel('installed')).toBe('loaded');
   });
 
-  test('cada estado de trabajo tiene su palabra en castellano', () => {
-    expect(etiquetaTrabajo('never-worked')).toBe('nunca ha trabajado');
-    expect(etiquetaTrabajo('working')).toBe('trabajando');
-    expect(etiquetaTrabajo('failing')).toBe('fallando');
-    expect(etiquetaTrabajo('stuck')).toBe('atascado');
-    expect(etiquetaTrabajo('silent')).toBe('mudo');
+  test('each work state has its word', () => {
+    expect(workLabel('never-worked')).toBe('never worked');
+    expect(workLabel('working')).toBe('working');
+    expect(workLabel('failing')).toBe('failing');
+    expect(workLabel('stuck')).toBe('stuck');
+    expect(workLabel('silent')).toBe('silent');
   });
 
-  // El vocabulario es UNO. "silencio" fue una palabra suelta en una maqueta y
-  // ya costó una inconsistencia; el estado se llama "mudo" en toda la interfaz.
-  test('el estado silent no se llama de dos maneras', () => {
-    expect(etiquetaTrabajo('silent')).not.toContain('silencio');
+  // The vocabulary is ONE. "silence" was a loose word in a mockup and already
+  // cost an inconsistency; the state is called "silent" across the whole interface.
+  test('the silent state is not called two different ways', () => {
+    expect(workLabel('silent')).not.toContain('silence');
   });
 });
 
-describe('veredicto', () => {
-  // La razón de existir de la página. Del 20 al 29 de agosto el job estaba
-  // cargado y no producía nada, y ninguna de las dos fuentes lo veía sola.
-  test('cargado + mudo es la alarma, y lo dice en mayúsculas', () => {
-    const v = veredicto(salud({ work: 'silent', contradiction: true }), 16, 'launchd');
-    expect(v.tono).toBe('bad');
-    expect(v.line).toBe('CARGADO Y SIN PRODUCIR NADA');
+describe('verdict', () => {
+  // The page's reason to exist. From August 20 to 29 the job was loaded and
+  // produced nothing, and neither source saw it alone.
+  test('loaded + silent is the alarm, and says so in capitals', () => {
+    const v = verdict(health({ work: 'silent', contradiction: true }), 16, 'launchd');
+    expect(v.tone).toBe('bad');
+    expect(v.line).toBe('LOADED AND PRODUCING NOTHING');
   });
 
-  test('un plist desviado y mudo también es la alarma', () => {
-    const v = veredicto(salud({ trigger: 'drifted', work: 'silent', contradiction: true }), 16, 'launchd');
-    expect(v.tono).toBe('bad');
-    expect(v.line).toBe('CARGADO Y SIN PRODUCIR NADA');
+  test('a drifted and silent plist is also the alarm', () => {
+    const v = verdict(health({ trigger: 'drifted', work: 'silent', contradiction: true }), 16, 'launchd');
+    expect(v.tone).toBe('bad');
+    expect(v.line).toBe('LOADED AND PRODUCING NOTHING');
   });
 
-  test('la alarma manda incluso sobre un run corriendo', () => {
+  test('the alarm rules even over a running run', () => {
     const lastRun = run({ status: 'running' });
-    expect(veredicto(salud({ work: 'silent', contradiction: true, lastRun }), 16, 'launchd').line)
-      .toBe('CARGADO Y SIN PRODUCIR NADA');
+    expect(verdict(health({ work: 'silent', contradiction: true, lastRun }), 16, 'launchd').line)
+      .toBe('LOADED AND PRODUCING NOTHING');
   });
 
-  test('atascado dice cuántas noches lleva saltando', () => {
-    const v = veredicto(salud({ work: 'stuck', consecutiveSkips: 8 }), 16, 'launchd');
-    expect(v.tono).toBe('warn');
-    expect(v.line).toContain('8 noches');
+  test('stuck says how many nights it has been skipping', () => {
+    const v = verdict(health({ work: 'stuck', consecutiveSkips: 8 }), 16, 'launchd');
+    expect(v.tone).toBe('warn');
+    expect(v.line).toContain('8 nights');
   });
 
-  test('una sola noche saltada no habla en plural', () => {
-    const linea = veredicto(salud({ work: 'stuck', consecutiveSkips: 1 }), 16, 'launchd').line;
-    expect(linea).toContain('1 noche');
-    expect(linea).not.toContain('1 noches');
+  test('a single skipped night does not speak in plural', () => {
+    const line = verdict(health({ work: 'stuck', consecutiveSkips: 1 }), 16, 'launchd').line;
+    expect(line).toContain('1 night');
+    expect(line).not.toContain('1 nights');
   });
 
-  test('un run corriendo cuenta los pasos hechos', () => {
+  test('a running run counts the steps done', () => {
     const lastRun = run({ status: 'running', steps: { a: {}, b: {}, c: {} } as never });
-    const v = veredicto(salud({ lastRun }), 16, 'launchd');
-    expect(v.tono).toBe('live');
-    expect(v.line).toBe('Corriendo ahora — 3 de 16 pasos.');
+    const v = verdict(health({ lastRun }), 16, 'launchd');
+    expect(v.tone).toBe('live');
+    expect(v.line).toBe('Running now — 3 of 16 steps.');
   });
 
-  test('fallando lo dice sin rodeos', () => {
-    expect(veredicto(salud({ work: 'failing' }), 16, 'launchd').tono).toBe('bad');
+  test('failing says it bluntly', () => {
+    expect(verdict(health({ work: 'failing' }), 16, 'launchd').tone).toBe('bad');
   });
 
-  test('un pipeline manual y al día no pinta de rojo nada', () => {
-    const v = veredicto(salud({ trigger: 'no-trigger', work: 'working' }), 3, 'launchd');
-    expect(v.tono).toBe('ok');
-    expect(v.line).toContain('mano');
+  test('a manual, up-to-date pipeline paints nothing red', () => {
+    const v = verdict(health({ trigger: 'no-trigger', work: 'working' }), 3, 'launchd');
+    expect(v.tone).toBe('ok');
+    expect(v.line).toContain('by hand');
   });
 
-  test('un pipeline con cron y al día no menciona la mano', () => {
-    const v = veredicto(salud({ work: 'working' }), 16, 'launchd');
-    expect(v.tono).toBe('ok');
-    expect(v.line).not.toContain('mano');
+  test('an up-to-date pipeline with cron does not mention by hand', () => {
+    const v = verdict(health({ work: 'working' }), 16, 'launchd');
+    expect(v.tone).toBe('ok');
+    expect(v.line).not.toContain('by hand');
   });
 
-  // `disabled` se evalúa antes que `not-installed` en evaluateTrigger porque es
-  // el diagnóstico accionable. El veredicto respeta ese orden: el eje de
-  // disparo manda sobre el de trabajo cuando nadie lo dispara.
-  test('deshabilitado manda sobre lo que diga el eje de trabajo', () => {
-    const v = veredicto(salud({ trigger: 'disabled', work: 'working' }), 16, 'launchd');
-    expect(v.tono).toBe('bad');
-    expect(v.line).toContain('Nadie lo dispara');
+  // `disabled` is evaluated before `not-installed` in evaluateTrigger because it
+  // is the actionable diagnosis. The verdict respects that order: the trigger
+  // axis rules over the work axis when nobody triggers it.
+  test('disabled rules over whatever the work axis says', () => {
+    const v = verdict(health({ trigger: 'disabled', work: 'working' }), 16, 'launchd');
+    expect(v.tone).toBe('bad');
+    expect(v.line).toContain('Nothing triggers it');
   });
 
-  test('no instalado también manda', () => {
-    const v = veredicto(salud({ trigger: 'not-installed', work: 'working' }), 16, 'launchd');
-    expect(v.tono).toBe('bad');
-    expect(v.line).toContain('Nadie lo dispara');
+  test('not installed also rules', () => {
+    const v = verdict(health({ trigger: 'not-installed', work: 'working' }), 16, 'launchd');
+    expect(v.tone).toBe('bad');
+    expect(v.line).toContain('Nothing triggers it');
   });
 
-  test('las dos etiquetas de los ejes viajan siempre con el veredicto', () => {
-    const v = veredicto(salud({ trigger: 'drifted', work: 'stuck', consecutiveSkips: 2 }), 16, 'launchd');
-    expect(v.trigger).toBe('desviado');
-    expect(v.work).toBe('atascado');
+  test('the two axis labels always travel with the verdict', () => {
+    const v = verdict(health({ trigger: 'drifted', work: 'stuck', consecutiveSkips: 2 }), 16, 'launchd');
+    expect(v.trigger).toBe('drifted');
+    expect(v.work).toBe('stuck');
   });
 
-  test('nunca ha trabajado no es una alarma', () => {
-    expect(veredicto(salud({ work: 'never-worked' }), 16, 'launchd').tono).toBe('neutral');
-  });
-});
-
-describe('resumenPanel', () => {
-  test('sin nada que mirar, lo dice y no alarma', () => {
-    const r = resumenPanel([salud(), salud({ trigger: 'no-trigger' })], 0);
-    expect(r.tono).toBe('ok');
-    expect(r.line).toContain('Todo en orden');
-  });
-
-  test('una alarma se lleva el titular', () => {
-    const r = resumenPanel([salud(), salud({ work: 'silent', contradiction: true })], 0);
-    expect(r.tono).toBe('bad');
-    expect(r.line).toMatch(/no producen? nada/);
-    expect(r.sub).toContain('1 en alarma');
-  });
-
-  test('la alarma pesa más que un fallo', () => {
-    const r = resumenPanel([salud({ work: 'failing' }), salud({ work: 'silent', contradiction: true })], 0);
-    expect(r.line).toMatch(/no producen? nada/);
-  });
-
-  test('dos alarmas hablan en plural', () => {
-    const dos = [salud({ work: 'silent', contradiction: true }), salud({ work: 'silent', contradiction: true })];
-    expect(resumenPanel(dos, 0).line).toBe('2 pipelines están cargados y no producen nada.');
-  });
-
-  test('un pipeline atascado sale en el titular aunque no sea alarma', () => {
-    const r = resumenPanel([salud({ work: 'stuck', consecutiveSkips: 8 })], 0);
-    expect(r.tono).toBe('warn');
-    expect(r.line).toContain('sin trabajar');
-  });
-
-  test('los pipelines ilegibles se cuentan en el subtítulo', () => {
-    expect(resumenPanel([salud()], 1).sub).toContain('1 ilegible');
-  });
-
-  test('un panel vacío no finge estar en orden', () => {
-    expect(resumenPanel([], 0).tono).toBe('neutral');
-  });
-
-  test('si no se puede leer ninguno, lo dice', () => {
-    expect(resumenPanel([], 2).tono).toBe('bad');
-  });
-
-  test('un run corriendo se menciona cuando todo lo demás está bien', () => {
-    const r = resumenPanel([salud({ lastRun: run({ status: 'running' }) })], 0);
-    expect(r.line).toContain('corriendo');
+  test('never worked is not an alarm', () => {
+    expect(verdict(health({ work: 'never-worked' }), 16, 'launchd').tone).toBe('neutral');
   });
 });
 
-describe('veredicto — nombra el programador de la máquina', () => {
-  test('en systemd dice systemd', () => {
-    expect(veredicto(salud({ trigger: 'not-installed' }), 16, 'systemd').line).toBe(
-      'No está instalado en systemd. Nadie lo dispara.',
+describe('panelSummary', () => {
+  test('with nothing to look at, it says so and does not alarm', () => {
+    const r = panelSummary([health(), health({ trigger: 'no-trigger' })], 0);
+    expect(r.tone).toBe('ok');
+    expect(r.line).toContain('All in order');
+  });
+
+  test('an alarm takes the headline', () => {
+    const r = panelSummary([health(), health({ work: 'silent', contradiction: true })], 0);
+    expect(r.tone).toBe('bad');
+    expect(r.line).toMatch(/produces? nothing/);
+    expect(r.sub).toContain('1 in alarm');
+  });
+
+  test('the alarm weighs more than a failure', () => {
+    const r = panelSummary([health({ work: 'failing' }), health({ work: 'silent', contradiction: true })], 0);
+    expect(r.line).toMatch(/produces? nothing/);
+  });
+
+  test('two alarms speak in plural', () => {
+    const two = [health({ work: 'silent', contradiction: true }), health({ work: 'silent', contradiction: true })];
+    expect(panelSummary(two, 0).line).toBe('2 pipelines are loaded and produce nothing.');
+  });
+
+  test('a stuck pipeline makes the headline even if it is not an alarm', () => {
+    const r = panelSummary([health({ work: 'stuck', consecutiveSkips: 8 })], 0);
+    expect(r.tone).toBe('warn');
+    expect(r.line).toContain('without working');
+  });
+
+  test('unreadable pipelines are counted in the subtitle', () => {
+    expect(panelSummary([health()], 1).sub).toContain('1 unreadable');
+  });
+
+  test('an empty dashboard does not pretend to be in order', () => {
+    expect(panelSummary([], 0).tone).toBe('neutral');
+  });
+
+  test('if none can be read, it says so', () => {
+    expect(panelSummary([], 2).tone).toBe('bad');
+  });
+
+  test('a running run is mentioned when everything else is fine', () => {
+    const r = panelSummary([health({ lastRun: run({ status: 'running' }) })], 0);
+    expect(r.line).toContain('in progress');
+  });
+});
+
+describe('verdict — names the scheduler of the machine', () => {
+  test('on systemd it says systemd', () => {
+    expect(verdict(health({ trigger: 'not-installed' }), 16, 'systemd').line).toBe(
+      'Not installed in systemd. Nothing triggers it.',
     );
-    expect(veredicto(salud({ trigger: 'disabled' }), 16, 'systemd').line).toBe(
-      'Deshabilitado en systemd. Nadie lo dispara.',
+    expect(verdict(health({ trigger: 'disabled' }), 16, 'systemd').line).toBe(
+      'Disabled in systemd. Nothing triggers it.',
     );
   });
 
-  test('en launchd la frase sigue igual', () => {
-    expect(veredicto(salud({ trigger: 'not-installed' }), 16, 'launchd').line).toBe(
-      'No está instalado en launchd. Nadie lo dispara.',
+  test('on launchd the sentence stays the same', () => {
+    expect(verdict(health({ trigger: 'not-installed' }), 16, 'launchd').line).toBe(
+      'Not installed in launchd. Nothing triggers it.',
     );
-    expect(veredicto(salud({ trigger: 'disabled' }), 16, 'launchd').line).toBe(
-      'Deshabilitado en launchd. Nadie lo dispara.',
+    expect(verdict(health({ trigger: 'disabled' }), 16, 'launchd').line).toBe(
+      'Disabled in launchd. Nothing triggers it.',
     );
   });
 });

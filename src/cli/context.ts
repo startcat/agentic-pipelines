@@ -9,7 +9,7 @@ export type RepoContext = {
   dotEnv: Record<string, string>;
 };
 
-/** Parsea un fichero .env: pares KEY=value, comentarios con # y comillas opcionales. */
+/** Parses a .env file: KEY=value pairs, # comments and optional quotes. */
 export function parseDotEnv(text: string): Record<string, string> {
   const result: Record<string, string> = {};
   for (const line of text.split('\n')) {
@@ -34,7 +34,7 @@ async function readIfExists(path: string): Promise<string | undefined> {
   }
 }
 
-/** Sube directorios desde `cwd` hasta encontrar el `pipelines.yaml` del repo. */
+/** Walks up directories from `cwd` until it finds the repo's `pipelines.yaml`. */
 export async function loadRepoContext(cwd: string): Promise<RepoContext> {
   let dir = resolve(cwd);
   for (;;) {
@@ -50,9 +50,9 @@ export async function loadRepoContext(cwd: string): Promise<RepoContext> {
     const parent = dirname(dir);
     if (parent === dir) {
       throw new Error(
-        `No se encontró un repo de pipelines (falta pipelines.yaml) desde ${cwd}.\n` +
-          `Crea un fichero pipelines.yaml en la raíz del repo de datos (puede estar ` +
-          `vacío, basta con \`touch pipelines.yaml\`) o sitúate dentro de un repo existente.`,
+        `No data repo found (pipelines.yaml is missing) from ${cwd}.\n` +
+          `Create a pipelines.yaml file at the root of the data repo (it can be ` +
+          `empty, \`touch pipelines.yaml\` is enough) or move into an existing repo.`,
       );
     }
     dir = parent;
@@ -69,13 +69,12 @@ export async function listPipelineNames(ctx: RepoContext): Promise<string[]> {
 }
 
 /**
- * Carga y valida un pipeline por nombre de directorio. Exige que el `name:`
- * declarado en el YAML coincida exactamente con ese directorio: no es solo
- * cosmético — `evaluateGuards` (guards/evaluate.ts) consulta el store de
- * runs por `pipeline.name`, mientras que `withLock`/`store.createRun`
- * (cli/index.ts) indexan por este mismo `name` de directorio. Si divergen,
- * `throttle`/`changed` consultan una clave que nunca se escribe y su
- * guarda deja de frenar nada.
+ * Loads and validates a pipeline by directory name. Requires the `name:`
+ * declared in the YAML to match that directory exactly: it is not just
+ * cosmetic — `evaluateGuards` (guards/evaluate.ts) queries the run store by
+ * `pipeline.name`, while `withLock`/`store.createRun` (cli/index.ts) index by
+ * this same directory `name`. If they diverge, `throttle`/`changed` query a
+ * key that is never written and their guard stops holding anything back.
  */
 export async function loadPipeline(ctx: RepoContext, name: string): Promise<Pipeline> {
   const path = join(ctx.root, 'pipelines', name, 'pipeline.yaml');
@@ -83,22 +82,22 @@ export async function loadPipeline(ctx: RepoContext, name: string): Promise<Pipe
   if (text === undefined) {
     const available = await listPipelineNames(ctx);
     throw new Error(
-      `No existe el pipeline "${name}".\n` + `Disponibles: ${available.join(', ') || '(ninguno)'}`,
+      `Pipeline "${name}" does not exist.\n` + `Available: ${available.join(', ') || '(none)'}`,
     );
   }
   const pipeline = parsePipeline(text);
   if (pipeline.name !== name) {
     throw new Error(
-      `pipelines/${name}/pipeline.yaml declara name: "${pipeline.name}", que no ` +
-        `coincide con su directorio ("${name}"). Locks, throttle y el historial de ` +
-        `ejecuciones se indexan por nombre: un desajuste hace que las guardas consulten ` +
-        `runs que nunca se escriben. Corrige el campo "name" o renombra el directorio.`,
+      `pipelines/${name}/pipeline.yaml declares name: "${pipeline.name}", which does not ` +
+        `match its directory ("${name}"). Locks, throttle and the run history ` +
+        `are indexed by name: a mismatch makes guards query ` +
+        `runs that are never written. Fix the "name" field or rename the directory.`,
     );
   }
   return pipeline;
 }
 
-/** Lee los params guardados por `pipelines install`. */
+/** Reads the params saved by `pipelines install`. */
 export async function loadLocalParams(
   ctx: RepoContext,
   pipeline: string,
@@ -110,17 +109,18 @@ export async function loadLocalParams(
 }
 
 /**
- * Credencial de Claude para los pasos `agent`, tomada del `.env` del repo de
- * datos. Bajo launchd el entorno del proceso no la trae (el plist solo lleva
- * PATH y HOME), así que el `.env` es la vía que funciona igual a mano y
- * programado. Si no está, el subproceso del SDK usa la del entorno.
+ * Claude credential for `agent` steps, taken from the data repo's `.env`.
+ * Under launchd the process environment does not carry it (the plist only has
+ * PATH and HOME), so the `.env` is the route that works the same by hand and
+ * scheduled. If it is not there, the SDK subprocess uses the one from the
+ * environment.
  */
 export function collectAgentAuth(ctx: RepoContext): Record<string, string> {
   const key = ctx.dotEnv.ANTHROPIC_API_KEY;
   return key ? { ANTHROPIC_API_KEY: key } : {};
 }
 
-/** Secretos declarados por un pipeline o un canal de notify, tomados del .env o del entorno. */
+/** Secrets declared by a pipeline or a notify channel, taken from the .env or the environment. */
 export function collectSecrets(ctx: RepoContext, names: string[]): Record<string, string> {
   const secrets: Record<string, string> = {};
   for (const name of names) {

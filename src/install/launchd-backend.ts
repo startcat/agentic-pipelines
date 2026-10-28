@@ -1,8 +1,9 @@
 /**
- * launchd detrás de `SchedulerBackend`: une el módulo puro (`launchd.ts`) con
- * los efectos (`launchctl.ts`) y las rutas de `~/Library`. Es lo que hacían
- * hasta ahora `install`, `uninstall` y el panel por su cuenta, reunido en un
- * solo sitio y sin cambiar un byte del plist (lo fija el test de oro).
+ * launchd behind `SchedulerBackend`: joins the pure module (`launchd.ts`) with
+ * the effects (`launchctl.ts`) and the `~/Library` paths. It is what
+ * `install`, `uninstall` and the dashboard used to do on their own, gathered
+ * in one place and without changing a byte of the plist (the golden test pins
+ * it).
  */
 import { homedir } from 'node:os';
 import { readdir, readFile, unlink } from 'node:fs/promises';
@@ -25,9 +26,9 @@ async function readIfExists(path: string): Promise<string | undefined> {
 }
 
 /**
- * Los plists de LaunchAgents del usuario, con su contenido crudo, para el
- * escaneo de colisiones. Un directorio inexistente no es un error: significa
- * que no hay ningún job de usuario instalado.
+ * The user's LaunchAgents plists, with their raw contents, for the collision
+ * scan. A missing directory is not an error: it means no user job is
+ * installed.
  */
 async function readLaunchAgents(): Promise<{ label: string; contents: string }[]> {
   const dir = launchAgentsDir(homedir());
@@ -44,8 +45,8 @@ async function readLaunchAgents(): Promise<{ label: string; contents: string }[]
       const contents = await readFile(join(dir, entry), 'utf8');
       agents.push({ label: entry.slice(0, -'.plist'.length), contents });
     } catch {
-      // Un plist ilegible (permisos) no debe tumbar la instalación: solo
-      // significa que esa red de seguridad no lo cubre.
+      // An unreadable plist (permissions) must not bring the installation
+      // down: it only means this safety net doesn't cover it.
     }
   }
   return agents;
@@ -75,17 +76,17 @@ export const launchdBackend: SchedulerBackend = {
     return [];
   },
 
-  // El bootout previo puede fallar legítimamente ("no estaba cargado"): se
-  // ignora su código a propósito. Mismo label = reemplazo, no duplicado.
+  // The prior bootout may legitimately fail ("it wasn't loaded"): its code
+  // is ignored on purpose. Same label = replacement, not a duplicate.
   async activate(label, files) {
     await bootout(label);
     return bootstrap(files[0]!.path);
   },
 
-  // Nunca `launchctl disable`: deja un override persistente en el dominio del
-  // usuario que mordería en una reinstalación meses después. `bootout` ya es
-  // idempotente, así que se llama aunque el plist no exista: el job puede
-  // seguir cargado aunque alguien lo haya borrado a mano.
+  // Never `launchctl disable`: it leaves a persistent override in the user's
+  // domain that would bite on a reinstall months later. `bootout` is already
+  // idempotent, so it is called even if the plist doesn't exist: the job may
+  // still be loaded even if someone deleted it by hand.
   async deactivate(label) {
     await bootout(label);
     await unlink(plistPathFor(homedir(), label)).catch((err: NodeJS.ErrnoException) => {
@@ -104,6 +105,6 @@ export const launchdBackend: SchedulerBackend = {
   },
 
   retireHint() {
-    return 'Retíralos con "launchctl bootout" Y "launchctl disable" — sin el disable vuelven al siguiente arranque.';
+    return 'Remove them with "launchctl bootout" AND "launchctl disable" — without the disable they come back at the next boot.';
   },
 };

@@ -34,8 +34,8 @@ steps:
     run: 'true'
 `);
 
-// Igual que PIPELINE pero con un paso `agent`: solo estos pipelines exigen
-// credenciales de Claude.
+// Same as PIPELINE but with an `agent` step: only these pipelines require
+// Claude credentials.
 const AGENT_PIPELINE = parsePipeline(`
 name: demo
 description: d
@@ -54,27 +54,27 @@ const okProbes = {
   resolvesHost: async () => true,
   listUserAgents: async () => ['user-writer'],
   listUserSkills: async () => ['docs:update'],
-  // Explícito, no por omisión: sin esto el probe real consultaría el llavero
-  // de la máquina que corre los tests y el caso "sin credenciales" pasaría o
-  // fallaría según quién los ejecute.
+  // Explicit, not by default: without this the real probe would query the
+  // keychain of the machine running the tests and the "no credentials" case
+  // would pass or fail depending on who runs them.
   hasKeychainSession: async () => false,
 };
 
 describe('preflight', () => {
-  test('todo correcto cuando cada dependencia está presente', async () => {
+  test('everything OK when each dependency is present', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# writer');
     const report = await preflight(PIPELINE, {
       repoRoot,
       userClaudeDir: claudeDir,
       processEnv: { ANTHROPIC_API_KEY: 'sk-x' },
-      dotEnv: { MY_TOKEN: 'secreto-valido' },
+      dotEnv: { MY_TOKEN: 'valid-secret' },
       probes: okProbes,
     });
     expect(report.ok).toBe(true);
     expect(report.checks.every((c) => c.ok)).toBe(true);
   });
 
-  test('encuentra un agente en agents/ del repo antes que en el de usuario', async () => {
+  test('finds an agent in the repo agents/ before the user ones', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# writer');
     const report = await preflight(PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
@@ -86,7 +86,7 @@ describe('preflight', () => {
     expect(check!.detail).toContain('repo');
   });
 
-  test('falla nombrando el agente que no encuentra', async () => {
+  test('fails naming the agent it cannot find', async () => {
     const report = await preflight(PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
       processEnv: { ANTHROPIC_API_KEY: 'sk-x' },
@@ -97,7 +97,7 @@ describe('preflight', () => {
     expect(check!.ok).toBe(false);
   });
 
-  test('falla si falta una variable de entorno declarada', async () => {
+  test('fails if a declared environment variable is missing', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
     const report = await preflight(PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
@@ -108,17 +108,17 @@ describe('preflight', () => {
     expect(report.checks.find((c) => c.kind === 'env')!.ok).toBe(false);
   });
 
-  test('acepta una variable presente en el entorno del proceso aunque no esté en .env', async () => {
+  test('accepts a variable present in the process environment even if it is not in .env', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
     const report = await preflight(PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
-      processEnv: { ANTHROPIC_API_KEY: 'sk-x', MY_TOKEN: 'del-entorno' },
+      processEnv: { ANTHROPIC_API_KEY: 'sk-x', MY_TOKEN: 'from-the-env' },
       dotEnv: {}, probes: okProbes,
     });
     expect(report.checks.find((c) => c.kind === 'env')!.ok).toBe(true);
   });
 
-  test('falla si una variable de entorno declarada está vacía', async () => {
+  test('fails if a declared environment variable is empty', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
     const report = await preflight(PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
@@ -127,10 +127,10 @@ describe('preflight', () => {
     });
     const check = report.checks.find((c) => c.kind === 'env')!;
     expect(check.ok).toBe(false);
-    expect(check.detail).toContain('corta');
+    expect(check.detail).toContain('short');
   });
 
-  test('falla si una variable de entorno declarada es solo espacios', async () => {
+  test('fails if a declared environment variable is only spaces', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
     const report = await preflight(PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
@@ -141,40 +141,40 @@ describe('preflight', () => {
     expect(check.ok).toBe(false);
   });
 
-  test('falla si una variable de entorno declarada es más corta que el mínimo', async () => {
+  test('fails if a declared environment variable is shorter than the minimum', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
     const report = await preflight(PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
       processEnv: { ANTHROPIC_API_KEY: 'sk-x' },
-      dotEnv: { MY_TOKEN: 'corto12' }, probes: okProbes, // 7 caracteres
+      dotEnv: { MY_TOKEN: 'short12' }, probes: okProbes, // 7 characters
     });
     const check = report.checks.find((c) => c.kind === 'env')!;
     expect(check.ok).toBe(false);
-    expect(check.detail).toContain('corta');
+    expect(check.detail).toContain('short');
   });
 
-  test('acepta una variable de entorno que cumple exactamente el mínimo', async () => {
+  test('accepts an environment variable that meets exactly the minimum', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
     const report = await preflight(PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
       processEnv: { ANTHROPIC_API_KEY: 'sk-x' },
-      dotEnv: { MY_TOKEN: 'exacto12' }, probes: okProbes, // 8 caracteres
+      dotEnv: { MY_TOKEN: 'exact123' }, probes: okProbes, // 8 characters
     });
     const check = report.checks.find((c) => c.kind === 'env')!;
     expect(check.ok).toBe(true);
   });
 
-  test('nunca expone el valor de un secreto en el informe', async () => {
+  test('never exposes a secret value in the report', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
     const report = await preflight(PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
       processEnv: { ANTHROPIC_API_KEY: 'sk-x' },
-      dotEnv: { MY_TOKEN: 'valor-secretisimo' }, probes: okProbes,
+      dotEnv: { MY_TOKEN: 'very-secret-value' }, probes: okProbes,
     });
-    expect(JSON.stringify(report)).not.toContain('valor-secretisimo');
+    expect(JSON.stringify(report)).not.toContain('very-secret-value');
   });
 
-  test('falla si no hay credenciales de Claude en el entorno', async () => {
+  test('fails if there are no Claude credentials in the environment', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
     const report = await preflight(AGENT_PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
@@ -185,11 +185,11 @@ describe('preflight', () => {
     expect(auth!.ok).toBe(false);
   });
 
-  // Claude Code guarda la credencial en el llavero de macOS, no en un fichero:
-  // `~/.claude/.credentials.json` desapareció de esta máquina el 2026-08-29 y
-  // el check dejó de ver una sesión que SÍ estaba iniciada, bloqueando
-  // cualquier `run` con pasos agent.
-  test('acepta una credencial guardada en el llavero, sin fichero ni API key', async () => {
+  // Claude Code stores the credential in the macOS keychain, not in a file:
+  // `~/.claude/.credentials.json` disappeared from this machine on 2026-08-29
+  // and the check stopped seeing a session that WAS signed in, blocking any
+  // `run` with agent steps.
+  test('accepts a credential stored in the keychain, with no file or API key', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
     const report = await preflight(AGENT_PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
@@ -198,10 +198,10 @@ describe('preflight', () => {
     });
     const auth = report.checks.find((c) => c.kind === 'auth');
     expect(auth!.ok).toBe(true);
-    expect(auth!.detail).toContain('llavero');
+    expect(auth!.detail).toContain('keychain');
   });
 
-  test('acepta una sesión de Claude Code como credencial válida', async () => {
+  test('accepts a Claude Code session as a valid credential', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
     mkdirSync(claudeDir, { recursive: true });
     writeFileSync(join(claudeDir, '.credentials.json'), '{}');
@@ -212,20 +212,20 @@ describe('preflight', () => {
     expect(report.checks.find((c) => c.kind === 'auth')!.ok).toBe(true);
   });
 
-  // La vía documentada: una clave de API en el `.env` del repo de datos, que
-  // es lo único que llega a un run lanzado por launchd.
-  test('acepta ANTHROPIC_API_KEY en el .env del repo de datos', async () => {
+  // The documented route: an API key in the data repo's `.env`, which is the
+  // only thing that reaches a run launched by launchd.
+  test('accepts ANTHROPIC_API_KEY in the .env of the data repo', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
     const report = await preflight(AGENT_PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
-      processEnv: {}, dotEnv: { MY_TOKEN: 's', ANTHROPIC_API_KEY: 'sk-del-env' }, probes: okProbes,
+      processEnv: {}, dotEnv: { MY_TOKEN: 's', ANTHROPIC_API_KEY: 'sk-from-env' }, probes: okProbes,
     });
     const auth = report.checks.find((c) => c.kind === 'auth');
     expect(auth!.ok).toBe(true);
     expect(auth!.detail).toContain('.env');
   });
 
-  test('un pipeline sin pasos agent no exige credenciales de Claude', async () => {
+  test('a pipeline without agent steps does not require Claude credentials', async () => {
     const report = await preflight(PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
       processEnv: {}, dotEnv: { MY_TOKEN: 's' }, probes: okProbes,
@@ -233,7 +233,7 @@ describe('preflight', () => {
     expect(report.checks.find((c) => c.kind === 'auth')).toBeUndefined();
   });
 
-  test('falla si un binario declarado no está en PATH', async () => {
+  test('fails if a declared binary is not on the PATH', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
     const report = await preflight(PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
@@ -243,7 +243,7 @@ describe('preflight', () => {
     expect(report.checks.find((c) => c.kind === 'bin')!.ok).toBe(false);
   });
 
-  test('falla si un host declarado no resuelve', async () => {
+  test('fails if a declared host does not resolve', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
     const report = await preflight(PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
@@ -253,21 +253,21 @@ describe('preflight', () => {
     expect(report.checks.find((c) => c.kind === 'net')!.ok).toBe(false);
   });
 
-  test('encuentra una skill por su nombre sin cualificar cuando el sondeo solo devuelve la parte final', async () => {
+  test('finds a skill by its unqualified name when the probe only returns the final part', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
     const report = await preflight(PIPELINE, {
       repoRoot, userClaudeDir: claudeDir,
       processEnv: { ANTHROPIC_API_KEY: 'sk-x' }, dotEnv: { MY_TOKEN: 's' },
-      // El sondeo solo devuelve la parte tras los dos puntos, no
-      // 'docs:update' completo: debe caer en la rama de fallback.
+      // The probe only returns the part after the colon, not the whole
+      // 'docs:update': it must fall into the fallback branch.
       probes: { ...okProbes, listUserSkills: async () => ['update'] },
     });
     const check = report.checks.find((c) => c.kind === 'skill');
     expect(check!.ok).toBe(true);
-    expect(check!.detail).toBe('disponible');
+    expect(check!.detail).toBe('available');
   });
 
-  test('usa los sondeos por defecto para listar agentes y skills de usuario cuando no se inyecta ninguno', async () => {
+  test('uses the default probes to list user agents and skills when none is injected', async () => {
     mkdirSync(join(claudeDir, 'agents'), { recursive: true });
     writeFileSync(join(claudeDir, 'agents', 'user-writer.md'), '# writer');
     mkdirSync(join(claudeDir, 'skills', 'docs-update'), { recursive: true });
@@ -286,15 +286,15 @@ steps:
     const report = await preflight(pipeline, {
       repoRoot, userClaudeDir: claudeDir,
       processEnv: { ANTHROPIC_API_KEY: 'sk-x' }, dotEnv: {},
-      // Sin `probes`: se ejercita defaultProbes de verdad (listUserAgents /
-      // listUserSkills). No se declaran `bin` ni `net` en este pipeline
-      // para no invocar Bun.which ni DNS real en este caso.
+      // Without `probes`: the real defaultProbes are exercised (listUserAgents /
+      // listUserSkills). This pipeline declares no `bin` or `net`, so as not
+      // to invoke Bun.which or real DNS in this case.
     });
     expect(report.checks.find((c) => c.kind === 'agent')!.ok).toBe(true);
     expect(report.checks.find((c) => c.kind === 'skill')!.ok).toBe(true);
   });
 
-  test('los sondeos por defecto no revientan cuando agents/ o skills/ no existen en el directorio de usuario', async () => {
+  test('the default probes do not blow up when agents/ or skills/ do not exist in the user directory', async () => {
     const pipeline = parsePipeline(`
 name: demo-missing-dirs
 description: d
@@ -307,10 +307,10 @@ steps:
     type: shell
     run: 'true'
 `);
-    // claudeDir es un directorio recién creado por mkdtempSync: no tiene
-    // subdirectorios agents/ ni skills/. Los sondeos por defecto deben
-    // devolver listas vacías (no lanzar) y el preflight debe fallar
-    // nombrando ambas dependencias, no reventar.
+    // claudeDir is a directory freshly created by mkdtempSync: it has no
+    // agents/ or skills/ subdirectories. The default probes must return empty
+    // lists (not throw) and the preflight must fail naming both dependencies,
+    // not blow up.
     const report = await preflight(pipeline, {
       repoRoot, userClaudeDir: claudeDir,
       processEnv: { ANTHROPIC_API_KEY: 'sk-x' }, dotEnv: {},
@@ -320,18 +320,18 @@ steps:
     expect(report.checks.find((c) => c.kind === 'skill')!.ok).toBe(false);
   });
 
-  test('el sondeo de binarios por defecto usa Bun.which: encuentra el binario que ejecuta el test y falla con uno inexistente', async () => {
-    // El binario que con toda seguridad existe y está en PATH en cualquier
-    // entorno donde corran estos tests es el propio runtime que los está
-    // ejecutando (el proyecto exige Bun >= 1.3.0 para tests). Se evita así
-    // asumir un binario concreto de una plataforma (p. ej. 'git' o 'sh').
+  test('the default binary probe uses Bun.which: it finds the binary running the test and fails with a missing one', async () => {
+    // The binary that surely exists and is on the PATH in any environment
+    // where these tests run is the very runtime executing them (the project
+    // requires Bun >= 1.3.0 for tests). That avoids assuming a specific
+    // binary of one platform (e.g. 'git' or 'sh').
     const currentBinary = basename(process.execPath);
     const pipeline = parsePipeline(`
 name: demo-bun-which
 description: d
 version: 1
 requires:
-  bin: [${currentBinary}, zzz-no-existe-bin-xyz]
+  bin: [${currentBinary}, zzz-missing-bin-xyz]
 steps:
   - id: a
     type: shell
@@ -343,10 +343,10 @@ steps:
     });
     const bins = report.checks.filter((c) => c.kind === 'bin');
     expect(bins.find((c) => c.name === currentBinary)!.ok).toBe(true);
-    expect(bins.find((c) => c.name === 'zzz-no-existe-bin-xyz')!.ok).toBe(false);
+    expect(bins.find((c) => c.name === 'zzz-missing-bin-xyz')!.ok).toBe(false);
   });
 
-  test('comprueba el comando de cada servidor MCP declarado, nombrando el servidor', async () => {
+  test('checks the command of each declared MCP server, naming the server', async () => {
     writeFileSync(join(repoRoot, 'agents', 'local-writer.md'), '# w');
     const pipeline = parsePipeline(`
 name: demo-mcp
@@ -362,7 +362,7 @@ mcp_servers:
   playwright:
     command: npx
   broken:
-    command: zzz-no-existe-mcp-xyz
+    command: zzz-missing-mcp-xyz
 steps:
   - id: a
     agent: writer
@@ -373,13 +373,13 @@ steps:
       repoRoot, userClaudeDir: claudeDir,
       processEnv: { ANTHROPIC_API_KEY: 'sk-x' },
       dotEnv: { MY_TOKEN: 's' },
-      probes: { ...okProbes, hasBinary: async (name) => name !== 'zzz-no-existe-mcp-xyz' },
+      probes: { ...okProbes, hasBinary: async (name) => name !== 'zzz-missing-mcp-xyz' },
     });
     const mcp = report.checks.filter((c) => c.kind === 'mcp');
     expect(mcp.find((c) => c.name === 'playwright')!.ok).toBe(true);
     const brokenCheck = mcp.find((c) => c.name === 'broken')!;
     expect(brokenCheck.ok).toBe(false);
-    expect(brokenCheck.detail).toContain('zzz-no-existe-mcp-xyz');
+    expect(brokenCheck.detail).toContain('zzz-missing-mcp-xyz');
     expect(report.ok).toBe(false);
   });
 });
@@ -401,16 +401,16 @@ steps:
     tools: [mcp__pw__browser_take_screenshot, mcp__pw__browser_click]
 `);
 
-// Campos completos reales de estas dos tools, capturados en vivo el
-// 2026-08-18 con `listMcpToolsViaStdio` contra `npx -y @playwright/mcp@latest`
-// real — los mismos valores que ahora vive `TOOL_FS_PROFILES[...].knownFields`
-// en fs-guard.ts (ver el comentario ahí). Reusarlos aquí
-// en vez de inventar datos vuelve estos tests representativos de verdad.
+// Real full fields of these two tools, captured live on 2026-08-18 with
+// `listMcpToolsViaStdio` against the real `npx -y @playwright/mcp@latest` —
+// the same values that `TOOL_FS_PROFILES[...].knownFields` now holds in
+// fs-guard.ts (see the comment there). Reusing them here instead of inventing
+// data makes these tests truly representative.
 const REAL_BROWSER_TAKE_SCREENSHOT = ['element', 'target', 'type', 'filename', 'fullPage', 'scale'];
 const REAL_BROWSER_CLICK = ['element', 'target', 'doubleClick', 'button', 'modifiers'];
 
-describe('preflight — deriva de esquema MCP (doctor)', () => {
-  test('coincide con la tabla del motor: sin aviso', async () => {
+describe('preflight — MCP schema drift (doctor)', () => {
+  test('matches the engine table: no warning', async () => {
     const report = await preflight(PLAYWRIGHT_PIPELINE, {
       repoRoot,
       userClaudeDir: claudeDir,
@@ -428,17 +428,16 @@ describe('preflight — deriva de esquema MCP (doctor)', () => {
     expect(check?.ok).toBe(true);
   });
 
-  // Hay que detectar las tres direcciones de deriva: campo nuevo,
-  // campo renombrado, campo desaparecido. La comparación vive contra
-  // `TOOL_FS_PROFILES[...].knownFields` (el esquema COMPLETO conocido de la
-  // tool), no solo contra el campo que el hook vigila — comparar solo contra
-  // el campo vigilado no puede detectar nunca un campo nuevo, porque
-  // prácticamente cualquier tool real tiene más parámetros que el único
-  // campo de ruta rastreado (confirmado en vivo: `browser_take_screenshot`
-  // tiene 6 campos reales, la tabla solo vigila `filename`) — de ahí que
-  // "sin aviso" de arriba deba usar la lista COMPLETA para no disparar ruido
-  // por sí solo.
-  test('un campo nuevo que la tabla no conoce en absoluto produce aviso, no bloquea el resto del reporte', async () => {
+  // All three directions of drift must be detected: new field, renamed field,
+  // disappeared field. The comparison is made against
+  // `TOOL_FS_PROFILES[...].knownFields` (the tool's FULL known schema), not
+  // just against the field the hook watches — comparing only against the
+  // watched field can never detect a new field, because practically any real
+  // tool has more parameters than the single path field tracked (confirmed
+  // live: `browser_take_screenshot` has 6 real fields, the table only watches
+  // `filename`) — hence the "no warning" case above must use the FULL list so
+  // as not to fire noise by itself.
+  test('a new field the table does not know at all produces a warning, it does not block the rest of the report', async () => {
     const report = await preflight(PLAYWRIGHT_PIPELINE, {
       repoRoot,
       userClaudeDir: claudeDir,
@@ -447,7 +446,7 @@ describe('preflight — deriva de esquema MCP (doctor)', () => {
       probes: {
         hasBinary: async () => true,
         listMcpTools: async () => ({
-          browser_take_screenshot: [...REAL_BROWSER_TAKE_SCREENSHOT, 'campo_nuevo'],
+          browser_take_screenshot: [...REAL_BROWSER_TAKE_SCREENSHOT, 'new_field'],
           browser_click: [...REAL_BROWSER_CLICK],
         }),
       },
@@ -455,15 +454,15 @@ describe('preflight — deriva de esquema MCP (doctor)', () => {
     const check = report.checks.find((c) => c.kind === 'mcp-schema' && c.name === 'pw');
     expect(check?.ok).toBe(false);
     expect(check?.detail).toContain('browser_take_screenshot');
-    expect(check?.detail).toContain('campo_nuevo');
+    expect(check?.detail).toContain('new_field');
   });
 
-  // Señal fuerte: el campo que el HOOK vigila de verdad (`filename`, el
-  // único campo de `TOOL_FS_PROFILES.browser_take_screenshot`) desaparece
-  // del esquema real. El guard seguiría intentando sanear un campo que ya
-  // no existe, sin enterarse de si la tool ganó otro campo de ruta sin
-  // vigilar — la mutación más peligrosa de las tres.
-  test('el campo que el hook vigila desaparece del servidor real: aviso con la redacción fuerte', async () => {
+  // Strong signal: the field the HOOK really watches (`filename`, the only
+  // field of `TOOL_FS_PROFILES.browser_take_screenshot`) disappears from the
+  // real schema. The guard would keep trying to sanitize a field that no
+  // longer exists, without noticing whether the tool gained another unwatched
+  // path field — the most dangerous mutation of the three.
+  test('the field the hook watches disappears from the real server: warning with the strong wording', async () => {
     const report = await preflight(PLAYWRIGHT_PIPELINE, {
       repoRoot,
       userClaudeDir: claudeDir,
@@ -481,16 +480,16 @@ describe('preflight — deriva de esquema MCP (doctor)', () => {
     expect(check?.ok).toBe(false);
     expect(check?.detail).toContain('browser_take_screenshot');
     expect(check?.detail).toContain('filename');
-    expect(check?.detail).toContain('que la tabla esperaba y ya no están');
+    expect(check?.detail).toContain('the table expected that are no longer there');
   });
 
-  // Señal más débil pero todavía `ok:false`: un campo del esquema COMPLETO
-  // conocido (pero no vigilado por el hook, porque `TOOL_FS_PROFILES` solo
-  // rastrea `filename` para esta tool) desaparece. No compromete el guard
-  // directamente, pero indica que el paquete cambió de forma bajo la tabla
-  // — la redacción del aviso debe distinguirse de la señal fuerte de arriba
-  // para que un humano leyendo `doctor` pueda priorizar.
-  test('un campo conocido pero no vigilado desaparece del servidor real: aviso con redacción distinta a la señal fuerte', async () => {
+  // Weaker signal but still `ok:false`: a field of the FULL known schema (but
+  // not watched by the hook, because `TOOL_FS_PROFILES` only tracks
+  // `filename` for this tool) disappears. It doesn't compromise the guard
+  // directly, but it indicates the package changed shape under the table —
+  // the wording of the warning must differ from the strong signal above so
+  // that a human reading `doctor` can prioritize.
+  test('a known but unwatched field disappears from the real server: warning with wording different from the strong signal', async () => {
     const report = await preflight(PLAYWRIGHT_PIPELINE, {
       repoRoot,
       userClaudeDir: claudeDir,
@@ -508,13 +507,13 @@ describe('preflight — deriva de esquema MCP (doctor)', () => {
     expect(check?.ok).toBe(false);
     expect(check?.detail).toContain('browser_take_screenshot');
     expect(check?.detail).toContain('scale');
-    expect(check?.detail).not.toContain('que la tabla esperaba y ya no están');
+    expect(check?.detail).not.toContain('the table expected that are no longer there');
   });
 
-  // Un campo renombrado no necesita ningún caso especial: se ve, sin más,
-  // como la desaparición del nombre viejo (missingGoverned/missingOther) más
-  // la aparición del nombre nuevo (extraFields) en la misma tool.
-  test('un campo renombrado produce tanto la señal de desaparición como la de campo nuevo, sin caso especial', async () => {
+  // A renamed field needs no special case: it simply shows up as the
+  // disappearance of the old name (missingGoverned/missingOther) plus the
+  // appearance of the new name (extraFields) in the same tool.
+  test('a renamed field produces both the disappearance signal and the new-field one, with no special case', async () => {
     const report = await preflight(PLAYWRIGHT_PIPELINE, {
       repoRoot,
       userClaudeDir: claudeDir,
@@ -523,7 +522,7 @@ describe('preflight — deriva de esquema MCP (doctor)', () => {
       probes: {
         hasBinary: async () => true,
         listMcpTools: async () => ({
-          // 'filename' (vigilado por el hook) renombrado a 'outputPath'.
+          // 'filename' (watched by the hook) renamed to 'outputPath'.
           browser_take_screenshot: [
             ...REAL_BROWSER_TAKE_SCREENSHOT.filter((f) => f !== 'filename'),
             'outputPath',
@@ -538,7 +537,7 @@ describe('preflight — deriva de esquema MCP (doctor)', () => {
     expect(check?.detail).toContain('outputPath');
   });
 
-  test('un servidor sin kind: no genera ningún chequeo mcp-schema', async () => {
+  test('a server without kind: produces no mcp-schema check', async () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -562,7 +561,7 @@ steps:
     expect(report.checks.some((c) => c.kind === 'mcp-schema')).toBe(false);
   });
 
-  test('si listMcpTools falla (servidor no arranca en esta máquina), el chequeo se marca fallido con el motivo, sin lanzar', async () => {
+  test('if listMcpTools fails (server does not start on this machine), the check is marked failed with the reason, without throwing', async () => {
     const report = await preflight(PLAYWRIGHT_PIPELINE, {
       repoRoot,
       userClaudeDir: claudeDir,
@@ -581,56 +580,53 @@ steps:
   });
 });
 
-// `run` y `doctor`
-// compartían literalmente `preflight()` y el mismo criterio de gating
-// (`!report.ok`), así que un chequeo `mcp-schema` — puramente informativo,
-// pensado solo para `doctor` (la deriva de esquema de un servidor MCP) —
-// bloqueaba una ejecución real. `hasBlockingFailures` es
-// lo que ahora consulta `cli/index.ts`'s `run` en su lugar; `doctor` sigue
-// usando `report.ok` sin cambios.
+// `run` and `doctor` literally shared `preflight()` and the same gating
+// criterion (`!report.ok`), so an `mcp-schema` check — purely informational,
+// meant only for `doctor` (schema drift of an MCP server) — blocked a real
+// run. `hasBlockingFailures` is what `run` in `cli/index.ts` now consults
+// instead; `doctor` still uses `report.ok` unchanged.
 describe('hasBlockingFailures', () => {
   function reportWith(checks: PreflightReport['checks']): PreflightReport {
     return { ok: checks.every((c) => c.ok), checks };
   }
 
-  test('un fallo mcp-schema en solitario NO bloquea — run debe poder proceder', () => {
+  test('an mcp-schema failure on its own does NOT block — run must be able to proceed', () => {
     const report = reportWith([
       { kind: 'auth', name: 'claude', ok: true, detail: 'ok' },
-      { kind: 'mcp-schema', name: 'pw', ok: false, detail: 'deriva de esquema' },
+      { kind: 'mcp-schema', name: 'pw', ok: false, detail: 'schema drift' },
     ]);
-    expect(report.ok).toBe(false); // doctor sigue viéndolo como fallo...
-    expect(hasBlockingFailures(report)).toBe(false); // ...pero run no debe bloquear por esto solo
+    expect(report.ok).toBe(false); // doctor still sees it as a failure...
+    expect(hasBlockingFailures(report)).toBe(false); // ...but run must not block because of this alone
   });
 
-  test('un fallo de cualquier otro kind SÍ bloquea, esté o no acompañado de un fallo mcp-schema', () => {
-    const soloEnv = reportWith([
-      { kind: 'env', name: 'MY_TOKEN', ok: false, detail: 'sin definir' },
+  test('a failure of any other kind DOES block, whether or not accompanied by an mcp-schema failure', () => {
+    const envOnly = reportWith([
+      { kind: 'env', name: 'MY_TOKEN', ok: false, detail: 'not set' },
     ]);
-    expect(hasBlockingFailures(soloEnv)).toBe(true);
+    expect(hasBlockingFailures(envOnly)).toBe(true);
 
-    const envYmcpSchema = reportWith([
-      { kind: 'env', name: 'MY_TOKEN', ok: false, detail: 'sin definir' },
-      { kind: 'mcp-schema', name: 'pw', ok: false, detail: 'deriva de esquema' },
+    const envAndMcpSchema = reportWith([
+      { kind: 'env', name: 'MY_TOKEN', ok: false, detail: 'not set' },
+      { kind: 'mcp-schema', name: 'pw', ok: false, detail: 'schema drift' },
     ]);
-    expect(hasBlockingFailures(envYmcpSchema)).toBe(true);
+    expect(hasBlockingFailures(envAndMcpSchema)).toBe(true);
   });
 
-  test('sin ningún fallo, no bloquea', () => {
+  test('with no failure, it does not block', () => {
     const report = reportWith([{ kind: 'auth', name: 'claude', ok: true, detail: 'ok' }]);
     expect(hasBlockingFailures(report)).toBe(false);
   });
 });
 
-// `reader.read()` en
-// `listMcpToolsViaStdio` esperaba indefinidamente si el servidor MCP nunca
-// respondía. `sleep` como "servidor" nunca escribe nada en stdout ni
-// termina por su cuenta durante la ventana del test — el único motivo por
-// el que este test termina rápido es el timeout nuevo (pasado explícitamente
-// muy corto aquí; en producción es MCP_HANDSHAKE_TIMEOUT_MS, 12s).
-describe('listMcpToolsViaStdio — timeout del handshake', () => {
-  test('un servidor que nunca responde falla con "tiempo agotado" en vez de colgarse — no espera los 12s por defecto', async () => {
+// `reader.read()` in `listMcpToolsViaStdio` waited indefinitely if the MCP
+// server never answered. `sleep` as a "server" never writes anything to stdout
+// nor ends by itself during the test window — the only reason this test
+// finishes quickly is the new timeout (passed explicitly very short here; in
+// production it is MCP_HANDSHAKE_TIMEOUT_MS, 12s).
+describe('listMcpToolsViaStdio — handshake timeout', () => {
+  test('a server that never answers fails with "timed out" instead of hanging — it does not wait the default 12s', async () => {
     await expect(
       listMcpToolsViaStdio({ command: 'sleep', args: ['30'], env: [] }, {}, 100),
-    ).rejects.toThrow(/tiempo agotado/);
+    ).rejects.toThrow(/timed out/);
   });
 });

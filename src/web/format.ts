@@ -1,69 +1,70 @@
 /**
- * Traducción a lenguaje humano de lo que el motor guarda en crudo. Módulo PURO
- * a propósito, igual que `health/evaluate.ts`: sin E/S y sin reloj propio — el
- * instante entra como parámetro. Así la tabla de casos se ejecuta entera sin
- * levantar un servidor ni depender de la hora de la máquina.
+ * Translation into human language of what the engine stores raw. PURE module
+ * on purpose, like `health/evaluate.ts`: no I/O and no clock of its own — the
+ * instant comes in as a parameter. That way the whole case table runs without
+ * starting a server or depending on the machine's time.
  *
- * Nada de aquí decide NADA sobre salud: solo cambia de vocabulario.
+ * Nothing here decides ANYTHING about health: it only changes vocabulary.
  */
 import { cronToCalendarIntervals } from '../install/common.ts';
 
-const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
-const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const DAYS_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-const dosDigitos = (n: number): string => String(n).padStart(2, '0');
+const twoDigits = (n: number): string => String(n).padStart(2, '0');
 
 /**
- * Días naturales entre dos instantes, en hora LOCAL. No `(a - b) / 86400000`:
- * esa cuenta llama "hoy" a algo de hace 23 h que ya es de ayer, y "ayer" a algo
- * de hace 25 h que es de anteayer. Quien mira el panel piensa en noches, no en
- * múltiplos de veinticuatro horas.
+ * Calendar days between two instants, in LOCAL time. Not `(a - b) / 86400000`:
+ * that count calls "today" something from 23 h ago that is already yesterday,
+ * and "yesterday" something from 25 h ago that is the day before. Whoever looks
+ * at the dashboard thinks in nights, not in multiples of twenty-four hours.
  */
-function diasNaturales(desde: Date, hasta: Date): number {
-  const a = new Date(desde.getFullYear(), desde.getMonth(), desde.getDate());
-  const b = new Date(hasta.getFullYear(), hasta.getMonth(), hasta.getDate());
+function calendarDays(from: Date, to: Date): number {
+  const a = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const b = new Date(to.getFullYear(), to.getMonth(), to.getDate());
   return Math.round((b.getTime() - a.getTime()) / 86_400_000);
 }
 
-export function cuando(iso: string | undefined, now: Date): { day: string; time: string } {
+export function formatWhen(iso: string | undefined, now: Date): { day: string; time: string } {
   if (iso === undefined) return { day: '—', time: '' };
   const d = new Date(iso);
-  // `run.json` se lee con un `as` y sin validar (RunStore.readRun), así que una
-  // fecha corrupta llega hasta aquí. `Invalid Date` formatea como "NaN:NaN".
+  // `run.json` is read with an `as` and no validation (RunStore.readRun), so a
+  // corrupt date reaches this point. `Invalid Date` formats as "NaN:NaN".
   if (Number.isNaN(d.getTime())) return { day: '—', time: '' };
 
-  const time = `${dosDigitos(d.getHours())}:${dosDigitos(d.getMinutes())}`;
-  const dias = diasNaturales(d, now);
-  if (dias === 0) return { day: 'hoy', time };
-  if (dias === 1) return { day: 'ayer', time };
-  if (dias < 7) return { day: DIAS[d.getDay()]!, time };
-  return { day: `${d.getDate()} ${MESES[d.getMonth()]}`, time };
+  const time = `${twoDigits(d.getHours())}:${twoDigits(d.getMinutes())}`;
+  const days = calendarDays(d, now);
+  if (days === 0) return { day: 'today', time };
+  if (days === 1) return { day: 'yesterday', time };
+  if (days < 7) return { day: DAYS_SHORT[d.getDay()]!, time };
+  return { day: `${MONTHS[d.getMonth()]} ${d.getDate()}`, time };
 }
 
-export function duracion(ms: number): string {
+export function formatDuration(ms: number): string {
   const total = Math.max(0, Math.round(ms / 1000));
   if (total < 60) return `${total}s`;
   return `${Math.floor(total / 60)}m ${total % 60}s`;
 }
 
-export function dinero(usd: number | undefined): string {
+export function money(usd: number | undefined): string {
   if (usd === undefined || usd === 0) return '';
   return `$${usd.toFixed(2)}`;
 }
 
 /**
- * La cadencia en palabras. Se apoya en `cronToCalendarIntervals` en vez de
- * volver a interpretar cron: en este proyecto cron lo lee UN solo sitio, y
- * duplicar ese parser aquí es exactamente cómo se acaba con dos verdades sobre
- * cuándo dispara un pipeline.
+ * The cadence in words. It leans on `cronToCalendarIntervals` instead of
+ * interpreting cron again: in this project cron is read in ONE place only, and
+ * duplicating that parser here is exactly how you end up with two truths about
+ * when a pipeline fires.
  *
- * Solo traduce las formas que se leen de un vistazo. Cualquier otra —varios
- * triggers, un día del mes, un cron que el traductor no soporta— se devuelve
- * CRUDA: una frase inventada sobre cuándo corre algo es peor que la cadena
- * original, porque la cadena original al menos es verdad.
+ * It only translates the forms that read at a glance. Any other —several
+ * triggers, a day of the month, a cron the translator doesn't support— is
+ * returned RAW: an invented sentence about when something runs is worse than
+ * the original string, because the original string at least is true.
  */
 export function describeCron(crons: readonly string[]): string {
-  if (crons.length === 0) return 'ninguna, es manual';
+  if (crons.length === 0) return 'none, run by hand';
   if (crons.length > 1) return crons.join(' · ');
 
   const cron = crons[0]!;
@@ -79,9 +80,9 @@ export function describeCron(crons: readonly string[]): string {
   if (Minute === undefined || Hour === undefined) return cron;
   if (Day !== undefined || Month !== undefined) return cron;
 
-  const hora = `${Hour}:${dosDigitos(Minute)}`;
-  if (Weekday !== undefined) return `cada ${DIAS[Weekday % 7]!} a las ${hora}`;
-  // Antes de las seis no es "cada día": es de madrugada, y quien abre el panel
-  // por la mañana piensa en esa pasada como "la de anoche".
-  return Hour < 6 ? `cada noche a las ${hora}` : `cada día a las ${hora}`;
+  const hour = `${twoDigits(Hour)}:${twoDigits(Minute)}`;
+  if (Weekday !== undefined) return `every ${DAYS_LONG[Weekday % 7]!} at ${hour}`;
+  // Before six it is not "every day": it is the small hours, and whoever opens
+  // the dashboard in the morning thinks of that run as "last night's".
+  return Hour < 6 ? `every night at ${hour}` : `every day at ${hour}`;
 }

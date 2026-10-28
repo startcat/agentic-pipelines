@@ -1,27 +1,27 @@
 /**
- * La hoja de estilo del visor, como constante. Sin lógica y sin plantillas: es
- * texto. Vive fuera de `render.ts` porque pasa de quince líneas a unas ciento
- * cincuenta, y `render.ts` ya tiene bastante con el pintado.
+ * The viewer's stylesheet, as a constant. No logic and no templates: it is
+ * text. It lives outside `render.ts` because it goes from fifteen lines to
+ * about a hundred and fifty, and `render.ts` already has enough on its plate with
+ * rendering.
  *
- * Dos reglas que no son decorativas:
+ * Two rules that are not decorative:
  *
- * - **Si algo tiene color, es porque importa.** Todo lo demás es gris. Los tres
- *   acentos tranquilos (`--ok`, `--warn`, `--live`) comparten claridad y croma
- *   y solo cambian de tono; `--bad` rompe la regla A PROPÓSITO, porque es lo
- *   único de la página que exige levantarse.
- * - **Dos familias, las dos del sistema.** Monoespaciada para lo que es una
- *   cadena literal de la máquina (nombres, crons, comandos, rutas, cifras,
- *   ids); sans para lo que le decimos nosotros a la persona. Ninguna se
- *   descarga: el motor no tiene dependencias de frontend.
+ * - **If something has color, it is because it matters.** Everything else is
+ *   gray. The three calm accents (`--ok`, `--warn`, `--live`) share lightness
+ *   and chroma and only change hue; `--bad` breaks the rule ON PURPOSE, because
+ *   it is the only thing on the page that demands getting up.
+ * - **Two families, both the system's.** Monospace for what is a literal
+ *   string from the machine (names, crons, commands, paths, figures, ids); sans
+ *   for what we say to the person. Neither is downloaded: the engine has no
+ *   frontend dependencies.
  *
- * Oscuro por defecto porque la escena incluye abrir esto a las tres de la
- * madrugada; el claro no es un modo degradado, es la mañana.
+ * Dark by default because the scene includes opening this at three in the
+ * morning; light is not a degraded mode, it is the morning.
  *
- * OJO al escribir comentarios DENTRO de la hoja: es un template literal, así
- * que un backtick ahí dentro la cierra a media hoja. No da un error de
- * sintaxis legible — deja al parser dando vueltas y `bun test` se cuelga
- * girando al 99% de CPU. Para citar una propiedad CSS en un comentario de
- * dentro, escríbela a pelo.
+ * CAREFUL when writing comments INSIDE the sheet: it is a template literal, so
+ * a backtick in there closes it mid-sheet. It doesn't give a readable syntax
+ * error — it leaves the parser spinning and `bun test` hangs at 99% CPU. To
+ * quote a CSS property in a comment inside, write it bare.
  */
 export const STYLES = `
   :root {
@@ -114,10 +114,10 @@ export const STYLES = `
   .meta b { font-weight: 500; }
   .meta em { font-style: normal; color: var(--dim); }
 
-  /* Multicolumna y no rejilla: una rejilla de dos columnas reparte por FILAS
-     (1 y 2 lado a lado), y los pasos son una secuencia — se leen bajando. Con
-     columns el reparto es por columnas y se equilibra solo, sin que el CSS
-     tenga que saber cuántos pasos hay. */
+  /* Multi-column and not a grid: a two-column grid distributes by ROWS
+     (1 and 2 side by side), and the steps are a sequence — they read going
+     down. With columns the split is by column and balances itself, without the
+     CSS having to know how many steps there are. */
   .steps { columns: 2; column-gap: 40px; padding-top: 6px; }
   .step { break-inside: avoid; display: grid; grid-template-columns: 26px 1fr auto; gap: 0 10px;
           align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--hair); font-size: 13px; }

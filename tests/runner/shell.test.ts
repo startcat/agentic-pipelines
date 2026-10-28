@@ -12,10 +12,9 @@ import {
 } from '../../src/runner/shell.ts';
 import { REDACTION } from '../../src/runs/store.ts';
 
-// Credenciales FALSAS con forma de verdaderas, montadas en tiempo de
-// ejecución para que el literal no aparezca en el código fuente: los
-// escáneres de secretos (push protection incluida) no distinguen una clave
-// de prueba de una real.
+// FAKE credentials shaped like real ones, assembled at runtime so the literal
+// does not appear in the source code: secret scanners (push protection
+// included) can't tell a test key from a real one.
 const FAKE_STRIPE_KEY = ['sk', 'live', '51H8AbCdEfGhIjKlMnOpQrSt'].join('_');
 const FAKE_STRIPE_KEY_2 = ['sk', 'live', 'ANOTHERSECRETKEYVALUE99'].join('_');
 const STRIPE_PREFIX = ['sk', 'live', ''].join('_');
@@ -25,7 +24,7 @@ const FAKE_JWT = [
   'dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PYE4Vg',
 ].join('.');
 
-/** Señal 0: no mata nada, solo comprueba si el proceso sigue vivo. */
+/** Signal 0: kills nothing, only checks whether the process is still alive. */
 function isPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -36,12 +35,12 @@ function isPidAlive(pid: number): boolean {
 }
 
 /**
- * Comprueba que un proceso muere en un plazo acotado, sin exigir que ya esté
- * muerto en el instante exacto en que `runShellStep` resuelve. Un hijo recién
- * rematado con SIGKILL puede quedar un instante como zombi reparentado — sigue
- * respondiendo a la señal 0 hasta que su nuevo padre (launchd/init) lo cosecha
- * — y esa ventana crece bajo la carga de la suite completa en paralelo. Lo que
- * el motor garantiza es que muere pronto, no que muera de forma síncrona.
+ * Checks that a process dies within a bounded time, without requiring it to
+ * be dead at the exact instant `runShellStep` resolves. A child just finished
+ * off with SIGKILL can linger for a moment as a reparented zombie — it keeps
+ * answering signal 0 until its new parent (launchd/init) reaps it — and that
+ * window grows under the load of the full suite running in parallel. What the
+ * engine guarantees is that it dies soon, not that it dies synchronously.
  */
 async function waitUntilDead(pid: number, timeoutMs = 2000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
@@ -63,13 +62,13 @@ ${yaml}
   return p.steps[0] as ShellStep;
 }
 
-// Igual que el resto de tests del repo que tocan el sistema de ficheros
+// Like the rest of the repo's tests that touch the filesystem
 // (tests/runs/store.test.ts, tests/guards/lock.test.ts,
-// tests/guards/evaluate.test.ts, tests/preflight/check.test.ts): un
-// directorio propio por test bajo el tmpdir del SO, no el tmpdir compartido
-// directamente. Hoy los comandos de este fichero (echo, exit, sleep, true)
-// no escriben nada, pero un test futuro que sí escriba no debe compartir
-// carpeta con el resto de la suite.
+// tests/guards/evaluate.test.ts, tests/preflight/check.test.ts): a directory
+// of its own per test under the OS tmpdir, not the shared tmpdir directly.
+// Today this file's commands (echo, exit, sleep, true) write nothing, but a
+// future test that does write must not share a folder with the rest of the
+// suite.
 let defaultCwd: string;
 
 beforeEach(() => {
@@ -87,42 +86,43 @@ function baseCtx() {
 }
 
 describe('composeEnv', () => {
-  test('incluye un PATH heredado para que sh y los binarios se resuelvan', () => {
+  test('includes an inherited PATH so sh and the binaries resolve', () => {
     expect(composeEnv({}).PATH).toBeTruthy();
   });
-  test('añade los secretos declarados', () => {
+  test('adds the declared secrets', () => {
     expect(composeEnv({ MY_TOKEN: 's' }).MY_TOKEN).toBe('s');
   });
-  test('no arrastra variables del proceso que no estén en la lista base', () => {
-    process.env.AP_VARIABLE_DE_PRUEBA = 'no-deberia-pasar';
-    expect(composeEnv({}).AP_VARIABLE_DE_PRUEBA).toBeUndefined();
-    delete process.env.AP_VARIABLE_DE_PRUEBA;
+  test('does not carry over process variables that are not in the base list', () => {
+    process.env.AP_TEST_VARIABLE = 'should-not-pass';
+    expect(composeEnv({}).AP_TEST_VARIABLE).toBeUndefined();
+    delete process.env.AP_TEST_VARIABLE;
   });
 });
 
-// `Options.env` del SDK REEMPLAZA el
-// entorno del subproceso entero (no lo fusiona con `process.env`), así que
-// sin esta variante de `composeEnv` un paso agéntico en una máquina
-// autenticada por `ANTHROPIC_API_KEY` fallaba siempre al autenticar.
+// The SDK's `Options.env` REPLACES the whole subprocess environment (it does
+// not merge it with `process.env`), so without this variant of `composeEnv` an
+// agent step on a machine authenticated via `ANTHROPIC_API_KEY` always failed
+// to authenticate.
 describe('composeAgentEnv', () => {
-  test('incluye una variable de autenticación presente en el entorno del proceso', () => {
-    process.env.ANTHROPIC_API_KEY = 'ap-test-no-es-una-clave-real';
-    expect(composeAgentEnv({}).ANTHROPIC_API_KEY).toBe('ap-test-no-es-una-clave-real');
+  test('includes an authentication variable present in the process environment', () => {
+    process.env.ANTHROPIC_API_KEY = 'ap-test-not-a-real-key';
+    expect(composeAgentEnv({}).ANTHROPIC_API_KEY).toBe('ap-test-not-a-real-key');
     delete process.env.ANTHROPIC_API_KEY;
   });
-  test('no arrastra una variable del proceso ajena a la base y a la lista de autenticación/red', () => {
-    process.env.AP_VARIABLE_DE_PRUEBA = 'no-deberia-pasar';
-    expect(composeAgentEnv({}).AP_VARIABLE_DE_PRUEBA).toBeUndefined();
-    delete process.env.AP_VARIABLE_DE_PRUEBA;
+  test('does not carry over a process variable outside the base and the authentication/network list', () => {
+    process.env.AP_TEST_VARIABLE = 'should-not-pass';
+    expect(composeAgentEnv({}).AP_TEST_VARIABLE).toBeUndefined();
+    delete process.env.AP_TEST_VARIABLE;
   });
-  // Bajo launchd el entorno no trae la clave: la del `.env` (agentAuth) es la
-  // que cuenta, y gana a la del entorno si están las dos.
-  test('la credencial del .env (agentAuth) gana a la del entorno del proceso', () => {
+  // Under launchd the environment does not carry the key: the one from `.env`
+  // (agentAuth) is the one that counts, and it wins over the environment's if
+  // both are present.
+  test('the .env credential (agentAuth) wins over the one from the process environment', () => {
     const previous = process.env.ANTHROPIC_API_KEY;
-    process.env.ANTHROPIC_API_KEY = 'ap-test-del-entorno';
+    process.env.ANTHROPIC_API_KEY = 'ap-test-from-environment';
     try {
-      expect(composeAgentEnv({}, { ANTHROPIC_API_KEY: 'ap-test-del-env' }).ANTHROPIC_API_KEY).toBe('ap-test-del-env');
-      expect(composeAgentEnv({}).ANTHROPIC_API_KEY).toBe('ap-test-del-entorno');
+      expect(composeAgentEnv({}, { ANTHROPIC_API_KEY: 'ap-test-from-env' }).ANTHROPIC_API_KEY).toBe('ap-test-from-env');
+      expect(composeAgentEnv({}).ANTHROPIC_API_KEY).toBe('ap-test-from-environment');
     } finally {
       if (previous === undefined) delete process.env.ANTHROPIC_API_KEY;
       else process.env.ANTHROPIC_API_KEY = previous;
@@ -131,199 +131,199 @@ describe('composeAgentEnv', () => {
 });
 
 describe('validateOutputs', () => {
-  test('acepta un objeto que cumple el contrato', () => {
+  test('accepts an object that meets the contract', () => {
     const result = validateOutputs({ n: 7, s: 'x', b: true, arr: ['a'] }, {
       n: 'number', s: 'string', b: 'boolean', arr: 'string[]',
-    }, 'paso-1');
+    }, 'step-1');
     expect(result).toEqual({ n: 7, s: 'x', b: true, arr: ['a'] });
   });
 
-  test('rechaza un tipo incorrecto nombrando el campo', () => {
-    expect(() => validateOutputs({ n: 'siete' }, { n: 'number' }, 'paso-1')).toThrow(/n/);
+  test('rejects a wrong type naming the field', () => {
+    expect(() => validateOutputs({ n: 'seven' }, { n: 'number' }, 'step-1')).toThrow(/n/);
   });
 
-  test('rechaza un campo del contrato que falta', () => {
-    expect(() => validateOutputs({}, { n: 'number' }, 'paso-1')).toThrow(ContractError);
+  test('rejects a contract field that is missing', () => {
+    expect(() => validateOutputs({}, { n: 'number' }, 'step-1')).toThrow(ContractError);
   });
 
-  test('descarta campos no declarados en el contrato', () => {
-    expect(validateOutputs({ n: 1, extra: 'x' }, { n: 'number' }, 'paso-1')).toEqual({ n: 1 });
+  test('drops fields not declared in the contract', () => {
+    expect(validateOutputs({ n: 1, extra: 'x' }, { n: 'number' }, 'step-1')).toEqual({ n: 1 });
   });
 
-  test('rechaza un array con elementos del tipo equivocado', () => {
-    expect(() => validateOutputs({ arr: [1, 2] }, { arr: 'string[]' }, 'paso-1')).toThrow(ContractError);
+  test('rejects an array with elements of the wrong type', () => {
+    expect(() => validateOutputs({ arr: [1, 2] }, { arr: 'string[]' }, 'step-1')).toThrow(ContractError);
   });
 
-  test('rechaza que la raíz no sea un objeto', () => {
-    expect(() => validateOutputs('no soy un objeto', { n: 'number' }, 'paso-1')).toThrow(ContractError);
+  test('rejects a root that is not an object', () => {
+    expect(() => validateOutputs('i am not an object', { n: 'number' }, 'step-1')).toThrow(ContractError);
   });
 
-  // El mensaje tiene que decir qué falló, no solo «Contrato
-  // incumplido» — paso, campo, tipo esperado, tipo recibido y un extracto del
-  // valor, para que llegue legible al correo (`error` del paso).
-  test('el mensaje nombra el paso, el campo, ambos tipos y el valor recibido', () => {
+  // The message has to say what failed, not just "Contract not met" — step,
+  // field, expected type, received type and an excerpt of the value, so it
+  // reaches the email readable (the step's `error`).
+  test('the message names the step, the field, both types and the received value', () => {
     expect(() => validateOutputs({ enqueued: 0 }, { enqueued: 'string' }, 'enqueue-covers')).toThrow(
-      'Contrato incumplido en «enqueue-covers»: enqueued esperaba string, recibió number (0)',
+      'Contract not met in "enqueue-covers": enqueued expected string, received number (0)',
     );
   });
 
-  test('acumula todas las violaciones del paso en una sola línea, no solo la primera', () => {
+  test('accumulates all the violations of the step on a single line, not just the first', () => {
     expect(() =>
-      validateOutputs({ a: 1, b: 'x' }, { a: 'string', b: 'number', c: 'boolean' }, 'paso-multi'),
+      validateOutputs({ a: 1, b: 'x' }, { a: 'string', b: 'number', c: 'boolean' }, 'step-multi'),
     ).toThrow(
-      'Contrato incumplido en «paso-multi»: a esperaba string, recibió number (1); ' +
-        'b esperaba number, recibió string (1 caracteres); falta el campo "c" (boolean)',
+      'Contract not met in "step-multi": a expected string, received number (1); ' +
+        'b expected number, received string (1 characters); missing field "c" (boolean)',
     );
   });
 
-  test('describe un array con el tipo de elemento recibido, nunca sus valores', () => {
-    expect(() => validateOutputs({ arr: [1, 2] }, { arr: 'string[]' }, 'paso-1')).toThrow(
-      'arr esperaba string[], recibió number[] (length 2)',
+  test('describes an array with the received element type, never its values', () => {
+    expect(() => validateOutputs({ arr: [1, 2] }, { arr: 'string[]' }, 'step-1')).toThrow(
+      'arr expected string[], received number[] (length 2)',
     );
   });
 
-  test('un objeto solo dice cuántas claves tiene: ni valores ni nombres de clave', () => {
+  test('an object only says how many keys it has: no values and no key names', () => {
     let message = '';
     try {
-      validateOutputs({ o: { user: 'ana', password: 'hunter2' } }, { o: 'string' }, 'paso-1');
+      validateOutputs({ o: { user: 'ana', password: 'hunter2' } }, { o: 'string' }, 'step-1');
     } catch (err) {
       message = (err as Error).message;
     }
-    expect(message).toContain('o esperaba string, recibió object (2 claves)');
+    expect(message).toContain('o expected string, received object (2 keys)');
     expect(message).not.toContain('hunter2');
     expect(message).not.toContain('password');
   });
 
-  test('las CLAVES de un objeto no salen: un mapa indexado por token o por email', () => {
+  test('the KEYS of an object do not show: a map indexed by token or by email', () => {
     const payloads = {
-      porToken: { [FAKE_STRIPE_KEY]: 100, [FAKE_STRIPE_KEY_2]: 50 },
-      porEmail: { 'persona.test@example.com': 1 },
+      byToken: { [FAKE_STRIPE_KEY]: 100, [FAKE_STRIPE_KEY_2]: 50 },
+      byEmail: { 'persona.test@example.com': 1 },
     };
-    for (const [nombre, valor] of Object.entries(payloads)) {
+    for (const [name, value] of Object.entries(payloads)) {
       let message = '';
       try {
-        validateOutputs({ balances: valor }, { balances: 'string' }, 'paso-attack');
+        validateOutputs({ balances: value }, { balances: 'string' }, 'step-attack');
       } catch (err) {
         message = (err as Error).message;
       }
-      expect(message, nombre).toContain('balances esperaba string, recibió object');
-      expect(message, nombre).not.toContain(STRIPE_PREFIX);
-      expect(message, nombre).not.toContain('@example.com');
+      expect(message, name).toContain('balances expected string, received object');
+      expect(message, name).not.toContain(STRIPE_PREFIX);
+      expect(message, name).not.toContain('@example.com');
     }
   });
 
-  test('un objeto con muchas claves no alarga la línea', () => {
-    const grande = Object.fromEntries(Array.from({ length: 5000 }, (_, i) => [`clave_${i}`, i]));
+  test('an object with many keys does not lengthen the line', () => {
+    const big = Object.fromEntries(Array.from({ length: 5000 }, (_, i) => [`key_${i}`, i]));
     let message = '';
     try {
-      validateOutputs({ g: grande }, { g: 'string' }, 'paso-1');
+      validateOutputs({ g: big }, { g: 'string' }, 'step-1');
     } catch (err) {
       message = (err as Error).message;
     }
-    expect(message).toContain('g esperaba string, recibió object (5000 claves)');
+    expect(message).toContain('g expected string, received object (5000 keys)');
     expect(message.length).toBeLessThan(200);
   });
 
-  test('null no añade nada al extracto: el tipo ya lo dice todo', () => {
-    expect(() => validateOutputs({ n: null }, { n: 'string' }, 'paso-1')).toThrow(
-      'n esperaba string, recibió null',
+  test('null adds nothing to the excerpt: the type already says it all', () => {
+    expect(() => validateOutputs({ n: null }, { n: 'string' }, 'step-1')).toThrow(
+      'n expected string, received null',
     );
   });
 
-  // Por CONCEPTO, no por heurística: un número o un booleano no pueden llevar
-  // texto arbitrario, así que se muestran enteros aunque el nombre del campo
-  // suene a credencial. La ocultación es por TIPO (string), no por nombre.
-  test('un valor numérico se muestra aunque el nombre del campo suene a credencial', () => {
+  // By CONCEPT, not by heuristic: a number or a boolean cannot carry
+  // arbitrary text, so they are shown whole even if the field name sounds like
+  // a credential. Hiding is by TYPE (string), not by name.
+  test('a numeric value is shown even if the field name sounds like a credential', () => {
     let message = '';
     try {
-      validateOutputs({ api_key: 12345 }, { api_key: 'string' }, 'paso-1');
+      validateOutputs({ api_key: 12345 }, { api_key: 'string' }, 'step-1');
     } catch (err) {
       message = (err as Error).message;
     }
-    expect(message).toContain('api_key esperaba string, recibió number (12345)');
+    expect(message).toContain('api_key expected string, received number (12345)');
   });
 
-  test('un string nunca enseña su contenido, aunque tenga pinta de credencial (JWT)', () => {
+  test('a string never shows its content, even if it looks like a credential (JWT)', () => {
     const jwt = FAKE_JWT;
     let message = '';
     try {
-      validateOutputs({ enqueued: jwt }, { enqueued: 'number' }, 'paso-1');
+      validateOutputs({ enqueued: jwt }, { enqueued: 'number' }, 'step-1');
     } catch (err) {
       message = (err as Error).message;
     }
-    expect(message).toContain('enqueued esperaba number, recibió string');
+    expect(message).toContain('enqueued expected number, received string');
     expect(message).not.toContain(jwt);
   });
 
-  test('un string largo declara su longitud, nunca su contenido', () => {
-    const largo = 'x'.repeat(80);
+  test('a long string declares its length, never its content', () => {
+    const long = 'x'.repeat(80);
     let message = '';
     try {
-      validateOutputs({ s: largo }, { s: 'number' }, 'paso-1');
+      validateOutputs({ s: long }, { s: 'number' }, 'step-1');
     } catch (err) {
       message = (err as Error).message;
     }
-    expect(message).toContain('string (80 caracteres)');
+    expect(message).toContain('string (80 characters)');
     expect(message).not.toContain('x'.repeat(10));
   });
 
-  // Un secreto a mitad de frase, bajo un
-  // campo de nombre inocente (summary/detail/message), pasaba entero en el
-  // extracto de 40 caracteres porque la heurística de «pinta de secreto»
-  // solo reconocía la cadena ENTERA como secreto. Ahora un string nunca
-  // enseña contenido, así que no hay heurística que esquivar.
-  test('un secreto a mitad de frase en "summary" no llega al extracto', () => {
+  // A secret in the middle of a sentence, under an innocent-looking field name
+  // (summary/detail/message), went through whole in the 40-character excerpt
+  // because the "looks like a secret" heuristic only recognized the WHOLE
+  // string as a secret. Now a string never shows content, so there is no
+  // heuristic to dodge.
+  test('a secret in the middle of a sentence in "summary" does not reach the excerpt', () => {
     let message = '';
     try {
       validateOutputs(
         { summary: `Payment created with key ${FAKE_STRIPE_KEY}` },
         { summary: 'number' },
-        'paso-1',
+        'step-1',
       );
     } catch (err) {
       message = (err as Error).message;
     }
     expect(message).not.toContain(STRIPE_PREFIX);
-    expect(message).toContain('summary esperaba number, recibió string');
+    expect(message).toContain('summary expected number, received string');
   });
 
-  test('un secreto a mitad de frase en "detail" no llega al extracto', () => {
+  test('a secret in the middle of a sentence in "detail" does not reach the excerpt', () => {
     let message = '';
     try {
       validateOutputs(
-        { detail: 'Falló la conexión a postgres://svc_user:hunter2@db.internal:5432/prod' },
+        { detail: 'Connection failed to postgres://svc_user:hunter2@db.internal:5432/prod' },
         { detail: 'number' },
-        'paso-1',
+        'step-1',
       );
     } catch (err) {
       message = (err as Error).message;
     }
     expect(message).not.toContain('postgres://');
     expect(message).not.toContain('hunter2');
-    expect(message).toContain('detail esperaba number, recibió string');
+    expect(message).toContain('detail expected number, received string');
   });
 
-  test('un secreto a mitad de frase en "message" no llega al extracto', () => {
+  test('a secret in the middle of a sentence in "message" does not reach the excerpt', () => {
     const jwt = FAKE_JWT;
     let message = '';
     try {
-      validateOutputs({ message: `token recibido: ${jwt}` }, { message: 'number' }, 'paso-1');
+      validateOutputs({ message: `token received: ${jwt}` }, { message: 'number' }, 'step-1');
     } catch (err) {
       message = (err as Error).message;
     }
     expect(message).not.toContain('eyJ');
-    expect(message).toContain('message esperaba number, recibió string');
+    expect(message).toContain('message expected number, received string');
   });
 });
 
 describe('runShellStep', () => {
-  test('un comando correcto sin contrato termina ok', async () => {
-    const outcome = await runShellStep(shellStep("  - id: a\n    type: shell\n    run: echo hola"), baseCtx());
+  test('a correct command with no contract ends ok', async () => {
+    const outcome = await runShellStep(shellStep("  - id: a\n    type: shell\n    run: echo hello"), baseCtx());
     expect(outcome.ok).toBe(true);
-    if (outcome.ok) expect(outcome.log).toContain('hola');
+    if (outcome.ok) expect(outcome.log).toContain('hello');
   });
 
-  test('un exit code distinto de 0 es un fallo NO transitorio', async () => {
+  test('a non-zero exit code is a NON-transient failure', async () => {
     const outcome = await runShellStep(shellStep("  - id: a\n    type: shell\n    run: exit 3"), baseCtx());
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) {
@@ -332,19 +332,19 @@ describe('runShellStep', () => {
     }
   });
 
-  test('un exit code distinto de 0 lleva la cola de stderr en el error', async () => {
-    // Sin esto, el correo de un run fallido decía «verdict: exit code 1» y
-    // las líneas que el paso había escrito a stderr solo vivían en el log
-    // (pasó en un ensayo al migrar un pipeline real).
+  test('a non-zero exit code carries the stderr tail in the error', async () => {
+    // Without this, the email of a failed run said "verdict: exit code 1" and
+    // the lines the step had written to stderr lived only in the log (it
+    // happened in a trial when migrating a real pipeline).
     const outcome = await runShellStep(
-      shellStep("  - id: a\n    type: shell\n    run: |\n      echo primera >&2\n      echo boom >&2\n      exit 3"),
+      shellStep("  - id: a\n    type: shell\n    run: |\n      echo first >&2\n      echo boom >&2\n      exit 3"),
       baseCtx(),
     );
     expect(outcome.ok).toBe(false);
-    if (!outcome.ok) expect(outcome.error).toBe('exit code 3 — primera / boom');
+    if (!outcome.ok) expect(outcome.error).toBe('exit code 3 — first / boom');
   });
 
-  test('la cola de stderr del error se limita a las últimas cinco líneas no vacías', async () => {
+  test('the stderr tail of the error is limited to the last five non-empty lines', async () => {
     const lines = Array.from({ length: 8 }, (_, i) => `echo l${i + 1} >&2`).join('\n      ');
     const outcome = await runShellStep(
       shellStep(`  - id: a\n    type: shell\n    run: |\n      ${lines}\n      echo >&2\n      exit 1`),
@@ -354,18 +354,18 @@ describe('runShellStep', () => {
     if (!outcome.ok) expect(outcome.error).toBe('exit code 1 — l4 / l5 / l6 / l7 / l8');
   });
 
-  test('sin nada en stderr, el error es solo el exit code', async () => {
+  test('with nothing on stderr, the error is just the exit code', async () => {
     const outcome = await runShellStep(shellStep("  - id: a\n    type: shell\n    run: exit 2"), baseCtx());
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) expect(outcome.error).toBe('exit code 2');
   });
 
-  test('parsea stdout como JSON cuando el paso declara outputs', async () => {
-    // Nota: las comillas dobles deben ir dentro de comillas simples de shell
-    // (`echo '{"count":7}'`), o `sh -c` las trata como delimitadores de
-    // cadena y las descarta, dejando un stdout que ya no es JSON válido
-    // (`{count:7}`). Comprobado en bash y determinista en cualquier shell
-    // POSIX: no es una peculiaridad de esta máquina.
+  test('parses stdout as JSON when the step declares outputs', async () => {
+    // Note: the double quotes must go inside shell single quotes
+    // (`echo '{"count":7}'`), or `sh -c` treats them as string delimiters and
+    // drops them, leaving a stdout that is no longer valid JSON (`{count:7}`).
+    // Checked in bash and deterministic in any POSIX shell: it is not a quirk
+    // of this machine.
     const step = shellStep(
       "  - id: a\n    type: shell\n    run: \"echo '{\\\"count\\\":7}'\"\n    outputs: { count: number }",
     );
@@ -374,26 +374,26 @@ describe('runShellStep', () => {
     if (outcome.ok) expect(outcome.outputs).toEqual({ count: 7 });
   });
 
-  test('stdout no-JSON con contrato declarado es fallo de contrato', async () => {
+  test('non-JSON stdout with a declared contract is a contract failure', async () => {
     const step = shellStep(
-      "  - id: a\n    type: shell\n    run: echo no-soy-json\n    outputs: { count: number }",
+      "  - id: a\n    type: shell\n    run: echo not-json\n    outputs: { count: number }",
     );
     const outcome = await runShellStep(step, baseCtx());
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) expect(outcome.transient).toBe(false);
   });
 
-  test('interpola params y salidas de pasos anteriores en el comando', async () => {
-    const step = shellStep("  - id: a\n    type: shell\n    run: echo {{params.saludo}}-{{prev.n}}");
+  test('interpolates params and outputs of earlier steps into the command', async () => {
+    const step = shellStep("  - id: a\n    type: shell\n    run: echo {{params.greeting}}-{{prev.n}}");
     const outcome = await runShellStep(step, {
       ...baseCtx(),
-      scope: { params: { saludo: 'hola' }, steps: { prev: { n: 3 } } },
+      scope: { params: { greeting: 'hello' }, steps: { prev: { n: 3 } } },
     });
     expect(outcome.ok).toBe(true);
-    if (outcome.ok) expect(outcome.log).toContain('hola-3');
+    if (outcome.ok) expect(outcome.log).toContain('hello-3');
   });
 
-  test('un valor interpolado con metacaracteres de shell no se ejecuta (indirección por entorno)', async () => {
+  test('an interpolated value with shell metacharacters is not executed (indirection via environment)', async () => {
     const step = shellStep("  - id: a\n    type: shell\n    run: echo {{prev.payload}}");
     const outcome = await runShellStep(step, {
       ...baseCtx(),
@@ -404,36 +404,35 @@ describe('runShellStep', () => {
     expect(await Bun.file(join(defaultCwd, 'pwned.txt')).exists()).toBe(false);
   });
 
-  test('el paso ve sus secretos declarados y nada más del entorno', async () => {
-    process.env.AP_NO_DECLARADA = 'no-deberia-verse';
-    const step = shellStep("  - id: a\n    type: shell\n    run: 'echo [$MY_TOKEN][$AP_NO_DECLARADA]'");
-    const outcome = await runShellStep(step, { ...baseCtx(), secrets: { MY_TOKEN: 'secreto' } });
-    delete process.env.AP_NO_DECLARADA;
+  test('the step sees its declared secrets and nothing else from the environment', async () => {
+    process.env.AP_UNDECLARED = 'should-not-be-seen';
+    const step = shellStep("  - id: a\n    type: shell\n    run: 'echo [$MY_TOKEN][$AP_UNDECLARED]'");
+    const outcome = await runShellStep(step, { ...baseCtx(), secrets: { MY_TOKEN: 'secret' } });
+    delete process.env.AP_UNDECLARED;
     expect(outcome.ok).toBe(true);
     if (outcome.ok) {
-      expect(outcome.log).toContain(`[${REDACTION}]`); // vio su secreto declarado
-      expect(outcome.log).toContain('[]'); // no vio la variable no declarada
-      expect(outcome.log).not.toContain('secreto'); // y el valor no se filtra
+      expect(outcome.log).toContain(`[${REDACTION}]`); // it saw its declared secret
+      expect(outcome.log).toContain('[]'); // it did not see the undeclared variable
+      expect(outcome.log).not.toContain('secret'); // and the value does not leak
     }
   });
 
-  test('un timeout es un fallo transitorio', async () => {
+  test('a timeout is a transient failure', async () => {
     const step = shellStep("  - id: a\n    type: shell\n    run: sleep 5");
     const outcome = await runShellStep(step, { ...baseCtx(), timeoutMs: 100 });
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) {
       expect(outcome.transient).toBe(true);
-      expect(outcome.error).toContain('timeout');
+      expect(outcome.error).toContain('timed out');
     }
   });
 
-  // Reproduce un fallo real: `proc.kill()`
-  // solo mata el `sh` del paso, no un hijo en segundo plano que hereda sus
-  // tuberías (el caso real es `caffeinate -i claude -p …` desde un paso
-  // headless). Sin matar el grupo entero, el hijo huérfano sigue vivo tras el
-  // timeout y `runShellStep` tarda en resolver lo que tarde el hijo, no lo
-  // que dice `timeoutMs`.
-  test('un timeout mata también a los hijos en segundo plano del paso, no solo al shell', async () => {
+  // Reproduces a real failure: `proc.kill()` only kills the step's `sh`, not a
+  // background child that inherits its pipes (the real case is `caffeinate -i
+  // claude -p ...` from a headless step). Without killing the whole group, the
+  // orphan child stays alive after the timeout and `runShellStep` takes as long
+  // to resolve as the child takes, not what `timeoutMs` says.
+  test('a timeout also kills the background children of the step, not just the shell', async () => {
     const pidFile = join(defaultCwd, 'child.pid');
     const step = shellStep(
       `  - id: a\n    type: shell\n    run: |\n      sleep 5 &\n      echo $! > '${pidFile}'`,
@@ -443,18 +442,18 @@ describe('runShellStep', () => {
     const elapsed = Date.now() - started;
 
     expect(outcome.ok).toBe(false);
-    // Muy por debajo de los 5s del hijo: si el motor sigue esperando a que
-    // el huérfano cierre la tubería, este test tarda ~5s en vez de <1s.
+    // Well below the child's 5s: if the engine keeps waiting for the orphan to
+    // close the pipe, this test takes ~5s instead of <1s.
     expect(elapsed).toBeLessThan(1000);
 
     const childPid = Number(readFileSync(pidFile, 'utf8').trim());
     expect(await waitUntilDead(childPid)).toBe(true);
   });
 
-  // El hijo huérfano puede ignorar SIGTERM (el caso real: `claude` atrapado en
-  // trabajo de red). El motor debe escalar a SIGKILL en vez de esperarlo para
-  // siempre.
-  test('un timeout escala a SIGKILL si el grupo de procesos ignora SIGTERM', async () => {
+  // The orphan child may ignore SIGTERM (the real case: `claude` stuck in
+  // network work). The engine must escalate to SIGKILL instead of waiting for
+  // it forever.
+  test('a timeout escalates to SIGKILL if the process group ignores SIGTERM', async () => {
     const pidFile = join(defaultCwd, 'child.pid');
     const step = shellStep(
       `  - id: a\n    type: shell\n    run: |\n      trap '' TERM\n      sleep 5 &\n      echo $! > '${pidFile}'\n      wait`,
@@ -466,30 +465,30 @@ describe('runShellStep', () => {
     expect(await waitUntilDead(childPid)).toBe(true);
   });
 
-  test('mide la duración del paso', async () => {
+  test('measures the step duration', async () => {
     const outcome = await runShellStep(shellStep("  - id: a\n    type: shell\n    run: 'true'"), baseCtx());
     expect(outcome.durationMs).toBeGreaterThanOrEqual(0);
   });
 
-  test('un secreto ecoado en un output declarado también se redacta', async () => {
-    // outputs se construye a partir del stdout crudo, no de `log` (que ya
-    // está redactado), así que este es un camino de fuga distinto al de
-    // `log`/`error` y necesita su propia comprobación.
+  test('a secret echoed into a declared output is also redacted', async () => {
+    // outputs is built from the raw stdout, not from `log` (which is already
+    // redacted), so this is a different leak path from `log`/`error` and needs
+    // its own check.
     const step = shellStep(
       "  - id: a\n    type: shell\n    run: \"echo '{\\\"token\\\":\\\"'$MY_TOKEN'\\\"}'\"\n    outputs: { token: string }",
     );
-    const outcome = await runShellStep(step, { ...baseCtx(), secrets: { MY_TOKEN: 'secreto' } });
+    const outcome = await runShellStep(step, { ...baseCtx(), secrets: { MY_TOKEN: 'secret' } });
     expect(outcome.ok).toBe(true);
     if (outcome.ok) {
       expect(outcome.outputs.token).toBe(REDACTION);
-      expect(JSON.stringify(outcome.outputs)).not.toContain('secreto');
+      expect(JSON.stringify(outcome.outputs)).not.toContain('secret');
     }
   });
 
-  test('un secreto ecoado en un output numérico falla el paso en vez de exponerlo', async () => {
-    // Un número no puede sustituirse por REDACTION sin dejar de ser un
-    // número, así que aquí la única salida honesta es fallar el paso -
-    // igual que un tipo incorrecto en el contrato.
+  test('a secret echoed into a numeric output fails the step instead of exposing it', async () => {
+    // A number cannot be replaced by REDACTION without ceasing to be a
+    // number, so here the only honest way out is to fail the step - just like
+    // a wrong type in the contract.
     const step = shellStep(
       "  - id: a\n    type: shell\n    run: \"echo '{\\\"code\\\":'$MY_CODE'}'\"\n    outputs: { code: number }",
     );
@@ -503,7 +502,7 @@ describe('runShellStep', () => {
     }
   });
 
-  test('un secreto ecoado dentro de un array de números también falla el paso', async () => {
+  test('a secret echoed inside an array of numbers also fails the step', async () => {
     const step = shellStep(
       "  - id: a\n    type: shell\n    run: \"echo '{\\\"codes\\\":[1,'$MY_CODE',3]}'\"\n    outputs: { codes: \"number[]\" }",
     );
@@ -518,15 +517,15 @@ describe('runShellStep', () => {
   });
 });
 
-// Regresión de un fallo real en producción: bajo launchd solo llegan las
-// variables que declara el plist (`PATH`, `HOME`) — nunca `LANG`/`LC_ALL`.
-// Heredar el locale hacía que los subprocesos corrieran en locale C, donde
-// `.` de una ERE casa UN BYTE; un carácter acentuado en UTF-8 son dos, así
-// que cualquier patrón con `.` sobre texto acentuado fallaba SOLO en cron y
-// pasaba a mano. El motor fija el locale en vez de heredarlo — mismo
-// criterio que `settingSources: []` y `strictMcpConfig: true`: el
-// comportamiento no depende de la configuración de la máquina que ejecuta.
-describe('locale determinista', () => {
+// Regression of a real production failure: under launchd only the variables
+// the plist declares (`PATH`, `HOME`) arrive — never `LANG`/`LC_ALL`.
+// Inheriting the locale made subprocesses run in the C locale, where the `.`
+// of an ERE matches ONE BYTE; an accented character in UTF-8 is two, so any
+// pattern with `.` over accented text failed ONLY under cron and passed by
+// hand. The engine fixes the locale instead of inheriting it — same criterion
+// as `settingSources: []` and `strictMcpConfig: true`: behavior does not
+// depend on the configuration of the machine that runs it.
+describe('deterministic locale', () => {
   let previous: { lang?: string; lcAll?: string };
 
   beforeEach(() => {
@@ -539,7 +538,7 @@ describe('locale determinista', () => {
     else process.env.LC_ALL = previous.lcAll;
   });
 
-  test('composeEnv fija C.UTF-8 aunque el proceso traiga otro locale', () => {
+  test('composeEnv fixes C.UTF-8 even if the process carries another locale', () => {
     process.env.LANG = 'ca_ES.UTF-8';
     process.env.LC_ALL = 'ca_ES.UTF-8';
     const env = composeEnv({});
@@ -547,7 +546,7 @@ describe('locale determinista', () => {
     expect(env.LC_ALL).toBe('C.UTF-8');
   });
 
-  test('composeEnv fija C.UTF-8 aunque el proceso no traiga ninguno (el caso launchd)', () => {
+  test('composeEnv fixes C.UTF-8 even if the process carries none (the launchd case)', () => {
     delete process.env.LANG;
     delete process.env.LC_ALL;
     const env = composeEnv({});
@@ -555,7 +554,7 @@ describe('locale determinista', () => {
     expect(env.LC_ALL).toBe('C.UTF-8');
   });
 
-  test('composeAgentEnv fija el mismo locale que composeEnv', () => {
+  test('composeAgentEnv fixes the same locale as composeEnv', () => {
     delete process.env.LANG;
     delete process.env.LC_ALL;
     const env = composeAgentEnv({});
@@ -563,10 +562,11 @@ describe('locale determinista', () => {
     expect(env.LC_ALL).toBe('C.UTF-8');
   });
 
-  // El fallo tal cual se dio: `grep -qE` con un `.` donde el fichero tiene
-  // una `Ú`. Sin `LANG` en el proceso (como bajo launchd) esto devolvía 1 y
-  // saltaba el pipeline entero, noche tras noche, sin avisar a nadie.
-  test('un paso shell casa `.` contra un carácter multibyte sin locale en el proceso', async () => {
+  // The failure exactly as it happened: `grep -qE` with a `.` where the file has
+  // a `Ú` (the Spanish text below is deliberate multibyte test data). Without
+  // `LANG` in the process (as under launchd) this returned 1 and skipped the
+  // whole pipeline, night after night, without telling anyone.
+  test('a shell step matches `.` against a multibyte character with no locale in the process', async () => {
     delete process.env.LANG;
     delete process.env.LC_ALL;
     const outcome = await runShellStep(
@@ -577,34 +577,34 @@ describe('locale determinista', () => {
   });
 });
 
-// Encontrado validando el canal de notify el 2026-08-31: un run con un
-// `docs_repo` inexistente falló con "no se pudo lanzar el comando: ENOENT:
-// no such file or directory, posix_spawn 'sh'". El cwd no existía, pero el
-// mensaje acusa a `sh`, y eso manda a quien lo lea a buscar un problema de
-// PATH que no existe. El correo de aviso lleva ese texto tal cual, así que
-// es lo primero que se ve de una fallada nocturna.
-describe('runShellStep con un cwd que no existe', () => {
+// Found while validating the notify channel on 2026-08-31: a run with a
+// nonexistent `docs_repo` failed with "could not launch the command: ENOENT:
+// no such file or directory, posix_spawn 'sh'". The cwd did not exist, but the
+// message blames `sh`, and that sends whoever reads it looking for a PATH
+// problem that does not exist. The alert email carries that text as is, so it
+// is the first thing seen of a nightly failure.
+describe('runShellStep with a cwd that does not exist', () => {
   const step = () => shellStep(`
   - id: demo
     type: shell
-    cwd: /tmp/ap-cwd-que-no-existe-nunca
-    run: echo hola
+    cwd: /tmp/ap-cwd-that-never-exists
+    run: echo hello
 `);
 
-  test('el error nombra el directorio que falta', async () => {
+  test('the error names the missing directory', async () => {
     const outcome = await runShellStep(step(), baseCtx());
     expect(outcome.ok).toBe(false);
-    if (outcome.ok) throw new Error('inalcanzable');
-    expect(outcome.error).toContain('/tmp/ap-cwd-que-no-existe-nunca');
+    if (outcome.ok) throw new Error('unreachable');
+    expect(outcome.error).toContain('/tmp/ap-cwd-that-never-exists');
   });
 
-  // El texto crudo del sistema NO se tira: sigue siendo útil para diagnosticar.
-  // Lo que se corrige es el ORDEN — que lo primero que se lea sea el diagnóstico
-  // real y no la acusación a `sh`, que es la que despista.
-  test('el diagnóstico va primero y el texto del sistema queda como cita', async () => {
+  // The raw system text is NOT thrown away: it is still useful for diagnosis.
+  // What is fixed is the ORDER — the first thing read should be the real
+  // diagnosis and not the accusation against `sh`, which is the misleading one.
+  test('the diagnosis comes first and the system text stays as a quote', async () => {
     const outcome = await runShellStep(step(), baseCtx());
-    if (outcome.ok) throw new Error('inalcanzable');
-    expect(outcome.error.startsWith('el directorio de trabajo no existe:')).toBe(true);
-    expect(outcome.error).toContain('el sistema lo reportó como');
+    if (outcome.ok) throw new Error('unreachable');
+    expect(outcome.error.startsWith('the working directory does not exist:')).toBe(true);
+    expect(outcome.error).toContain('the system reported');
   });
 });

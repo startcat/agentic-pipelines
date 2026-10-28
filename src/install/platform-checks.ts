@@ -1,13 +1,13 @@
 /**
- * Checks de plataforma de `doctor`.
- * Son informativos: nunca bloquean (`kind: 'platform'`).
+ * Platform checks of `doctor`.
+ * They are informational: they never block (`kind: 'platform'`).
  */
 import { readlink } from 'node:fs/promises';
 import type { PreflightCheck } from '../preflight/check.ts';
 import type { SchedulerBackend } from './backend.ts';
 import { systemctlUser, timedatectlTimezone, userBusError } from './systemctl.ts';
 
-/** La zona horaria de la máquina. Nunca lanza. */
+/** The machine's time zone. Never throws. */
 export async function currentTimezone(): Promise<string> {
   const fromTimedatectl = await timedatectlTimezone();
   if (fromTimedatectl) return fromTimedatectl;
@@ -17,7 +17,7 @@ export async function currentTimezone(): Promise<string> {
     const at = target.indexOf(marker);
     if (at !== -1) return target.slice(at + marker.length);
   } catch {
-    // sin /etc/localtime o no es un enlace: se sigue con Intl
+    // no /etc/localtime or it is not a link: carry on with Intl
   }
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
@@ -30,19 +30,19 @@ export async function platformChecks(
 
   const checks: PreflightCheck[] = [];
 
-  // `is-system-running` sale distinto de 0 en "degraded": eso no es un fallo.
-  // Solo cuentan la ausencia del bus de usuario y un systemctl que ni arranca
-  // (código 127 de `systemctlUser`: binario ausente o no ejecutable).
+  // `is-system-running` exits non-zero on "degraded": that is not a failure.
+  // Only the absence of the user bus and a systemctl that doesn't even start
+  // count (code 127 from `systemctlUser`: binary missing or not executable).
   const running = await systemctlUser(['is-system-running']);
   const unavailable =
     running.code === 127
-      ? `${running.stderr.trim()} — sin systemctl no se puede instalar`
+      ? `${running.stderr.trim()} — without systemctl nothing can be installed`
       : userBusError(running.stderr);
   checks.push({
     kind: 'platform',
     name: 'systemd',
     ok: unavailable === null,
-    detail: unavailable ?? (running.stdout.trim() || 'disponible'),
+    detail: unavailable ?? (running.stdout.trim() || 'available'),
   });
 
   for (const check of await backend.preInstallChecks()) {
@@ -54,16 +54,16 @@ export async function platformChecks(
     });
   }
 
-  // Los pasos `shell` se ejecutan con `bash --posix` en Linux (ver
-  // runner/interpreter.ts): sin bash en el PATH ninguno podría arrancar.
+  // `shell` steps run with `bash --posix` on Linux (see
+  // runner/interpreter.ts): without bash on the PATH none of them could start.
   const hasBash = which('bash') !== null;
   checks.push({
     kind: 'platform',
     name: 'shell',
     ok: hasBash,
     detail: hasBash
-      ? 'bash (los pasos shell se ejecutan con bash --posix)'
-      : 'falta bash: los pasos shell no podrán arrancar — sudo apt install bash',
+      ? 'bash (shell steps run with bash --posix)'
+      : 'bash is missing: shell steps will not be able to start — sudo apt install bash',
   });
 
   const zone = await currentTimezone();
@@ -73,7 +73,7 @@ export async function platformChecks(
     name: 'timezone',
     ok: true,
     detail: utc
-      ? `${zone} — los horarios se leerán en UTC; para hora de Barcelona: sudo timedatectl set-timezone Europe/Madrid`
+      ? `${zone} — schedules will be read in UTC; for Barcelona time: sudo timedatectl set-timezone Europe/Madrid`
       : zone,
   });
   return checks;

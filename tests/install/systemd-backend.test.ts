@@ -36,38 +36,38 @@ const calls = (): string[] => (existsSync(log) ? readFileSync(log, 'utf8').trim(
 const unitDir = (): string => join(home, '.config', 'systemd', 'user');
 
 describe('systemdBackend', () => {
-  test('schedulerFor linux elige systemd', () => {
+  test('schedulerFor linux picks systemd', () => {
     expect(schedulerFor('linux', {})).toBe(systemdBackend);
     expect(systemdBackend.kind).toBe('systemd');
   });
 
-  test('activate: daemon-reload y luego enable --now del timer', async () => {
+  test('activate: daemon-reload and then enable --now of the timer', async () => {
     process.env.PIPELINES_SYSTEMCTL_BIN = fake('sc', 'exit 0');
     expect(await systemdBackend.activate(LABEL, [])).toEqual({ code: 0, stderr: '' });
     expect(calls()).toEqual(['--user daemon-reload', `--user enable --now ${LABEL}.timer`]);
   });
 
-  test('activate: sin bus de usuario devuelve el texto de userBusError', async () => {
+  test('activate: without a user bus returns the userBusError text', async () => {
     process.env.PIPELINES_SYSTEMCTL_BIN = fake('sc', 'echo "Failed to connect to bus: No medium found" >&2; exit 1');
     const result = await systemdBackend.activate(LABEL, []);
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain('Entra por ssh como el propio usuario');
+    expect(result.stderr).toContain('Log in over ssh as the user itself');
     expect(calls()).toEqual(['--user daemon-reload']);
   });
 
-  test('activate: otro fallo devuelve su stderr', async () => {
+  test('activate: another failure returns its stderr', async () => {
     process.env.PIPELINES_SYSTEMCTL_BIN = fake('sc', 'if [ "$2" = enable ]; then echo boom >&2; exit 5; fi');
     expect(await systemdBackend.activate(LABEL, [])).toEqual({ code: 5, stderr: 'boom' });
   });
 
-  test('deactivate sin ficheros no lanza y nunca hace mask', async () => {
+  test('deactivate without files does not throw and never masks', async () => {
     process.env.PIPELINES_SYSTEMCTL_BIN = fake('sc', 'exit 1');
     await systemdBackend.deactivate(LABEL);
     expect(calls()).toEqual([`--user disable --now ${LABEL}.timer`, '--user daemon-reload']);
     expect(calls().join('\n')).not.toContain('mask');
   });
 
-  test('deactivate borra service y timer', async () => {
+  test('deactivate deletes service and timer', async () => {
     process.env.PIPELINES_SYSTEMCTL_BIN = fake('sc', 'exit 0');
     mkdirSync(unitDir(), { recursive: true });
     writeFileSync(join(unitDir(), `${LABEL}.service`), 's');
@@ -77,7 +77,7 @@ describe('systemdBackend', () => {
     expect(existsSync(join(unitDir(), `${LABEL}.timer`))).toBe(false);
   });
 
-  test('facts: cargado y habilitado', async () => {
+  test('facts: loaded and enabled', async () => {
     process.env.PIPELINES_SYSTEMCTL_BIN = fake('sc', 'if [ "$2" = is-enabled ]; then echo enabled; fi');
     mkdirSync(unitDir(), { recursive: true });
     writeFileSync(join(unitDir(), `${LABEL}.service`), 'S');
@@ -89,7 +89,7 @@ describe('systemdBackend', () => {
     });
   });
 
-  test('facts: deshabilitado, sin ficheros no hay artifactOnDisk', async () => {
+  test('facts: disabled, without files there is no artifactOnDisk', async () => {
     process.env.PIPELINES_SYSTEMCTL_BIN = fake('sc', 'if [ "$2" = is-enabled ]; then echo disabled; exit 1; fi\nif [ "$2" = is-active ]; then exit 3; fi');
     expect(await systemdBackend.facts(LABEL, home)).toEqual({ loaded: false, disabled: false });
     mkdirSync(unitDir(), { recursive: true });
@@ -104,7 +104,7 @@ describe('systemdBackend', () => {
     expect(await systemdBackend.disabledLabels(['a', 'b'])).toEqual(['a']);
   });
 
-  test('readUserJobs lee los .service', async () => {
+  test('readUserJobs reads the .service files', async () => {
     expect(await systemdBackend.readUserJobs()).toEqual([]);
     mkdirSync(unitDir(), { recursive: true });
     writeFileSync(join(unitDir(), 'x.service'), 'X');
@@ -112,7 +112,7 @@ describe('systemdBackend', () => {
     expect(await systemdBackend.readUserJobs()).toEqual([{ label: 'x', contents: 'X' }]);
   });
 
-  test('preInstallChecks: linger no → ok:false con fix', async () => {
+  test('preInstallChecks: linger no → ok:false with fix', async () => {
     process.env.PIPELINES_LOGINCTL_BIN = fake('lc', 'echo no');
     const [check] = await systemdBackend.preInstallChecks();
     expect(check!.name).toBe('linger');
@@ -126,17 +126,17 @@ describe('systemdBackend', () => {
   });
 
   test('retireHint', () => {
-    expect(systemdBackend.retireHint(LABEL)).toBe(`Retíralo con "systemctl --user disable --now ${LABEL}.timer".`);
+    expect(systemdBackend.retireHint(LABEL)).toBe(`Disable it with "systemctl --user disable --now ${LABEL}.timer".`);
   });
 });
 
-describe('deactivate sin bus de usuario', () => {
-  test('devuelve un aviso cuando disable falla por falta de bus', async () => {
+describe('deactivate without a user bus', () => {
+  test('returns a warning when disable fails for lack of a bus', async () => {
     process.env.PIPELINES_SYSTEMCTL_BIN = fake(
       'sc-nobus',
       'if [ "$2" = disable ]; then echo "Failed to connect to bus: No medium found" >&2; exit 1; fi',
     );
     const result = await systemdBackend.deactivate(LABEL);
-    expect(result.warning).toContain('sesión de systemd de usuario');
+    expect(result.warning).toContain('systemd user session');
   });
 });

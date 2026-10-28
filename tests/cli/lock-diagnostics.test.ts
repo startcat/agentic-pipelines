@@ -11,9 +11,9 @@ import { join } from 'node:path';
 import { acquireLock, readLock, releaseLock } from '../../src/guards/lock.ts';
 import { RunStore } from '../../src/runs/store.ts';
 
-// Cobertura de los dos diagnósticos de lock de la CLI (lock ocupado y lock
-// dañado) y de dos garantías más: que `resume` también tome el lock, y
-// que el propio proceso libere el lock al ser interrumpido.
+// Coverage of the two lock diagnostics of the CLI (busy lock and damaged
+// lock) and of two more guarantees: that `resume` also takes the lock, and
+// that the process itself releases the lock when interrupted.
 
 let root: string;
 const CLI = join(import.meta.dir, '..', '..', 'src', 'cli', 'index.ts');
@@ -23,10 +23,10 @@ function writePipeline(name: string, yaml: string): void {
   writeFileSync(join(root, 'pipelines', name, 'pipeline.yaml'), yaml);
 }
 
-// Anotado con los mismos literales pasados a `Bun.spawn` más abajo: sin
-// instanciar sus parámetros genéricos, `stdout`/`stderr` quedarían tipados
-// como `number | ReadableStream | undefined` en vez de `ReadableStream`
-// (mismo problema ya documentado en `src/runner/shell.ts`).
+// Annotated with the same literals passed to `Bun.spawn` below: without
+// instantiating its generic parameters, `stdout`/`stderr` would be typed as
+// `number | ReadableStream | undefined` instead of `ReadableStream` (same
+// problem already documented in `src/runner/shell.ts`).
 function spawnCli(args: string[]): Bun.Subprocess<'ignore', 'pipe', 'pipe'> {
   return Bun.spawn(['bun', CLI, ...args], {
     cwd: root,
@@ -45,20 +45,20 @@ async function cli(args: string[]): Promise<{ code: number; out: string }> {
   return { code: await proc.exited, out: stdout + stderr };
 }
 
-/** Espera hasta que `predicate` sea verdadero, sin una espera fija. */
+/** Waits until `predicate` is true, with no fixed wait. */
 async function waitFor(predicate: () => Promise<boolean>, timeoutMs = 5000): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (await predicate()) return;
     await Bun.sleep(20);
   }
-  throw new Error('timeout esperando la condición');
+  throw new Error('timeout waiting for the condition');
 }
 
 function latestRunId(pipeline: string): string {
   const entries = readdirSync(join(root, '.runs', pipeline)).sort();
   const last = entries[entries.length - 1];
-  if (!last) throw new Error(`no hay runs de "${pipeline}"`);
+  if (!last) throw new Error(`no runs of "${pipeline}"`);
   return last;
 }
 
@@ -68,90 +68,90 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-describe('mensaje de lock ya sostenido', () => {
-  test('nombra la ruta relativa del lock, el pid y desde cuándo', async () => {
+describe('message when the lock is already held', () => {
+  test('names the relative path of the lock, the pid and since when', async () => {
     writePipeline(
-      'ocupado',
-      'name: ocupado\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
+      'busy',
+      'name: busy\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
     );
 
-    // El propio proceso de test sostiene el lock: su pid está vivo durante
-    // toda la prueba, así que `acquireLock` del subproceso CLI lo verá como
-    // una ejecución legítima en curso, no como un lock huérfano.
-    const handle = await acquireLock(root, 'ocupado');
+    // The test process itself holds the lock: its pid is alive throughout the
+    // test, so the CLI subprocess's `acquireLock` will see it as a legitimate
+    // run in progress, not as an orphaned lock.
+    const handle = await acquireLock(root, 'busy');
     expect(handle).toBeDefined();
 
     try {
-      const { code, out } = await cli(['run', 'ocupado']);
+      const { code, out } = await cli(['run', 'busy']);
       expect(code).toBe(3); // EXIT_ALREADY_RUNNING
-      expect(out).toContain('ocupado');
-      expect(out).toContain(join('.runs', '.locks', 'ocupado.lock'));
+      expect(out).toContain('busy');
+      expect(out).toContain(join('.runs', '.locks', 'busy.lock'));
       expect(out).toContain(String(process.pid));
-      expect(out).toContain('desde');
-      // Nunca una ruta absoluta de esta máquina (restricción de portabilidad).
+      expect(out).toContain('since');
+      // Never an absolute path of this machine (portability constraint).
       expect(out).not.toContain(root);
     } finally {
       await releaseLock(handle!);
     }
   });
 
-  test('registra el intento bloqueado como skipped(already_running) en .runs/', async () => {
+  test('records the blocked attempt as skipped(already_running) in .runs/', async () => {
     writePipeline(
-      'ocupado2',
-      'name: ocupado2\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
+      'busy2',
+      'name: busy2\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
     );
-    const handle = await acquireLock(root, 'ocupado2');
+    const handle = await acquireLock(root, 'busy2');
     expect(handle).toBeDefined();
     try {
-      const { code } = await cli(['run', 'ocupado2']);
-      expect(code).toBe(3); // EXIT_ALREADY_RUNNING — no cambia
+      const { code } = await cli(['run', 'busy2']);
+      expect(code).toBe(3); // EXIT_ALREADY_RUNNING — unchanged
     } finally {
       await releaseLock(handle!);
     }
 
-    const runs = await new RunStore(root).listRuns('ocupado2');
+    const runs = await new RunStore(root).listRuns('busy2');
     expect(runs).toHaveLength(1);
     expect(runs[0]!.status).toBe('skipped');
     expect(runs[0]!.skipReason).toBe('already_running');
   });
 });
 
-describe('lock dañado, distinto de "ya en curso"', () => {
-  test('se informa como problema del propio fichero, con un código de salida distinto', async () => {
+describe('damaged lock, different from "already in progress"', () => {
+  test('is reported as a problem with the file itself, with a different exit code', async () => {
     writePipeline(
-      'roto',
-      'name: roto\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
+      'broken',
+      'name: broken\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
     );
     mkdirSync(join(root, '.runs', '.locks'), { recursive: true });
-    writeFileSync(join(root, '.runs', '.locks', 'roto.lock'), 'esto no es JSON válido');
+    writeFileSync(join(root, '.runs', '.locks', 'broken.lock'), 'this is not valid JSON');
 
-    const { code, out } = await cli(['run', 'roto']);
+    const { code, out } = await cli(['run', 'broken']);
 
-    expect(code).toBe(2); // EXIT_LOCK_ERROR — distinto de EXIT_ALREADY_RUNNING (3)
-    expect(out).not.toContain('ya hay una ejecución en curso');
+    expect(code).toBe(2); // EXIT_LOCK_ERROR — different from EXIT_ALREADY_RUNNING (3)
+    expect(out).not.toContain('already in progress');
     expect(out.toLowerCase()).toContain('lock');
   });
 });
 
-describe('resume toma el lock', () => {
-  test('un resume rechaza arrancar si otra ejecución sostiene el lock del mismo pipeline', async () => {
+describe('resume takes the lock', () => {
+  test('a resume refuses to start if another run holds the lock of the same pipeline', async () => {
     writePipeline(
-      'resumible',
-      'name: resumible\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: exit 1\n',
+      'resumable',
+      'name: resumable\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: exit 1\n',
     );
-    const { code: runCode } = await cli(['run', 'resumible']);
+    const { code: runCode } = await cli(['run', 'resumable']);
     expect(runCode).toBe(1);
-    const runId = latestRunId('resumible');
+    const runId = latestRunId('resumable');
 
-    const handle = await acquireLock(root, 'resumible');
+    const handle = await acquireLock(root, 'resumable');
     expect(handle).toBeDefined();
     try {
-      const { code, out } = await cli(['resume', 'resumible', runId]);
+      const { code, out } = await cli(['resume', 'resumable', runId]);
       expect(code).toBe(3); // EXIT_ALREADY_RUNNING
-      expect(out).toContain('en curso');
+      expect(out).toContain('in progress');
 
-      const runs = await new RunStore(root).listRuns('resumible');
-      // El primer run (falló de verdad) más el intento de resume bloqueado.
+      const runs = await new RunStore(root).listRuns('resumable');
+      // The first run (really failed) plus the blocked resume attempt.
       expect(runs).toHaveLength(2);
       const blocked = runs.find((r) => r.skipReason === 'already_running');
       expect(blocked?.status).toBe('skipped');
@@ -160,78 +160,78 @@ describe('resume toma el lock', () => {
     }
   });
 
-  test('el registro de un resume bloqueado usa la versión del pipeline del run que se retoma, no la recién cargada', async () => {
+  test('the record of a blocked resume uses the pipeline version of the run being resumed, not the freshly loaded one', async () => {
     writePipeline(
-      'versionado',
-      'name: versionado\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: exit 1\n',
+      'versioned',
+      'name: versioned\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: exit 1\n',
     );
-    const { code: runCode } = await cli(['run', 'versionado']);
+    const { code: runCode } = await cli(['run', 'versioned']);
     expect(runCode).toBe(1);
-    const runId = latestRunId('versionado');
-    const original = await new RunStore(root).readRun('versionado', runId);
+    const runId = latestRunId('versioned');
+    const original = await new RunStore(root).readRun('versioned', runId);
     expect(original?.pipelineVersion).toBe(1);
 
-    // El pipeline.yaml cambia de versión ENTRE el run original y el intento
-    // de resume: el registro del intento bloqueado debe seguir anclado a la
-    // versión del run que se está retomando (1), no a la recién cargada (2).
+    // The pipeline.yaml changes version BETWEEN the original run and the
+    // resume attempt: the blocked attempt's record must stay anchored to the
+    // version of the run being resumed (1), not the freshly loaded one (2).
     writePipeline(
-      'versionado',
-      'name: versionado\ndescription: d\nversion: 2\nsteps:\n  - id: a\n    type: shell\n    run: exit 1\n',
+      'versioned',
+      'name: versioned\ndescription: d\nversion: 2\nsteps:\n  - id: a\n    type: shell\n    run: exit 1\n',
     );
 
-    const handle = await acquireLock(root, 'versionado');
+    const handle = await acquireLock(root, 'versioned');
     expect(handle).toBeDefined();
     try {
-      const { code } = await cli(['resume', 'versionado', runId]);
+      const { code } = await cli(['resume', 'versioned', runId]);
       expect(code).toBe(3); // EXIT_ALREADY_RUNNING
     } finally {
       await releaseLock(handle!);
     }
 
-    const runs = await new RunStore(root).listRuns('versionado');
+    const runs = await new RunStore(root).listRuns('versioned');
     const blocked = runs.find((r) => r.skipReason === 'already_running');
     expect(blocked?.pipelineVersion).toBe(1);
   });
 
-  test('un resume normal (sin conflicto) reintenta el paso fallido y puede tener éxito', async () => {
-    // La puerta usa un fichero marcador dentro del propio directorio del
-    // pipeline (cwd por defecto de un paso shell): ausente la primera vez
-    // (falla y lo crea), presente la segunda (tiene éxito). Así se simula
-    // un fallo transitorio real que un operador arregla antes de reanudar,
-    // sin depender de reintentos automáticos del propio pipeline.
+  test('a normal resume (no conflict) retries the failed step and can succeed', async () => {
+    // The gate uses a marker file inside the pipeline's own directory
+    // (default cwd of a shell step): absent the first time (fails and creates
+    // it), present the second (succeeds). This simulates a real transient
+    // failure that an operator fixes before resuming, without depending on
+    // the pipeline's own automatic retries.
     writePipeline(
-      'reanudable',
-      'name: reanudable\ndescription: d\nversion: 1\nsteps:\n  - id: puerta\n    type: shell\n    run: test -f .flag && echo \'{"ok":true}\' || (touch .flag; exit 1)\n    outputs: { ok: boolean }\n',
+      'recoverable',
+      'name: recoverable\ndescription: d\nversion: 1\nsteps:\n  - id: gate\n    type: shell\n    run: test -f .flag && echo \'{"ok":true}\' || (touch .flag; exit 1)\n    outputs: { ok: boolean }\n',
     );
 
-    const { code: firstCode } = await cli(['run', 'reanudable']);
+    const { code: firstCode } = await cli(['run', 'recoverable']);
     expect(firstCode).toBe(1);
-    const runId = latestRunId('reanudable');
+    const runId = latestRunId('recoverable');
 
-    const { code: resumeCode, out } = await cli(['resume', 'reanudable', runId]);
+    const { code: resumeCode, out } = await cli(['resume', 'recoverable', runId]);
     expect(resumeCode).toBe(0);
     expect(out).toContain('success');
 
-    // El lock quedó liberado tras el resume: una ejecución normal posterior
-    // no debería toparse con "ya en curso".
-    expect(await readLock(root, 'reanudable')).toBeUndefined();
+    // The lock was released after the resume: a later normal run should not
+    // run into "already in progress".
+    expect(await readLock(root, 'recoverable')).toBeUndefined();
   });
 });
 
-describe('interrupción del proceso (verificación: ¿se libera el lock en todo camino de salida?)', () => {
-  test('SIGINT libera el lock antes de que el proceso termine', async () => {
+describe('process interruption (verification: is the lock released on every exit path?)', () => {
+  test('SIGINT releases the lock before the process ends', async () => {
     writePipeline(
-      'lento',
-      'name: lento\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: sleep 5\n',
+      'slow',
+      'name: slow\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: sleep 5\n',
     );
 
-    const proc = spawnCli(['run', 'lento']);
-    await waitFor(async () => (await readLock(root, 'lento')) !== undefined);
+    const proc = spawnCli(['run', 'slow']);
+    await waitFor(async () => (await readLock(root, 'slow')) !== undefined);
 
     proc.kill('SIGINT');
     const code = await proc.exited;
 
     expect(code).toBe(130);
-    expect(await readLock(root, 'lento')).toBeUndefined();
+    expect(await readLock(root, 'slow')).toBeUndefined();
   });
 });

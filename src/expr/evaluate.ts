@@ -3,8 +3,8 @@ import type { InterpolationScope } from '../params/resolve.ts';
 export class ExpressionError extends Error {
   constructor(expression: string, reason: string) {
     super(
-      `Expresión "when" no admitida: ${expression}\n  ${reason}\n` +
-        `  Formas admitidas: "{{paso.campo}}" o "{{paso.campo}} <op> <literal>" con op en == != > >= < <=`,
+      `Unsupported "when" expression: ${expression}\n  ${reason}\n` +
+        `  Supported forms: "{{step.field}}" or "{{step.field}} <op> <literal>" with op in == != > >= < <=`,
     );
     this.name = 'ExpressionError';
   }
@@ -13,12 +13,12 @@ export class ExpressionError extends Error {
 const BARE_RE = /^\s*\{\{\s*([a-zA-Z0-9_-]+)\.([a-zA-Z0-9_-]+)\s*\}\}\s*$/;
 
 /**
- * Cierto si `expression` es justo una referencia pelada (`{{x.y}}`, sin
- * comparación). Se exporta para `install/params.ts`: una referencia pelada
- * ausente se salta con certeza (`isTruthy(undefined)` es falso), pero una
- * dentro de una comparación (`{{x.y}} != "..."`) puede acabar en cualquiera
- * de los dos resultados según el operador — distinguir ambas formas es lo
- * que evita que el aviso de "sin valor" afirme algo que no siempre es cierto.
+ * True if `expression` is exactly a bare reference (`{{x.y}}`, no
+ * comparison). Exported for `install/params.ts`: an absent bare reference
+ * is skipped for certain (`isTruthy(undefined)` is false), but one inside a
+ * comparison (`{{x.y}} != "..."`) can end up with either result depending on
+ * the operator — telling the two forms apart is what keeps the "no value"
+ * warning from claiming something that is not always true.
  */
 export function isBareReference(expression: string): boolean {
   return BARE_RE.test(expression);
@@ -27,7 +27,7 @@ export function isBareReference(expression: string): boolean {
 const COMPARISON_RE =
   /^\s*\{\{\s*([a-zA-Z0-9_-]+)\.([a-zA-Z0-9_-]+)\s*\}\}\s*(==|!=|>=|<=|>|<)\s*(.+?)\s*$/;
 
-/** Parsea un literal: número, booleano, o cadena con o sin comillas. */
+/** Parses a literal: number, boolean, or string with or without quotes. */
 function parseLiteral(raw: string): string | number | boolean {
   if (raw === 'true') return true;
   if (raw === 'false') return false;
@@ -37,18 +37,18 @@ function parseLiteral(raw: string): string | number | boolean {
 }
 
 /**
- * Devuelve el valor de una referencia, o undefined si no existe.
+ * Returns the value of a reference, or undefined if it does not exist.
  *
- * `resolveParams` normaliza todo param a string (la interpolación y el env
- * del proceso hijo lo necesitan así), así que un param declarado
- * `dry_run: false` o `retries: 0` en el pipeline.yaml llega aquí como la
- * cadena "false" o "0". Se reutiliza el mismo `parseLiteral` que ya se
- * aplica al literal del otro lado de una comparación para reconstruir su
- * tipo real, de modo que ambos lados de una comparación queden simétricos.
+ * `resolveParams` normalizes every param to a string (interpolation and the
+ * child process env need it that way), so a param declared `dry_run: false`
+ * or `retries: 0` in pipeline.yaml arrives here as the string "false" or
+ * "0". The same `parseLiteral` that is already applied to the literal on the
+ * other side of a comparison is reused to rebuild its real type, so both
+ * sides of a comparison are symmetric.
  *
- * Las salidas de pasos en `scope.steps` vienen de registros de ejecución en
- * JSON y ya tienen el tipo correcto (número, booleano, lista) — coaccionarlas
- * corrompería datos reales, así que solo se aplica a `params`.
+ * Step outputs in `scope.steps` come from run records in JSON and already
+ * have the right type (number, boolean, list) — coercing them would corrupt
+ * real data, so it is only applied to `params`.
  */
 function lookup(scope: InterpolationScope, left: string, right: string): unknown {
   if (left === 'params') {
@@ -58,7 +58,7 @@ function lookup(scope: InterpolationScope, left: string, right: string): unknown
   return scope.steps[left]?.[right];
 }
 
-/** Verdad al estilo de las plantillas: vacío, cero, false y null son falsos. */
+/** Template-style truthiness: empty, zero, false and null are falsy. */
 function isTruthy(value: unknown): boolean {
   if (value === undefined || value === null || value === false) return false;
   if (value === 0) return false;
@@ -68,9 +68,9 @@ function isTruthy(value: unknown): boolean {
 }
 
 /**
- * Evalúa un `when`. Deliberadamente pobre: dos formas y nada más.
- * Una referencia ausente es falsa, no un error — un paso cuyo predecesor se
- * saltó debe saltarse también, no reventar.
+ * Evaluates a `when`. Deliberately limited: two forms and nothing more.
+ * An absent reference is false, not an error — a step whose predecessor was
+ * skipped must be skipped too, not blow up.
  */
 export function evaluateWhen(expression: string, scope: InterpolationScope): boolean {
   const bare = BARE_RE.exec(expression);
@@ -78,12 +78,12 @@ export function evaluateWhen(expression: string, scope: InterpolationScope): boo
 
   const comparison = COMPARISON_RE.exec(expression);
   if (!comparison) {
-    throw new ExpressionError(expression, 'no encaja en ninguna forma admitida');
+    throw new ExpressionError(expression, 'does not match any supported form');
   }
 
   const [, left, right, operator, rawLiteral] = comparison;
   if (rawLiteral!.includes('{{')) {
-    throw new ExpressionError(expression, 'no se pueden comparar dos referencias entre sí');
+    throw new ExpressionError(expression, 'two references cannot be compared with each other');
   }
 
   const value = lookup(scope, left!, right!);
@@ -92,21 +92,21 @@ export function evaluateWhen(expression: string, scope: InterpolationScope): boo
   if (operator === '==') return value === literal;
   if (operator === '!=') return value !== literal;
 
-  // Comparaciones de orden: un campo ausente es falso (así un paso cuyo
-  // predecesor se saltó se salta también, sin reventar), pero un valor
-  // presente que no es numérico es un error de configuración — falla alto,
-  // igual que interpolate() con una referencia sin resolver.
+  // Ordering comparisons: an absent field is false (so a step whose
+  // predecessor was skipped is skipped too, without blowing up), but a
+  // present value that is not numeric is a configuration error — it fails
+  // loudly, like interpolate() with an unresolved reference.
   if (value === undefined) return false;
   if (typeof value !== 'number') {
     throw new ExpressionError(
       expression,
-      `"{{${left!}.${right!}}}" vale ${JSON.stringify(value)}, que no es numérico: no se puede comparar con "${operator}"`,
+      `"{{${left!}.${right!}}}" is ${JSON.stringify(value)}, which is not numeric: it cannot be compared with "${operator}"`,
     );
   }
   if (typeof literal !== 'number') {
     throw new ExpressionError(
       expression,
-      `el literal "${rawLiteral}" no es numérico: no se puede comparar con "${operator}"`,
+      `the literal "${rawLiteral}" is not numeric: it cannot be compared with "${operator}"`,
     );
   }
   if (operator === '>') return value > literal;

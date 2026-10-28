@@ -7,7 +7,7 @@ name: demo
 description: d
 version: 1
 params:
-  tema:
+  topic:
     description: t
 requires:
   env: [API_KEY]
@@ -22,64 +22,64 @@ steps:
 `);
 
 describe('checkPromptReferences', () => {
-  test('sin referencias, no hay problemas', () => {
-    expect(checkPromptReferences(PIPELINE, { draft: 'Redacta un resumen.' })).toEqual([]);
+  test('with no references, there are no issues', () => {
+    expect(checkPromptReferences(PIPELINE, { draft: 'Write a summary.' })).toEqual([]);
   });
 
-  test('una referencia a un param declarado no da problemas', () => {
-    expect(checkPromptReferences(PIPELINE, { draft: 'Resumen sobre {{params.tema}}.' })).toEqual([]);
+  test('a reference to a declared param gives no issues', () => {
+    expect(checkPromptReferences(PIPELINE, { draft: 'Summary about {{params.topic}}.' })).toEqual([]);
   });
 
-  test('una referencia a un output declarado de un paso anterior no da problemas', () => {
-    expect(checkPromptReferences(PIPELINE, { draft: 'Hay {{scan.count}} pendientes.' })).toEqual([]);
+  test('a reference to a declared output of an earlier step gives no issues', () => {
+    expect(checkPromptReferences(PIPELINE, { draft: 'There are {{scan.count}} pending.' })).toEqual([]);
   });
 
-  test('una referencia a un param no declarado se reporta nombrando el paso y el param', () => {
-    const issues = checkPromptReferences(PIPELINE, { draft: 'Sobre {{params.no_existe}}.' });
+  test('a reference to an undeclared param is reported naming the step and the param', () => {
+    const issues = checkPromptReferences(PIPELINE, { draft: 'About {{params.does_not_exist}}.' });
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain('draft');
-    expect(issues[0]).toContain('no_existe');
+    expect(issues[0]).toContain('does_not_exist');
   });
 
-  test('una referencia a un paso inexistente se reporta', () => {
-    const issues = checkPromptReferences(PIPELINE, { draft: 'Ver {{fantasma.x}}.' });
+  test('a reference to a nonexistent step is reported', () => {
+    const issues = checkPromptReferences(PIPELINE, { draft: 'See {{ghost.x}}.' });
     expect(issues).toHaveLength(1);
-    expect(issues[0]).toContain('fantasma');
+    expect(issues[0]).toContain('ghost');
   });
 
-  test('una referencia a un output no declarado por un paso real se reporta', () => {
-    const issues = checkPromptReferences(PIPELINE, { draft: 'Hay {{scan.otro_campo}} pendientes.' });
+  test('a reference to an output not declared by a real step is reported', () => {
+    const issues = checkPromptReferences(PIPELINE, { draft: 'There are {{scan.other_field}} pending.' });
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain('scan');
-    expect(issues[0]).toContain('otro_campo');
+    expect(issues[0]).toContain('other_field');
   });
 
-  test('una referencia a un secreto declarado en requires.env no da problemas', () => {
-    expect(checkPromptReferences(PIPELINE, { draft: 'Usa {{secrets.API_KEY}}.' })).toEqual([]);
+  test('a reference to a secret declared in requires.env gives no issues', () => {
+    expect(checkPromptReferences(PIPELINE, { draft: 'Use {{secrets.API_KEY}}.' })).toEqual([]);
   });
 
-  test('una referencia a un secreto no declarado en requires.env se reporta', () => {
-    const issues = checkPromptReferences(PIPELINE, { draft: 'Usa {{secrets.NO_DECLARADO}}.' });
+  test('a reference to a secret not declared in requires.env is reported', () => {
+    const issues = checkPromptReferences(PIPELINE, { draft: 'Use {{secrets.NOT_DECLARED}}.' });
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain('draft');
-    expect(issues[0]).toContain('NO_DECLARADO');
+    expect(issues[0]).toContain('NOT_DECLARED');
   });
 
-  test('acumula problemas de varios prompts a la vez', () => {
+  test('accumulates issues from several prompts at once', () => {
     const issues = checkPromptReferences(PIPELINE, {
-      draft: 'Sobre {{params.no_existe}}.',
-      scan: 'Ver {{fantasma.x}}.',
+      draft: 'About {{params.does_not_exist}}.',
+      scan: 'See {{ghost.x}}.',
     });
     expect(issues).toHaveLength(2);
   });
 });
 
 describe('checkAlwaysReferences', () => {
-  test('sin always declarado, no hay problemas', () => {
+  test('with no always declared, there are no issues', () => {
     expect(checkAlwaysReferences(PIPELINE)).toEqual([]);
   });
 
-  test('sin referencias en run/cwd, no hay problemas', () => {
+  test('with no references in run/cwd, there are no issues', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -96,13 +96,13 @@ always:
     expect(checkAlwaysReferences(p)).toEqual([]);
   });
 
-  test('una referencia a un param declarado en run no da problemas', () => {
+  test('a reference to a declared param in run gives no issues', () => {
     const p = parsePipeline(`
 name: demo
 description: d
 version: 1
 params:
-  tema:
+  topic:
     description: t
 steps:
   - id: scan
@@ -111,12 +111,12 @@ steps:
     outputs: { count: number }
 always:
   - id: cleanup
-    run: 'echo {{params.tema}}'
+    run: 'echo {{params.topic}}'
 `);
     expect(checkAlwaysReferences(p)).toEqual([]);
   });
 
-  test('una referencia a un output declarado de un paso de steps no da problemas', () => {
+  test('a reference to a declared output of a steps step gives no issues', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -133,7 +133,7 @@ always:
     expect(checkAlwaysReferences(p)).toEqual([]);
   });
 
-  test('una referencia en cwd también se comprueba', () => {
+  test('a reference in cwd is also checked', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -146,15 +146,15 @@ steps:
 always:
   - id: cleanup
     run: 'true'
-    cwd: '{{params.no_existe}}'
+    cwd: '{{params.does_not_exist}}'
 `);
     const issues = checkAlwaysReferences(p);
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain('cleanup');
-    expect(issues[0]).toContain('no_existe');
+    expect(issues[0]).toContain('does_not_exist');
   });
 
-  test('una referencia a un param no declarado se reporta nombrando el paso always y el param', () => {
+  test('a reference to an undeclared param is reported naming the always step and the param', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -166,15 +166,15 @@ steps:
     outputs: { count: number }
 always:
   - id: cleanup
-    run: 'echo {{params.no_existe}}'
+    run: 'echo {{params.does_not_exist}}'
 `);
     const issues = checkAlwaysReferences(p);
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain('cleanup');
-    expect(issues[0]).toContain('no_existe');
+    expect(issues[0]).toContain('does_not_exist');
   });
 
-  test('una referencia a un paso inexistente se reporta', () => {
+  test('a reference to a nonexistent step is reported', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -186,15 +186,15 @@ steps:
     outputs: { count: number }
 always:
   - id: cleanup
-    run: 'git -C {{fantasma.path}} reset --hard'
+    run: 'git -C {{ghost.path}} reset --hard'
 `);
     const issues = checkAlwaysReferences(p);
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain('cleanup');
-    expect(issues[0]).toContain('fantasma');
+    expect(issues[0]).toContain('ghost');
   });
 
-  test('una referencia a un output no declarado por un paso real se reporta', () => {
+  test('a reference to an output not declared by a real step is reported', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -206,15 +206,15 @@ steps:
     outputs: { count: number }
 always:
   - id: cleanup
-    run: 'echo {{scan.otro_campo}}'
+    run: 'echo {{scan.other_field}}'
 `);
     const issues = checkAlwaysReferences(p);
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain('scan');
-    expect(issues[0]).toContain('otro_campo');
+    expect(issues[0]).toContain('other_field');
   });
 
-  test('una referencia de un always a OTRO always se reporta como paso inexistente (always no declara outputs)', () => {
+  test('a reference from an always to ANOTHER always is reported as a nonexistent step (always declares no outputs)', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -236,7 +236,7 @@ always:
     expect(issues[0]).toContain('first-cleanup');
   });
 
-  test('acumula problemas de varias entradas always a la vez', () => {
+  test('accumulates issues from several always entries at once', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -248,14 +248,14 @@ steps:
     outputs: { count: number }
 always:
   - id: cleanup-a
-    run: 'echo {{params.no_existe}}'
+    run: 'echo {{params.does_not_exist}}'
   - id: cleanup-b
-    run: 'echo {{fantasma.x}}'
+    run: 'echo {{ghost.x}}'
 `);
     expect(checkAlwaysReferences(p)).toHaveLength(2);
   });
 
-  test('una referencia a secrets en always se rechaza siempre, sin importar el nombre', () => {
+  test('a reference to secrets in always is always rejected, whatever the name', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -301,11 +301,11 @@ steps:
     when: "{{scan.count}}"
 `);
 
-  test('cwd/additional_dirs/when que resuelven contra params u outputs de pasos no dan problemas', () => {
+  test('cwd/additional_dirs/when that resolve against params or step outputs give no issues', () => {
     expect(checkStepReferences(PIPELINE)).toEqual([]);
   });
 
-  test('un {{secrets.X}} en cwd se rechaza', () => {
+  test('a {{secrets.X}} in cwd is rejected', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -323,7 +323,7 @@ steps:
     expect(issues[0]).toContain('secrets');
   });
 
-  test('un {{secrets.X}} en additional_dirs se rechaza', () => {
+  test('a {{secrets.X}} in additional_dirs is rejected', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -341,7 +341,7 @@ steps:
     expect(issues[0]).toContain('additional_dirs');
   });
 
-  test('un {{secrets.X}} en when se rechaza', () => {
+  test('a {{secrets.X}} in when is rejected', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -358,7 +358,7 @@ steps:
     expect(issues).toHaveLength(1);
   });
 
-  test('una referencia a un param no declarado en cwd se reporta', () => {
+  test('a reference to an undeclared param in cwd is reported', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -367,14 +367,14 @@ steps:
   - id: a
     agent: writer
     prompt: p.md
-    cwd: "{{params.no_declarado}}"
+    cwd: "{{params.not_declared}}"
 `);
     const issues = checkStepReferences(p);
     expect(issues).toHaveLength(1);
-    expect(issues[0]).toContain('no_declarado');
+    expect(issues[0]).toContain('not_declared');
   });
 
-  test('una referencia a un paso inexistente en additional_dirs se reporta', () => {
+  test('a reference to a nonexistent step in additional_dirs is reported', () => {
     const p = parsePipeline(`
 name: demo
 description: d
@@ -383,96 +383,96 @@ steps:
   - id: a
     agent: writer
     prompt: p.md
-    additional_dirs: ["{{no-existe.campo}}"]
+    additional_dirs: ["{{no-such-step.field}}"]
 `);
     const issues = checkStepReferences(p);
     expect(issues).toHaveLength(1);
-    expect(issues[0]).toContain('no-existe');
+    expect(issues[0]).toContain('no-such-step');
   });
 });
 
-describe('checkStepReferences: el run: de un paso shell', () => {
-  test('caza un param inexistente en run:', () => {
+describe('checkStepReferences: the run: of a shell step', () => {
+  test('catches a nonexistent param in run:', () => {
     const pipeline = parsePipeline(`
 name: demo
 description: d
 version: 1
 params:
   real:
-    description: existe
+    description: exists
 steps:
-  - id: uno
+  - id: one
     type: shell
-    run: "echo {{params.no_existe}} {{params.real}}"
+    run: "echo {{params.does_not_exist}} {{params.real}}"
 `);
     const issues = checkStepReferences(pipeline);
     expect(issues).toHaveLength(1);
-    expect(issues[0]).toContain('uno.run');
-    expect(issues[0]).toContain('params.no_existe');
+    expect(issues[0]).toContain('one.run');
+    expect(issues[0]).toContain('params.does_not_exist');
   });
 
-  test('caza una referencia a un output no declarado en run:', () => {
+  test('catches a reference to an undeclared output in run:', () => {
     const pipeline = parsePipeline(`
 name: demo
 description: d
 version: 1
 steps:
-  - id: uno
+  - id: one
     type: shell
     run: "true"
-  - id: dos
+  - id: two
     type: shell
-    run: "echo {{uno.head}}"
+    run: "echo {{one.head}}"
 `);
     const issues = checkStepReferences(pipeline);
     expect(issues).toHaveLength(1);
-    expect(issues[0]).toContain('dos.run');
-    expect(issues[0]).toContain('uno.head');
+    expect(issues[0]).toContain('two.run');
+    expect(issues[0]).toContain('one.head');
   });
 
-  test('un run: sin referencias no produce nada', () => {
+  test('a run: with no references produces nothing', () => {
     const pipeline = parsePipeline(`
 name: demo
 description: d
 version: 1
 steps:
-  - id: uno
+  - id: one
     type: shell
-    run: "echo hola"
+    run: "echo hello"
 `);
     expect(checkStepReferences(pipeline)).toEqual([]);
   });
 });
 
 describe('checkGuardReferences', () => {
-  test('caza un param inexistente en una guarda shell:', () => {
+  test('catches a nonexistent param in a shell: guard', () => {
     const pipeline = parsePipeline(`
 name: demo
 description: d
 version: 1
 when:
-  - shell: "test -n {{params.no_existe}}"
+  - shell: "test -n {{params.does_not_exist}}"
 steps:
-  - id: uno
+  - id: one
     type: shell
     run: "true"
 `);
     const issues = checkGuardReferences(pipeline);
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain('when.0.shell');
-    expect(issues[0]).toContain('params.no_existe');
+    expect(issues[0]).toContain('params.does_not_exist');
   });
 
-  test('caza un param inexistente en una guarda changed:', () => {
+  test('catches a nonexistent param in a changed: guard', () => {
     const pipeline = parsePipeline(`
 name: demo
 description: d
 version: 1
 when:
   - changed:
-      path: "{{params.no_existe}}/docs"
+      path: "{{params.does_not_exist}}/docs"
 steps:
-  - id: uno
+  - id: one
     type: shell
     run: "true"
 `);
@@ -481,15 +481,15 @@ steps:
     expect(issues[0]).toContain('when.0.changed.path');
   });
 
-  test('una guarda no puede referenciar un output NI SIQUIERA de un paso que existe', () => {
+  test('a guard cannot reference an output, not even of a step that exists', () => {
     const pipeline = parsePipeline(`
 name: demo
 description: d
 version: 1
 when:
-  - shell: "test -n {{uno.head}}"
+  - shell: "test -n {{one.head}}"
 steps:
-  - id: uno
+  - id: one
     type: shell
     run: "true"
     outputs:
@@ -497,10 +497,10 @@ steps:
 `);
     const issues = checkGuardReferences(pipeline);
     expect(issues).toHaveLength(1);
-    expect(issues[0]).toContain('ANTES');
+    expect(issues[0]).toContain('BEFORE');
   });
 
-  test('una guarda no resuelve secrets', () => {
+  test('a guard does not resolve secrets', () => {
     const pipeline = parsePipeline(`
 name: demo
 description: d
@@ -510,7 +510,7 @@ requires:
 when:
   - shell: "test -n {{secrets.TOKEN}}"
 steps:
-  - id: uno
+  - id: one
     type: shell
     run: "true"
 `);
@@ -519,7 +519,7 @@ steps:
     expect(issues[0]).toContain('secrets.TOKEN');
   });
 
-  test('una guarda throttle o between no tiene texto que interpolar', () => {
+  test('a throttle or between guard has no text to interpolate', () => {
     const pipeline = parsePipeline(`
 name: demo
 description: d
@@ -528,7 +528,7 @@ when:
   - throttle: 46h
   - between: "01:00-05:00"
 steps:
-  - id: uno
+  - id: one
     type: shell
     run: "true"
 `);

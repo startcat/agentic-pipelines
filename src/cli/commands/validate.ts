@@ -17,15 +17,15 @@ import { EXIT_FAILURE, KO, OK, withContext } from '../shared.ts';
 type ValidationOutcome = { issues: string[]; warnings: string[] };
 
 /**
- * El cuerpo de `validate` para UN pipeline ya parseado, sin depender de un
- * `RepoContext`: con `--file` puede no haber repo a la vista.
+ * The body of `validate` for ONE already-parsed pipeline, without depending on
+ * a `RepoContext`: with `--file` there may be no repo.
  *
- * `draft` distingue los dos usos. Sobre un pipeline instalado, un prompt que
- * falta es un error: el pipeline no puede correr. Sobre un borrador es
- * normal tener el YAML antes que los prompts, así que es un aviso — pero
- * entonces las referencias de ese prompt NO se han mirado, y quien llama
- * debe decirlo en voz alta. Una validación parcial que no anuncia lo que se
- * saltó es peor que ninguna: hace creer que se está cubierto.
+ * `draft` tells the two uses apart. On an installed pipeline, a missing prompt
+ * is an error: the pipeline cannot run. On a draft it is normal to have the
+ * YAML before the prompts, so it is a warning — but then that prompt's
+ * references have NOT been checked, and the caller must say so out loud. A
+ * partial validation that does not announce what it skipped is worse than
+ * none: it makes you believe you are covered.
  */
 async function validatePipeline(
   pipeline: Pipeline,
@@ -42,9 +42,9 @@ async function validatePipeline(
     try {
       prompts[step.id] = await readFile(join(opts.promptsDir, step.prompt), 'utf8');
     } catch {
-      const missing = `${step.id}: no se encuentra el prompt "${step.prompt}"`;
+      const missing = `${step.id}: prompt "${step.prompt}" not found`;
       if (!opts.draft) throw new Error(missing);
-      warnings.push(`${missing} — sus referencias NO se han comprobado`);
+      warnings.push(`${missing} — its references have NOT been checked`);
     }
   }
 
@@ -59,12 +59,12 @@ async function validatePipeline(
   if (pipeline.notify) {
     if (opts.config) {
       if (!opts.config.channels[pipeline.notify.channel]) {
-        issues.push(`notify.channel "${pipeline.notify.channel}" no existe en pipelines.yaml`);
+        issues.push(`notify.channel "${pipeline.notify.channel}" does not exist in pipelines.yaml`);
       }
     } else {
       warnings.push(
-        `sin repo a la vista: NO se ha comprobado que el canal ` +
-          `"${pipeline.notify.channel}" exista en pipelines.yaml`,
+        `no repo found: did NOT check that channel ` +
+          `"${pipeline.notify.channel}" exists in pipelines.yaml`,
       );
     }
   }
@@ -73,10 +73,10 @@ async function validatePipeline(
 }
 
 /**
- * `validate --file`: valida un YAML suelto. NO usa `withContext` a
- * propósito — ese helper sale del proceso si no hay `pipelines.yaml` a la
- * vista, y un borrador puede vivir en cualquier sitio. El repo se intenta
- * solo para poder mirar `notify.channel`, y no encontrarlo es un aviso.
+ * `validate --file`: validates a standalone YAML. Deliberately does NOT use
+ * `withContext` — that helper exits the process if there is no
+ * `pipelines.yaml` in sight, and a draft can live anywhere. The repo is only
+ * tried so `notify.channel` can be checked, and not finding it is a warning.
  */
 async function validateDraft(file: string): Promise<void> {
   const label = relative(process.cwd(), file) || file;
@@ -95,7 +95,7 @@ async function validateDraft(file: string): Promise<void> {
     });
     if (issues.length > 0) throw new Error(issues.join('\n'));
     console.log(`${OK} ${pipeline.name} (${label})`);
-    for (const warning of warnings) console.log(`  aviso: ${warning}`);
+    for (const warning of warnings) console.log(`  warning: ${warning}`);
   } catch (err) {
     console.error(`${KO} ${label}\n${(err as Error).message}`);
     process.exitCode = EXIT_FAILURE;
@@ -105,17 +105,17 @@ async function validateDraft(file: string): Promise<void> {
 export function registerValidate(program: Command): void {
   program
     .command('validate')
-    .argument('[name]', 'pipeline a validar; sin argumento valida todos')
+    .argument('[name]', 'pipeline to validate; with no argument, validate all of them')
     .option(
-      '--file <ruta>',
-      'valida un pipeline.yaml suelto (un borrador) en vez de uno instalado: ' +
-        'no exige que viva en pipelines/<nombre>/ ni que existan sus prompts',
+      '--file <path>',
+      'validate a standalone pipeline.yaml (a draft) instead of an installed one; ' +
+        'it doesn\'t need to live in pipelines/<name>/ and its prompts don\'t need to exist',
     )
-    .description('Valida esquema, grafo de dependencias, ciclos, referencias y las reglas del motor')
+    .description('Validate the schema, dependency graph, cycles, references and engine rules')
     .action(async (name: string | undefined, options: { file?: string }) => {
       if (options.file) {
         if (name) {
-          console.error('validate: --file no admite además un nombre de pipeline');
+          console.error('validate: --file does not accept a pipeline name as well');
           process.exitCode = EXIT_FAILURE;
           return;
         }
@@ -135,7 +135,7 @@ export function registerValidate(program: Command): void {
             });
             if (issues.length > 0) throw new Error(issues.join('\n'));
             console.log(`${OK} ${current}`);
-            for (const warning of warnings) console.log(`  aviso: ${warning}`);
+            for (const warning of warnings) console.log(`  warning: ${warning}`);
           } catch (err) {
             failed = true;
             console.error(`${KO} ${current}\n${(err as Error).message}`);

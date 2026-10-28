@@ -28,22 +28,22 @@ function run(steps: Record<string, StepRecord>): RunRecord {
 }
 
 describe('unknownToolWarnings', () => {
-  test('un run sin denegaciones no produce avisos', () => {
+  test('a run with no denials produces no warnings', () => {
     expect(unknownToolWarnings(run({ a: step() }))).toEqual([]);
   });
 
-  test('una denegación por otro motivo (fuera de cwd) no produce aviso — no es "tool desconocida"', () => {
+  test('a denial for another reason (outside cwd) produces no warning — it is not "unknown tool"', () => {
     const withDenial = step({
-      denials: [{ toolName: 'Read', toolUseId: 't1', reason: 'ruta fuera de las raíces permitidas', source: 'both' }],
+      denials: [{ toolName: 'Read', toolUseId: 't1', reason: 'path outside the allowed roots', source: 'both' }],
     });
     expect(unknownToolWarnings(run({ a: withDenial }))).toEqual([]);
   });
 
-  test('una denegación por "tool desconocida para el motor" produce un aviso, incluso si el paso terminó en éxito', () => {
+  test('a denial for "unknown tool for the engine" produces a warning, even if the step ended in success', () => {
     const withDenial = step({
       status: 'success',
       denials: [
-        { toolName: 'StructuredOutput', toolUseId: 't1', reason: 'tool desconocida para el motor: "StructuredOutput"', source: 'both' },
+        { toolName: 'StructuredOutput', toolUseId: 't1', reason: 'unknown tool for the engine: "StructuredOutput"', source: 'both' },
       ],
     });
     const warnings = unknownToolWarnings(run({ spelling: withDenial }));
@@ -52,26 +52,35 @@ describe('unknownToolWarnings', () => {
     expect(warnings[0]).toContain('StructuredOutput');
   });
 
-  test('la misma tool denegada dos veces en el mismo paso produce un solo aviso (deduplicado)', () => {
+  test('the same tool denied twice in the same step produces a single warning (deduplicated)', () => {
     const withDenial = step({
       denials: [
-        { toolName: 'StructuredOutput', toolUseId: 't1', reason: 'tool desconocida para el motor: "StructuredOutput"', source: 'both' },
-        { toolName: 'StructuredOutput', toolUseId: 't2', reason: 'tool desconocida para el motor: "StructuredOutput"', source: 'both' },
+        { toolName: 'StructuredOutput', toolUseId: 't1', reason: 'unknown tool for the engine: "StructuredOutput"', source: 'both' },
+        { toolName: 'StructuredOutput', toolUseId: 't2', reason: 'unknown tool for the engine: "StructuredOutput"', source: 'both' },
       ],
     });
     expect(unknownToolWarnings(run({ spelling: withDenial }))).toHaveLength(1);
   });
 
-  test('la misma tool denegada en dos pasos distintos produce un aviso por paso', () => {
-    const denial = { toolName: 'StructuredOutput', toolUseId: 't1', reason: 'tool desconocida para el motor: "StructuredOutput"', source: 'both' as const };
+  test('the same tool denied in two different steps produces one warning per step', () => {
+    const denial = { toolName: 'StructuredOutput', toolUseId: 't1', reason: 'unknown tool for the engine: "StructuredOutput"', source: 'both' as const };
     const warnings = unknownToolWarnings(run({ a: step({ denials: [denial] }), b: step({ denials: [{ ...denial, toolUseId: 't2' }] }) }));
     expect(warnings).toHaveLength(2);
   });
 
-  test('un denial sin reason (solo sdk-result) no produce aviso — no hay texto que comparar', () => {
+  test('a denial with no reason (sdk-result only) produces no warning — there is no text to compare', () => {
     const withDenial = step({
-      denials: [{ toolName: 'algo', toolUseId: 't1', source: 'sdk-result' }],
+      denials: [{ toolName: 'something', toolUseId: 't1', source: 'sdk-result' }],
     });
     expect(unknownToolWarnings(run({ a: withDenial }))).toEqual([]);
+  });
+
+  test('a denial written before the translation (Spanish reason) is still recognized', () => {
+    const withDenial = step({
+      denials: [
+        { toolName: 'StructuredOutput', toolUseId: 't1', reason: 'tool desconocida para el motor: "StructuredOutput"', source: 'both' },
+      ],
+    });
+    expect(unknownToolWarnings(run({ spelling: withDenial }))).toHaveLength(1);
   });
 });

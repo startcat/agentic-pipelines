@@ -14,10 +14,10 @@ description: d
 version: 1
 params:
   docs_repo:
-    description: Ruta del repo
+    description: Path to the repo
     required: true
   max_pages:
-    description: Páginas por pasada
+    description: Pages per run
     default: 1
 steps:
   - id: a
@@ -26,7 +26,7 @@ steps:
 `);
 
 describe('resolveParams', () => {
-  test('aplica la precedencia default < local < override', () => {
+  test('applies the precedence default < local < override', () => {
     const params = resolveParams(PIPELINE, {
       local: { docs_repo: '/srv/docs', max_pages: '2' },
       overrides: { max_pages: '5' },
@@ -34,22 +34,22 @@ describe('resolveParams', () => {
     expect(params).toEqual({ docs_repo: '/srv/docs', max_pages: '5' });
   });
 
-  test('usa el default cuando no hay local ni override', () => {
+  test('uses the default when there is no local or override', () => {
     const params = resolveParams(PIPELINE, { local: { docs_repo: '/srv/docs' } });
     expect(params.max_pages).toBe('1');
   });
 
-  test('lanza MissingParamsError nombrando los que faltan', () => {
+  test('throws MissingParamsError naming the missing ones', () => {
     try {
       resolveParams(PIPELINE, {});
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(MissingParamsError);
       expect((err as MissingParamsError).missing).toEqual(['docs_repo']);
     }
   });
 
-  test('rechaza un override de un param no declarado', () => {
+  test('rejects an override of an undeclared param', () => {
     expect(() =>
       resolveParams(PIPELINE, { local: { docs_repo: '/x' }, overrides: { nope: '1' } }),
     ).toThrow(/nope/);
@@ -62,43 +62,43 @@ describe('interpolate', () => {
     steps: { scan: { stale_count: 7, pages: ['a', 'b'] } },
   };
 
-  test('sustituye referencias a params', () => {
+  test('substitutes references to params', () => {
     expect(interpolate('cd {{params.docs_repo}}', scope)).toBe('cd /srv/docs');
   });
 
-  test('sustituye referencias a salidas de pasos', () => {
-    expect(interpolate('hay {{scan.stale_count}}', scope)).toBe('hay 7');
+  test('substitutes references to step outputs', () => {
+    expect(interpolate('there are {{scan.stale_count}}', scope)).toBe('there are 7');
   });
 
-  test('serializa un valor no escalar como JSON', () => {
+  test('serializes a non-scalar value as JSON', () => {
     expect(interpolate('{{scan.pages}}', scope)).toBe('["a","b"]');
   });
 
-  test('una referencia sin resolver es un error, no una cadena vacía', () => {
+  test('an unresolved reference is an error, not an empty string', () => {
     expect(() => interpolate('{{scan.nope}}', scope)).toThrow(/scan\.nope/);
   });
 
-  test('tolera espacios dentro de las llaves', () => {
+  test('tolerates spaces inside the braces', () => {
     expect(interpolate('{{ params.docs_repo }}', scope)).toBe('/srv/docs');
   });
 
-  test('sustituye referencias a secretos cuando el scope los trae', () => {
+  test('substitutes references to secrets when the scope carries them', () => {
     const withSecrets = { ...scope, secrets: { API_KEY: 'sk-real' } };
     expect(interpolate('key: {{secrets.API_KEY}}', withSecrets)).toBe('key: sk-real');
   });
 
-  test('una referencia a secrets sin scope.secrets lanza, igual que cualquier otra sin resolver', () => {
+  test('a reference to secrets without scope.secrets throws, like any other unresolved one', () => {
     expect(() => interpolate('{{secrets.API_KEY}}', scope)).toThrow(/secrets\.API_KEY/);
   });
 
-  test('una referencia a un secreto no declarado en scope.secrets lanza', () => {
-    const withSecrets = { ...scope, secrets: { OTRA: 'x' } };
+  test('a reference to a secret not declared in scope.secrets throws', () => {
+    const withSecrets = { ...scope, secrets: { OTHER: 'x' } };
     expect(() => interpolate('{{secrets.API_KEY}}', withSecrets)).toThrow(/secrets\.API_KEY/);
   });
 });
 
 describe('findReferences', () => {
-  test('distingue referencias a params de referencias a pasos', () => {
+  test('tells references to params apart from references to steps', () => {
     const refs = findReferences('cd {{params.docs_repo}} && echo {{scan.pages}}');
     expect(refs).toEqual([
       { kind: 'param', name: 'docs_repo' },
@@ -106,11 +106,11 @@ describe('findReferences', () => {
     ]);
   });
 
-  test('devuelve lista vacía cuando no hay referencias', () => {
-    expect(findReferences('echo hola')).toEqual([]);
+  test('returns an empty list when there are no references', () => {
+    expect(findReferences('echo hello')).toEqual([]);
   });
 
-  test('distingue referencias a secrets de referencias a params y a pasos', () => {
+  test('tells references to secrets apart from references to params and steps', () => {
     const refs = findReferences('{{secrets.API_KEY}} {{params.x}} {{scan.y}}');
     expect(refs).toEqual([
       { kind: 'secret', name: 'API_KEY' },
@@ -121,15 +121,15 @@ describe('findReferences', () => {
 });
 
 describe('interpolateForShell', () => {
-  test('sustituye una referencia por una variable de entorno segura', () => {
-    const { command, env } = interpolateForShell('echo {{params.saludo}}', {
-      params: { saludo: 'hola' }, steps: {},
+  test('replaces a reference with a safe environment variable', () => {
+    const { command, env } = interpolateForShell('echo {{params.greeting}}', {
+      params: { greeting: 'hello' }, steps: {},
     });
     expect(command).toBe('echo ${__PIPELINES_REF_0}');
-    expect(env).toEqual({ __PIPELINES_REF_0: 'hola' });
+    expect(env).toEqual({ __PIPELINES_REF_0: 'hello' });
   });
 
-  test('respeta el entrecomillado que ya tenga el YAML', () => {
+  test('respects the quoting the YAML already has', () => {
     const { command, env } = interpolateForShell('telegram-relay "{{draft.pr_url}}"', {
       params: {}, steps: { draft: { pr_url: 'https://example.com/pr/1' } },
     });
@@ -137,7 +137,7 @@ describe('interpolateForShell', () => {
     expect(env.__PIPELINES_REF_0).toBe('https://example.com/pr/1');
   });
 
-  test('varias referencias reciben índices distintos', () => {
+  test('several references get distinct indexes', () => {
     const { command, env } = interpolateForShell('echo {{params.a}}-{{params.b}}', {
       params: { a: 'x', b: 'y' }, steps: {},
     });
@@ -145,32 +145,32 @@ describe('interpolateForShell', () => {
     expect(env).toEqual({ __PIPELINES_REF_0: 'x', __PIPELINES_REF_1: 'y' });
   });
 
-  test('un valor con metacaracteres de shell viaja intacto por el entorno, nunca por el texto', () => {
+  test('a value with shell metacharacters travels intact through the environment, never through the text', () => {
     const payload = '$(touch pwned.txt); echo `whoami`';
-    const { command, env } = interpolateForShell('echo {{params.texto}}', {
-      params: { texto: payload }, steps: {},
+    const { command, env } = interpolateForShell('echo {{params.text}}', {
+      params: { text: payload }, steps: {},
     });
     expect(command).not.toContain('touch');
     expect(command).not.toContain('`');
     expect(env.__PIPELINES_REF_0).toBe(payload);
   });
 
-  test('una referencia sin resolver sigue lanzando, igual que interpolate()', () => {
-    expect(() => interpolateForShell('echo {{params.no_declarado}}', { params: {}, steps: {} }))
-      .toThrow(/no_declarado/);
+  test('an unresolved reference still throws, like interpolate()', () => {
+    expect(() => interpolateForShell('echo {{params.not_declared}}', { params: {}, steps: {} }))
+      .toThrow(/not_declared/);
   });
 
-  test('sin ninguna referencia, el comando no cambia y el entorno está vacío', () => {
-    const { command, env } = interpolateForShell('echo hola', { params: {}, steps: {} });
-    expect(command).toBe('echo hola');
+  test('with no reference, the command does not change and the environment is empty', () => {
+    const { command, env } = interpolateForShell('echo hello', { params: {}, steps: {} });
+    expect(command).toBe('echo hello');
     expect(env).toEqual({});
   });
 
-  test('una referencia pegada a texto sin separador no se trunca (llaves obligatorias)', () => {
-    const { command, env } = interpolateForShell('echo {{params.nombre}}_final', {
-      params: { nombre: 'hola' }, steps: {},
+  test('a reference stuck to text with no separator is not truncated (braces required)', () => {
+    const { command, env } = interpolateForShell('echo {{params.name}}_final', {
+      params: { name: 'hello' }, steps: {},
     });
     expect(command).toBe('echo ${__PIPELINES_REF_0}_final');
-    expect(env.__PIPELINES_REF_0).toBe('hola');
+    expect(env.__PIPELINES_REF_0).toBe('hello');
   });
 });

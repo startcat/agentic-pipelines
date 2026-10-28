@@ -7,8 +7,8 @@ export function registerStatus(program: Command): void {
   program
     .command('status')
     .argument('[name]')
-    .option('-n, --limit <n>', 'número de runs a mostrar', '5')
-    .description('Estado y últimas ejecuciones')
+    .option('-n, --limit <n>', 'number of runs to show', '5')
+    .description('Show the status and latest runs')
     .action(async (name: string | undefined, opts: { limit: string }) => {
       await withContext(async (ctx) => {
         const store = new RunStore(ctx.root);
@@ -17,15 +17,15 @@ export function registerStatus(program: Command): void {
           const runs = (await store.listRuns(current)).slice(0, Number(opts.limit));
           console.log(`\n${current}`);
           if (runs.length === 0) {
-            console.log('  (sin ejecuciones)');
+            console.log('  (no runs)');
             continue;
           }
           for (const run of runs) {
             const cost = run.totalCostUsd ? ` $${run.totalCostUsd.toFixed(2)}` : '';
             const reason = run.skipReason ? `  ${run.skipReason}` : '';
-            // Un `success` forzado no es la misma noticia que un `success` que
-            // pasó sus guardas: sin esta marca, el historial los confunde.
-            const forced = run.forced ? '  (guardas omitidas)' : '';
+            // A forced `success` is not the same news as a `success` that
+            // passed its guards: without this mark, the history confuses them.
+            const forced = run.forced ? '  (guards skipped)' : '';
             console.log(`  ${run.id}  ${run.status.padEnd(8)}${cost}${forced}${reason}`);
           }
         }

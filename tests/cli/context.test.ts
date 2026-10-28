@@ -18,63 +18,63 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe('parseDotEnv', () => {
-  test('parsea pares clave=valor', () => {
-    expect(parseDotEnv('A=1\nB=dos')).toEqual({ A: '1', B: 'dos' });
+  test('parses key=value pairs', () => {
+    expect(parseDotEnv('A=1\nB=two')).toEqual({ A: '1', B: 'two' });
   });
-  test('ignora comentarios y líneas vacías', () => {
-    expect(parseDotEnv('# comentario\n\nA=1\n')).toEqual({ A: '1' });
+  test('ignores comments and blank lines', () => {
+    expect(parseDotEnv('# comment\n\nA=1\n')).toEqual({ A: '1' });
   });
-  test('quita comillas alrededor del valor', () => {
-    expect(parseDotEnv('A="con espacios"\nB=\'x\'')).toEqual({ A: 'con espacios', B: 'x' });
+  test('strips quotes around the value', () => {
+    expect(parseDotEnv('A="with spaces"\nB=\'x\'')).toEqual({ A: 'with spaces', B: 'x' });
   });
-  test('conserva los = que haya dentro del valor', () => {
+  test('keeps any = inside the value', () => {
     expect(parseDotEnv('A=a=b=c')).toEqual({ A: 'a=b=c' });
   });
 });
 
 describe('loadRepoContext', () => {
-  test('encuentra la raíz desde un subdirectorio', async () => {
+  test('finds the root from a subdirectory', async () => {
     const ctx = await loadRepoContext(join(root, 'pipelines', 'demo'));
     expect(ctx.root).toBe(root);
   });
 
-  test('falla con un mensaje útil fuera de un repo de pipelines', async () => {
+  test('fails with a useful message outside a pipelines repo', async () => {
     const orphan = mkdtempSync(join(tmpdir(), 'ap-orphan-'));
     await expect(loadRepoContext(orphan)).rejects.toThrow(/pipelines\.yaml/);
     rmSync(orphan, { recursive: true, force: true });
   });
 
-  test('carga el .env cuando existe', async () => {
-    writeFileSync(join(root, '.env'), 'MY_TOKEN=secreto\n');
+  test('loads the .env when it exists', async () => {
+    writeFileSync(join(root, '.env'), 'MY_TOKEN=secret\n');
     const ctx = await loadRepoContext(root);
-    expect(ctx.dotEnv.MY_TOKEN).toBe('secreto');
+    expect(ctx.dotEnv.MY_TOKEN).toBe('secret');
   });
 
-  test('sin .env el mapa está vacío, no falla', async () => {
+  test('without a .env the map is empty, it does not fail', async () => {
     const ctx = await loadRepoContext(root);
     expect(ctx.dotEnv).toEqual({});
   });
 });
 
 describe('loadPipeline', () => {
-  test('carga y parsea un pipeline por nombre', async () => {
+  test('loads and parses a pipeline by name', async () => {
     const ctx = await loadRepoContext(root);
     const p = await loadPipeline(ctx, 'demo');
     expect(p.name).toBe('demo');
   });
 
-  test('falla nombrando los pipelines disponibles', async () => {
+  test('fails naming the available pipelines', async () => {
     const ctx = await loadRepoContext(root);
-    await expect(loadPipeline(ctx, 'inexistente')).rejects.toThrow(/demo/);
+    await expect(loadPipeline(ctx, 'nonexistent')).rejects.toThrow(/demo/);
   });
 
-  test('falla si el name del YAML no coincide con el directorio', async () => {
+  test('fails if the YAML name does not match the directory', async () => {
     mkdirSync(join(root, 'pipelines', 'mismatched'), { recursive: true });
     writeFileSync(
       join(root, 'pipelines', 'mismatched', 'pipeline.yaml'),
-      'name: otro-nombre\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
+      'name: other-name\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
     );
     const ctx = await loadRepoContext(root);
-    await expect(loadPipeline(ctx, 'mismatched')).rejects.toThrow(/mismatched.*otro-nombre|otro-nombre.*mismatched/s);
+    await expect(loadPipeline(ctx, 'mismatched')).rejects.toThrow(/mismatched.*other-name|other-name.*mismatched/s);
   });
 });

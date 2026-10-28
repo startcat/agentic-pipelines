@@ -1,11 +1,10 @@
 /**
- * El veredicto de salud de un pipeline: dos ejes independientes que se
- * vigilan entre sí.
+ * A pipeline's health verdict: two independent axes that watch each other.
  *
- * Módulo PURO a propósito, igual que `install/common.ts` y
- * `runner/fs-guard.ts`: sin E/S, sin subprocesos y sin reloj propio — el
- * instante entra como parámetro. Así la tabla de casos se ejecuta entera sin
- * levantar un servidor ni depender de macOS.
+ * PURE module on purpose, like `install/common.ts` and `runner/fs-guard.ts`:
+ * no I/O, no subprocesses and no clock of its own — the instant comes in as a
+ * parameter. That way the whole case table runs without starting a server or
+ * depending on macOS.
  */
 import { cronToCalendarIntervals, stripGeneratedAt, type CalendarInterval } from '../install/common.ts';
 import type { RunRecord } from '../runs/types.ts';
@@ -16,13 +15,13 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 
 /**
- * Periodo entre disparos, derivado de los horarios de launchd — NO volviendo
- * a interpretar cron, que solo hace `cronToCalendarIntervals`.
+ * Period between triggers, derived from launchd's schedules — NOT by
+ * interpreting cron again, which only `cronToCalendarIntervals` does.
  *
- * La regla: la granularidad más gruesa que los horarios no fijan es la que
- * manda (si no fijan minuto, dispara cada minuto), repartida entre el número
- * de horarios. Es una aproximación deliberada: alimenta una VENTANA de
- * vigilancia, no una planificación — nadie decide cuándo correr con esto.
+ * The rule: the coarsest granularity the schedules don't pin is the one that
+ * rules (if they don't pin the minute, it fires every minute), divided among
+ * the number of schedules. It is a deliberate approximation: it feeds a watch
+ * WINDOW, not a plan — nobody decides when to run with this.
  */
 export function triggerPeriodMs(intervals: CalendarInterval[]): number {
   if (intervals.length === 0) return DAY_MS;
@@ -48,28 +47,28 @@ export type JobFacts = {
   loaded: boolean;
   disabled: boolean;
   /**
-   * Contenido de los ficheros del job en disco, si existen: el plist en
-   * launchd; en systemd, el `.service` y el `.timer` unidos por un salto de línea.
+   * Contents of the job files on disk, if they exist: the plist in launchd;
+   * in systemd, the `.service` and the `.timer` joined by a newline.
    */
   artifactOnDisk?: string;
-  /** Lo mismo, tal como `install` lo generaría ahora mismo. */
+  /** The same, as `install` would generate it right now. */
   artifactExpected?: string;
 };
 
 /**
- * Eje 1: ¿lo dispara alguien?
+ * Axis 1: does anyone trigger it?
  *
- * `disabled` se evalúa ANTES que `not-installed` porque un job deshabilitado
- * suele estar también descargado, y de los dos diagnósticos el accionable es
- * el primero: dice qué hacer. Con el segundo, el operador reinstalaría y el
- * override del dominio seguiría mordiendo.
+ * `disabled` is evaluated BEFORE `not-installed` because a disabled job is
+ * usually also unloaded, and of the two diagnoses the actionable one is the
+ * first: it says what to do. With the second, the operator would reinstall and
+ * the domain's override would keep biting.
  */
 export function evaluateTrigger(hasTriggers: boolean, job: JobFacts): TriggerHealth {
   if (!hasTriggers) return 'no-trigger';
   if (job.disabled) return 'disabled';
   if (!job.loaded) return 'not-installed';
-  // Sin los dos lados no hay comparación posible, y afirmar una desviación
-  // que no se ha podido medir sería inventarse un diagnóstico.
+  // Without both sides no comparison is possible, and claiming a drift that
+  // couldn't be measured would be making up a diagnosis.
   if (job.artifactOnDisk === undefined || job.artifactExpected === undefined) return 'installed';
   return stripGeneratedAt(job.artifactOnDisk) === stripGeneratedAt(job.artifactExpected)
     ? 'installed'
@@ -81,28 +80,28 @@ export type WorkHealth = 'never-worked' | 'working' | 'failing' | 'stuck' | 'sil
 export type Health = {
   trigger: TriggerHealth;
   work: WorkHealth;
-  /** Ventana de vigilancia en ms; undefined si el pipeline no declara cadencia. */
+  /** Watch window in ms; undefined if the pipeline declares no cadence. */
   windowMs?: number;
   lastRun?: RunRecord;
   lastWork?: RunRecord;
   consecutiveSkips: number;
-  /** `installed` + `silent`: launchd dice que dispara y no hay rastro de nada. */
+  /** `installed` + `silent`: launchd says it triggers and there is no trace of anything. */
   contradiction: boolean;
 };
 
-/** Un run que EJECUTÓ algo, con éxito o con fallo. Mismo criterio que `RunStore.lastAttempt`. */
+/** A run that EXECUTED something, with success or failure. Same criterion as `RunStore.lastAttempt`. */
 function isWork(run: RunRecord): boolean {
   return run.status === 'success' || run.status === 'failed';
 }
 
 /**
- * Horarios de launchd para `triggers`, o `[]` si el cron usa sintaxis que
- * `cronToCalendarIntervals` no soporta (rangos, pasos). Ese pipeline no se
- * podría INSTALAR, pero sí puede existir en un pipeline.yaml del repo —
- * dejar que la excepción se propague tumbaría el panel entero, que es el
- * único sitio pensado para que nada falle en silencio. El resultado es el
- * mismo camino que un pipeline sin triggers: sin ventana, el eje de trabajo
- * solo puede ser `never-worked`, `failing` o `working`.
+ * launchd schedules for `triggers`, or `[]` if the cron uses syntax that
+ * `cronToCalendarIntervals` doesn't support (ranges, steps). That pipeline
+ * couldn't be INSTALLED, but it can exist in a repo's pipeline.yaml — letting
+ * the exception propagate would take down the whole dashboard, which is one
+ * place designed so that nothing fails silently. The result is the same path
+ * as a pipeline without triggers: no window, the work axis can only be
+ * `never-worked`, `failing` or `working`.
  */
 function safeIntervals(pipeline: Pipeline): CalendarInterval[] {
   try {
@@ -113,12 +112,12 @@ function safeIntervals(pipeline: Pipeline): CalendarInterval[] {
 }
 
 /**
- * Veredicto completo. `runs` llega del más reciente al más antiguo, tal como
- * lo devuelve `RunStore.listRuns()`.
+ * Full verdict. `runs` arrives from newest to oldest, as returned by
+ * `RunStore.listRuns()`.
  *
- * La ventana es DOS veces el periodo declarado. El margen es
- * deliberado: una noche perdida —un portátil cerrado— no debe pintar nada de
- * rojo; dos seguidas ya no es casualidad.
+ * The window is TWICE the declared period. The margin is deliberate: one lost
+ * night —a closed laptop— must not paint anything red; two in a row is no
+ * longer chance.
  */
 export function evaluateHealth(
   pipeline: Pipeline,
@@ -145,12 +144,13 @@ export function evaluateHealth(
 
   let work: WorkHealth;
   if (windowMs === undefined) {
-    // Sin cadencia declarada (o sin una que se sepa traducir) no hay disparo
-    // que echar de menos: un pipeline manual no puede estar `stuck` ni `silent`.
+    // Without a declared cadence (or without one we know how to translate) there is no trigger
+    // to miss: a manual pipeline can't be `stuck` or `silent`.
     work = lastWork === undefined ? 'never-worked' : lastWork.status === 'failed' ? 'failing' : 'working';
   } else if (lastRun === undefined) {
-    // `never-worked`, no `silent`: `silent` significa "corría y dejó de
-    // correr", y decir eso de un pipeline recién instalado sería mentir.
+    // `never-worked`, not `silent`: `silent` means "it was running and
+    // stopped running", and saying that of a just-installed pipeline would be
+    // lying.
     work = 'never-worked';
   } else if (!inWindow(lastRun)) {
     work = 'silent';
@@ -167,15 +167,15 @@ export function evaluateHealth(
     lastRun,
     lastWork,
     consecutiveSkips,
-    // launchd afirma que dispara; el registro afirma que no arrancó nada.
-    // Ninguna de las dos fuentes lo detecta sola.
+    // launchd claims it triggers; the record claims nothing started.
+    // Neither source detects it alone.
     //
-    // `drifted` cuenta igual que `installed`: un plist desviado SIGUE cargado
-    // en launchd — la desviación dice que no es el que `install` generaría hoy,
-    // no que no dispare. Exigir exactamente `installed` dejaba esa casilla sin
-    // alarma y, peor, sin la cola del log del job: `server.ts` solo la lee
-    // cuando este campo es cierto, y es el único rastro de un motor que muere
-    // antes de escribir `run.json`.
+    // `drifted` counts the same as `installed`: a drifted plist is STILL loaded
+    // in launchd — the drift says it is not the one `install` would generate
+    // today, not that it doesn't fire. Requiring exactly `installed` left that
+    // box without an alarm and, worse, without the job log's tail: `server.ts`
+    // only reads it when this field is true, and it is the only trace of an
+    // engine that dies before writing `run.json`.
     contradiction: (trigger === 'installed' || trigger === 'drifted') && work === 'silent',
   };
 }

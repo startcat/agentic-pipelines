@@ -17,7 +17,7 @@ function fakeBin(name: string, body: string): string {
   return path;
 }
 
-/** `systemctl` de mentira: registra los argumentos; `isEnabled` es lo que responde a `is-enabled`. */
+/** Fake `systemctl`: records the arguments; `isEnabled` is what it answers to `is-enabled`. */
 function fakeSystemctl(opts: { isEnabled?: string; extra?: string } = {}): string {
   return fakeBin(
     'fake-systemctl',
@@ -79,7 +79,7 @@ description: d
 version: 1
 params:
   docs_repo:
-    description: ruta
+    description: path
     required: true
 requires:
   bin: [git]
@@ -92,7 +92,7 @@ steps:
 `;
 
 describe('pipelines install (systemd)', () => {
-  test('sin linger y sin --force: código 1, nada escrito ni systemctl', async () => {
+  test('without linger and without --force: code 1, nothing written and no systemctl', async () => {
     const { code, out } = await cli(['install', 'demo', '--set', 'docs_repo=/r'], { linger: 'no' });
     expect(code).toBe(1);
     expect(out).toContain('sudo loginctl enable-linger');
@@ -100,16 +100,16 @@ describe('pipelines install (systemd)', () => {
     expect(sysCalls()).toEqual([]);
   });
 
-  test('sin linger y con --force: instala y avisa', async () => {
+  test('without linger and with --force: installs and warns', async () => {
     const { code, out } = await cli(['install', 'demo', '--set', 'docs_repo=/r', '--force'], {
       linger: 'no',
     });
     expect(code).toBe(0);
-    expect(out).toContain('--force: se instala igualmente');
+    expect(out).toContain('--force: installing anyway');
     expect(existsSync(join(unitDir(), `${LABEL}.timer`))).toBe(true);
   });
 
-  test('con linger: escribe las unidades, crea el directorio del log y activa', async () => {
+  test('with linger: writes the units, creates the log directory and activates', async () => {
     const { code, out } = await cli(['install', 'demo', '--set', 'docs_repo=/r']);
     expect(code).toBe(0);
     expect(existsSync(join(unitDir(), `${LABEL}.service`))).toBe(true);
@@ -119,12 +119,12 @@ describe('pipelines install (systemd)', () => {
       '--user daemon-reload',
       `--user enable --now ${LABEL}.timer`,
     ]);
-    expect(out).toContain('horarios');
+    expect(out).toContain('times');
     expect(out).toContain('PATH');
     expect(out).toContain('log');
   });
 
-  test('--dry-run: imprime las dos unidades, no escribe ni invoca systemctl, sí loginctl', async () => {
+  test('--dry-run: prints both units, writes nothing and does not invoke systemctl, but does loginctl', async () => {
     const { code, out } = await cli(['install', 'demo', '--set', 'docs_repo=/r', '--dry-run'], {
       linger: 'no',
     });
@@ -137,38 +137,38 @@ describe('pipelines install (systemd)', () => {
     expect(existsSync(loginLog)).toBe(true);
   });
 
-  test('reinstalar con el timer disabled vuelve a hacer enable --now', async () => {
+  test('reinstalling with the timer disabled does enable --now again', async () => {
     const systemctl = fakeSystemctl({ isEnabled: 'disabled' });
     await cli(['install', 'demo', '--set', 'docs_repo=/r'], { systemctl });
     writeFileSync(sysLog, '');
     const { code, out } = await cli(['install', 'demo'], { systemctl });
     expect(code).toBe(0);
     expect(sysCalls()).toContain(`--user enable --now ${LABEL}.timer`);
-    expect(out).toContain('reemplazado el job que ya existía');
+    expect(out).toContain('replaced the job that already existed');
   });
 
-  test('un .service ajeno que menciona una ruta de un param: colisión y código 1', async () => {
+  test('a foreign .service that mentions a param path: collision and code 1', async () => {
     mkdirSync(unitDir(), { recursive: true });
-    writeFileSync(join(unitDir(), 'ajeno.service'), '[Service]\nExecStart=/bin/true /repos/docs\n');
+    writeFileSync(join(unitDir(), 'foreign.service'), '[Service]\nExecStart=/bin/true /repos/docs\n');
     const { code, out } = await cli(['install', 'demo', '--set', 'docs_repo=/repos/docs']);
     expect(code).toBe(1);
-    expect(out).toContain('ajeno');
-    expect(out).toContain('mencionan rutas');
+    expect(out).toContain('foreign');
+    expect(out).toContain('mention paths');
     expect(existsSync(join(unitDir(), `${LABEL}.timer`))).toBe(false);
   });
 
-  test('un .service homónimo habilitado: aviso con el retireHint', async () => {
+  test('an enabled homonym .service: warning with the retireHint', async () => {
     mkdirSync(unitDir(), { recursive: true });
-    writeFileSync(join(unitDir(), 'otra.cosa.demo.service'), '[Service]\nExecStart=/bin/true\n');
+    writeFileSync(join(unitDir(), 'other.thing.demo.service'), '[Service]\nExecStart=/bin/true\n');
     const { code, out } = await cli(['install', 'demo', '--set', 'docs_repo=/r']);
     expect(code).toBe(1);
-    expect(out).toContain('otra.cosa.demo');
-    expect(out).toContain('systemctl --user disable --now otra.cosa.demo.timer');
+    expect(out).toContain('other.thing.demo');
+    expect(out).toContain('systemctl --user disable --now other.thing.demo.timer');
   });
 });
 
 describe('pipelines uninstall (systemd)', () => {
-  test('descarga, borra las unidades y dice dónde siguen los params y el log', async () => {
+  test('unloads, deletes the units and says where the params and the log still are', async () => {
     await cli(['install', 'demo', '--set', 'docs_repo=/r']);
     writeFileSync(sysLog, '');
     const { code, out } = await cli(['uninstall', 'demo']);
@@ -182,30 +182,30 @@ describe('pipelines uninstall (systemd)', () => {
     expect(out).toContain(join(logDir(), 'pipelines-demo.log'));
   });
 
-  test('con solo el .timer en disco: lo retira y no dice «no está instalado»', async () => {
+  test('with only the .timer on disk: removes it and does not say "is not installed"', async () => {
     await cli(['install', 'demo', '--set', 'docs_repo=/r']);
     rmSync(join(unitDir(), `${LABEL}.service`));
     const { code, out } = await cli(['uninstall', 'demo']);
     expect(code).toBe(0);
     expect(existsSync(join(unitDir(), `${LABEL}.timer`))).toBe(false);
-    expect(out).not.toContain('no está instalado');
-    expect(out).toContain(`desinstalado ${LABEL}`);
+    expect(out).not.toContain('is not installed');
+    expect(out).toContain(`uninstalled ${LABEL}`);
   });
 
-  test('sin ficheros del job: dice que no está instalado', async () => {
+  test('with no job files: says it is not installed', async () => {
     const { code, out } = await cli(['uninstall', 'demo']);
     expect(code).toBe(0);
-    expect(out).toContain('no está instalado');
+    expect(out).toContain('is not installed');
   });
 
-  test('sin bus de usuario: avisa por stderr y sale con código 1', async () => {
+  test('with no user bus: warns on stderr and exits with code 1', async () => {
     await cli(['install', 'demo', '--set', 'docs_repo=/r']);
     const systemctl = fakeSystemctl({
       extra: 'if [ "$2" = disable ]; then echo "Failed to connect to bus" >&2; exit 1; fi',
     });
     const { code, out } = await cli(['uninstall', 'demo'], { systemctl });
     expect(code).toBe(1);
-    expect(out).toContain('sesión de systemd de usuario');
+    expect(out).toContain('systemd user session');
     expect(existsSync(join(unitDir(), `${LABEL}.timer`))).toBe(false);
   });
 });

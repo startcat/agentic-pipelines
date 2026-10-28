@@ -12,71 +12,70 @@ import {
 } from './fixture.ts';
 
 describe('GET /', () => {
-  test('lista los pipelines con su último estado', async () => {
+  test('lists the pipelines with their latest state', async () => {
     const { server, base } = await serve();
     try {
       const html = stripStyles(await (await fetch(`${base}/`)).text());
       expect(html).toContain('demo');
-      // El run más reciente de la fixture es RUNNING_RUN_ID, en curso: el
-      // veredicto de esa fila tiene que reflejarlo. Se comprueba contra la
-      // clase del punto de salud (`class="dot live"`), no contra la palabra
-      // suelta — una palabra de estado sola puede colar aunque el dato real
-      // sea otro (`stripStyles` quita además la hoja de estilos, que nombra
-      // los cuatro tonos posibles en sus selectores).
+      // The fixture's most recent run is RUNNING_RUN_ID, in progress: that row's
+      // verdict has to reflect it. It is checked against the health dot's class
+      // (`class="dot live"`), not against the bare word — a lone state word can
+      // slip through even if the real datum is another (`stripStyles` also
+      // strips the stylesheet, which names the four possible tones in its
+      // selectors).
       expect(html).toContain('class="dot live"');
-      expect(html).toContain('Corriendo ahora');
+      expect(html).toContain('Running now');
     } finally {
       server.stop(true);
     }
   });
 
-  test('un pipeline sin triggers no se pinta como roto', async () => {
+  test('a pipeline with no triggers is not drawn as broken', async () => {
     const { server, base } = await serve();
     try {
       const html = stripStyles(await (await fetch(`${base}/`)).text());
-      // El panel no enseña el enum crudo, enseña la frase: `no-trigger` es un
-      // pipeline manual, y pintarlo de rojo sería ruido.
-      expect(html).toContain('sin cron');
+      // The dashboard doesn't show the raw enum, it shows the phrase: `no-trigger`
+      // is a manual pipeline, and painting it red would be noise.
+      expect(html).toContain('no cron');
       expect(html).not.toContain('no-trigger');
     } finally {
       server.stop(true);
     }
   });
 
-  // Cobertura directa, sin fixture ni servidor: `renderHealthPanel` se llama
-  // aquí con un `Health` construido a mano (mismo patrón que los dos tests de
-  // 'la contradicción installed + silent' más abajo). El motivo por el que
-  // hace falta, además del test de arriba contra el fixture real: cualquier
-  // fixture futura que cambie qué run es el más reciente (como pasó
-  // al añadir RUNNING_RUN_ID) puede volver a desplazar el motivo
-  // del salto del panel sin que ningún test se ponga en rojo — como ya pasó
-  // una vez. Esta prueba no depende de qué run sea el último en ningún
-  // fixture: construye el Health directamente, así que ese desplazamiento no
-  // puede desarmarla.
-  // OJO: el motivo del salto YA NO se pinta en el panel — el veredicto dice
-  // "salta N noches seguidas" y el motivo entero vive en la página del
-  // pipeline, agrupado. La prueba de que ESE texto llega escapado no se ha
-  // perdido: está en `render.test.ts`, sobre `renderPipelinePage`. Aquí queda
-  // el otro texto que el panel sí interpola desde un fichero que no
-  // controlamos: la descripción del `pipeline.yaml`.
-  test('la descripción del pipeline llega escapada al panel', () => {
+  // Direct coverage, with no fixture or server: `renderHealthPanel` is called
+  // here with a hand-built `Health` (same pattern as the two tests of
+  // 'the installed + silent contradiction' below). Why it is needed, besides
+  // the test above against the real fixture: any future fixture that changes
+  // which run is the most recent (as happened when adding RUNNING_RUN_ID) can
+  // again displace the skip reason from the dashboard without any test
+  // turning red — as already happened once. This test doesn't depend on which
+  // run is the last in any fixture: it builds the Health directly, so that
+  // displacement can't disarm it.
+  // NOTE: the skip reason is NO LONGER drawn on the dashboard — the verdict
+  // says "Skipped N nights in a row" and the whole reason lives on the
+  // pipeline's page, grouped. The test that THAT text arrives escaped has not
+  // been lost: it is in `render.test.ts`, on `renderPipelinePage`. What remains
+  // here is the other text the dashboard does interpolate from a file we don't
+  // control: the `pipeline.yaml` description.
+  test('the pipeline description arrives escaped on the dashboard', () => {
     const health = {
       trigger: 'installed', work: 'working', consecutiveSkips: 0, contradiction: false,
     } as never;
     const html = renderHealthPanel(
-      [{ name: 'demo', description: 'redacta <guarda> y publica', health, pasosTotales: 1, scheduler: { label: 'launchd', logPath: '/h/demo.log' } }],
+      [{ name: 'demo', description: 'drafts <guard> and publishes', health, totalSteps: 1, scheduler: { label: 'launchd', logPath: '/h/demo.log' } }],
       new Date('2026-08-31T11:56:00.000Z'),
     );
-    expect(html).toContain('&lt;guarda&gt;');
-    expect(html).not.toContain('<guarda>');
+    expect(html).toContain('&lt;guard&gt;');
+    expect(html).not.toContain('<guard>');
   });
 
-  test('el nombre del pipeline llega escapado en el enlace y en el texto', () => {
+  test('the pipeline name arrives escaped in the link and in the text', () => {
     const health = {
       trigger: 'installed', work: 'working', consecutiveSkips: 0, contradiction: false,
     } as never;
     const html = renderHealthPanel(
-      [{ name: 'a&b', description: 'd', health, pasosTotales: 1, scheduler: { label: 'launchd', logPath: '/h/demo.log' } }],
+      [{ name: 'a&b', description: 'd', health, totalSteps: 1, scheduler: { label: 'launchd', logPath: '/h/demo.log' } }],
       new Date('2026-08-31T11:56:00.000Z'),
     );
     expect(html).toContain('a%26b');
@@ -84,29 +83,29 @@ describe('GET /', () => {
   });
 });
 
-describe('la contradicción installed + silent', () => {
-  // Es el único caso en que se lee el log del job: el
-  // rastro de un motor que muere antes de escribir run.json. Sin runs en la
-  // ventana y con el job cargado, la alarma tiene que salir.
-  test('la alarma se pinta y dice dónde mirar', () => {
+describe('the installed + silent contradiction', () => {
+  // It is the only case in which the job's log is read: the trace of an engine
+  // that dies before writing run.json. With no runs in the window and the job
+  // loaded, the alarm has to show up.
+  test('the alarm is drawn and says where to look', () => {
     const health = {
       trigger: 'installed', work: 'silent', consecutiveSkips: 0, contradiction: true,
     } as never;
     const html = renderHealthPanel(
-      [{ name: 'demo', description: 'd', health, pasosTotales: 1, scheduler: { label: 'launchd', logPath: '/h/demo.log' } }],
+      [{ name: 'demo', description: 'd', health, totalSteps: 1, scheduler: { label: 'launchd', logPath: '/h/demo.log' } }],
       new Date('2026-08-31T11:56:00.000Z'),
     );
     expect(html).toContain('class="alarmbox"');
-    expect(html).toContain('CARGADO Y SIN PRODUCIR NADA');
-    expect(html).toContain('no llegó ni a arrancar');
+    expect(html).toContain('LOADED AND PRODUCING NOTHING');
+    expect(html).toContain('never even started');
   });
 
-  test('con cola de log, la enseña escapada', () => {
+  test('with a log tail, it shows it escaped', () => {
     const health = {
       trigger: 'installed', work: 'silent', consecutiveSkips: 0, contradiction: true,
     } as never;
     const html = renderHealthPanel(
-      [{ name: 'demo', description: 'd', health, pasosTotales: 1, scheduler: { label: 'launchd', logPath: '/h/demo.log' }, jobLogTail: 'error: <bun> not found' }],
+      [{ name: 'demo', description: 'd', health, totalSteps: 1, scheduler: { label: 'launchd', logPath: '/h/demo.log' }, jobLogTail: 'error: <bun> not found' }],
       new Date('2026-08-31T11:56:00.000Z'),
     );
     expect(html).toContain('&lt;bun&gt;');
@@ -114,62 +113,62 @@ describe('la contradicción installed + silent', () => {
   });
 });
 
-// Los dos ficheros hostiles, sin cubrir hasta ahora: `loadPipeline`
-// y `store.listRuns` propagan sus errores y `healthRows` no los contenía, así
-// que un solo pipeline roto tumbaba `GET /` para TODOS los pipelines —
-// exactamente cuando este visor es más útil (mitad de autoría de un
-// pipeline, o un `run.json` a medio escribir).
-describe('GET / — contención de errores', () => {
-  test('un pipeline sin pipeline.yaml no tumba el panel', async () => {
+// The two hostile files, uncovered until now: `loadPipeline` and
+// `store.listRuns` propagate their errors and `healthRows` didn't contain
+// them, so a single broken pipeline took down `GET /` for ALL pipelines —
+// exactly when this viewer is most useful (a pipeline half-way through
+// authoring, or a half-written `run.json`).
+describe('GET / — error containment', () => {
+  test('a pipeline without pipeline.yaml does not take down the dashboard', async () => {
     const { server, base, root } = await serve();
     try {
-      await addUnparseablePipeline(root, 'a-medio-autoring');
+      await addUnparseablePipeline(root, 'half-authored');
       const res = await fetch(`${base}/`);
       expect(res.status).toBe(200);
       const html = stripStyles(await res.text());
-      expect(html).toContain('class="dot live"'); // demo sigue en el panel
-      expect(html).toContain('a-medio-autoring');
+      expect(html).toContain('class="dot live"'); // demo is still on the dashboard
+      expect(html).toContain('half-authored');
     } finally {
       server.stop(true);
     }
   });
 
-  // `loadPipeline` está escrito para el CLI, donde el nombre lo
-  // teclea una persona: «No existe el pipeline "x". Disponibles: demo, x» es
-  // útil ahí y aquí se contradice — nombra a `x` como ausente y como
-  // disponible en la misma frase, y se lee como que la herramienta está rota.
-  test('un directorio sin pipeline.yaml dice lo que pasa, sin contradecirse', async () => {
+  // `loadPipeline` is written for the CLI, where a person types the name:
+  // "Pipeline "x" does not exist. Available: demo, x" is useful there and here
+  // it contradicts itself — it names `x` as absent and as available in the
+  // same sentence, and reads as if the tool is broken.
+  test('a directory without pipeline.yaml says what is going on, without contradicting itself', async () => {
     const { server, base, root } = await serve();
     try {
-      await addUnparseablePipeline(root, 'a-medio-autoring');
+      await addUnparseablePipeline(root, 'half-authored');
       const html = stripStyles(await (await fetch(`${base}/`)).text());
-      expect(html).toContain('no tiene pipeline.yaml');
-      expect(html).not.toContain('Disponibles:');
-      expect(html).not.toContain('No existe el pipeline');
+      expect(html).toContain('has no pipeline.yaml');
+      expect(html).not.toContain('Available:');
+      expect(html).not.toContain('does not exist');
     } finally {
       server.stop(true);
     }
   });
 
-  // El otro camino del mismo `catch`: si el fichero SÍ está y lo que falla es
-  // el parseo, el mensaje real es lo único que dice qué corregir. Ese no se
-  // toca.
-  test('un pipeline.yaml ilegible sí enseña el motivo real', async () => {
+  // The other path of the same `catch`: if the file IS there and what fails is
+  // the parsing, the real message is the only thing that says what to fix. That
+  // one is left alone.
+  test('an unreadable pipeline.yaml does show the real reason', async () => {
     const { server, base, root } = await serve();
     try {
-      await mkdir(join(root, 'pipelines', 'yaml-malo'), { recursive: true });
-      await writeFile(join(root, 'pipelines', 'yaml-malo', 'pipeline.yaml'), 'name: [sin cerrar\n');
+      await mkdir(join(root, 'pipelines', 'bad-yaml'), { recursive: true });
+      await writeFile(join(root, 'pipelines', 'bad-yaml', 'pipeline.yaml'), 'name: [unclosed\n');
       const html = stripStyles(await (await fetch(`${base}/`)).text());
-      expect(html).toContain('yaml-malo');
-      expect(html).not.toContain('no tiene pipeline.yaml');
+      expect(html).toContain('bad-yaml');
+      expect(html).not.toContain('has no pipeline.yaml');
     } finally {
       server.stop(true);
     }
   });
 
-  test('sin programador para la plataforma, el panel no da 500: cada fila enseña el error', async () => {
+  test('with no scheduler for the platform, the dashboard does not 500: each row shows the error', async () => {
     const { server, base } = await serve();
-    // Un valor desconocido hace que `schedulerFor()` lance, igual que en FreeBSD.
+    // An unknown value makes `schedulerFor()` throw, same as on FreeBSD.
     const saved = process.env.PIPELINES_SCHEDULER;
     process.env.PIPELINES_SCHEDULER = 'freebsd';
     try {
@@ -177,7 +176,7 @@ describe('GET / — contención de errores', () => {
       expect(res.status).toBe(200);
       const html = stripStyles(await res.text());
       expect(html).toContain('demo');
-      expect(html).toContain('no es un programador conocido');
+      expect(html).toContain('is not a known scheduler');
     } finally {
       if (saved === undefined) delete process.env.PIPELINES_SCHEDULER;
       else process.env.PIPELINES_SCHEDULER = saved;
@@ -185,15 +184,15 @@ describe('GET / — contención de errores', () => {
     }
   });
 
-  test('un run.json truncado no tumba el panel', async () => {
+  test('a truncated run.json does not take down the dashboard', async () => {
     const { server, base, root } = await serve();
     try {
-      await addPipelineWithTruncatedRun(root, 'run-corrupto', '2026-08-29T03-00-00-000Z');
+      await addPipelineWithTruncatedRun(root, 'corrupt-run', '2026-08-29T03-00-00-000Z');
       const res = await fetch(`${base}/`);
       expect(res.status).toBe(200);
       const html = stripStyles(await res.text());
-      expect(html).toContain('class="dot live"'); // demo sigue en el panel
-      expect(html).toContain('run-corrupto');
+      expect(html).toContain('class="dot live"'); // demo is still on the dashboard
+      expect(html).toContain('corrupt-run');
     } finally {
       server.stop(true);
     }
@@ -201,10 +200,10 @@ describe('GET / — contención de errores', () => {
 });
 
 describe('404', () => {
-  test('una ruta desconocida es 404', async () => {
+  test('an unknown route is 404', async () => {
     const { server, base } = await serve();
     try {
-      expect((await fetch(`${base}/no-existe`)).status).toBe(404);
+      expect((await fetch(`${base}/does-not-exist`)).status).toBe(404);
     } finally {
       server.stop(true);
     }
@@ -212,43 +211,43 @@ describe('404', () => {
 });
 
 describe('GET /p/:name', () => {
-  test('muestra los pasos, las guardas y el historial', async () => {
+  test('shows the steps, the guards and the history', async () => {
     const { server, base } = await serve();
     try {
       const html = stripStyles(await (await fetch(`${base}/p/demo`)).text());
-      expect(html).toContain('Un pipeline de prueba');
-      // No 'uno' a secas: otros textos de la página contienen esa subcadena
-      // ("ninguno", "alguno"), así que la aserción pasaba aunque la lista de
-      // pasos saliera vacía. `<code>uno</code>` dentro de `.sid` es el marcado
-      // que SOLO produce una fila de paso.
-      expect(html).toContain('<code>uno</code>'); // el paso
-      expect(html).toContain(SKIPPED_RUN_ID); // el run
+      expect(html).toContain('A test pipeline');
+      // Not a bare 'one': other texts on the page contain that substring
+      // ("None", "someone"), so the assertion passed even if the step list came
+      // out empty. `<code>one</code>` inside `.sid` is the markup that ONLY a
+      // step row produces.
+      expect(html).toContain('<code>one</code>'); // the step
+      expect(html).toContain(SKIPPED_RUN_ID); // the run
     } finally {
       server.stop(true);
     }
   });
 
-  // El motivo del salto viene de un fichero y lleva `<` y `>`: si se
-  // interpola sin escapar, el visor se convierte en su propio agujero. Vive
-  // aquí (y no en `GET /`, donde estaba antes) porque el run
-  // más reciente de la fixture ahora es RUNNING_RUN_ID, en curso — no hay
-  // salto que enseñar en el panel de salud (su `consecutiveSkips` cae a 0),
-  // así que el motivo saltado solo sigue siendo visible, igual de escapado,
-  // en el historial de esta página. El escapado del panel en sí tiene su
-  // propia cobertura, sin fixture, en `describe('GET /')`.
-  test('el motivo del salto llega escapado', async () => {
+  // The skip reason comes from a file and carries `<` and `>`: if it is
+  // interpolated unescaped, the viewer becomes its own hole. It lives here (and
+  // not in `GET /`, where it was before) because the fixture's most recent run
+  // is now RUNNING_RUN_ID, in progress — there is no skip to show on the health
+  // dashboard (its `consecutiveSkips` drops to 0), so the skipped reason is
+  // only still visible, just as escaped, in this page's history. The
+  // dashboard's own escaping has its own coverage, with no fixture, in
+  // `describe('GET /')`.
+  test('the skip reason arrives escaped', async () => {
     const { server, base } = await serve();
     try {
       const html = stripStyles(await (await fetch(`${base}/p/demo`)).text());
-      expect(html).toContain('&lt;guarda&gt;');
-      expect(html).not.toContain('<guarda>');
+      expect(html).toContain('&lt;guard&gt;');
+      expect(html).not.toContain('<guard>');
     } finally {
       server.stop(true);
     }
   });
 
-  // El bug que esta ruta podría introducir, y su prueba.
-  test('un nombre con travesía es 404, no un fichero', async () => {
+  // The bug this route could introduce, and its test.
+  test('a name with traversal is 404, not a file', async () => {
     const { server, base } = await serve();
     try {
       const res = await fetch(`${base}/p/${encodeURIComponent('../../etc/passwd')}`);
@@ -258,7 +257,7 @@ describe('GET /p/:name', () => {
     }
   });
 
-  test('un pipeline inexistente es 404', async () => {
+  test('a nonexistent pipeline is 404', async () => {
     const { server, base } = await serve();
     try {
       expect((await fetch(`${base}/p/nope`)).status).toBe(404);
@@ -269,17 +268,17 @@ describe('GET /p/:name', () => {
 });
 
 describe('GET /p/:name/runs/:runId', () => {
-  test('muestra los pasos del run', async () => {
+  test('shows the steps of the run', async () => {
     const { server, base } = await serve();
     try {
       const html = stripStyles(await (await fetch(`${base}/p/demo/runs/${RUNNING_RUN_ID}`)).text());
-      expect(html).toContain('uno');
+      expect(html).toContain('one');
     } finally {
       server.stop(true);
     }
   });
 
-  test('un runId inventado es 404', async () => {
+  test('a made-up runId is 404', async () => {
     const { server, base } = await serve();
     try {
       expect((await fetch(`${base}/p/demo/runs/9999`)).status).toBe(404);
@@ -290,20 +289,20 @@ describe('GET /p/:name/runs/:runId', () => {
 });
 
 describe('GET /p/:name/runs/:runId/:stepId', () => {
-  test('sirve el log escapado', async () => {
+  test('serves the escaped log', async () => {
     const { server, base } = await serve();
     try {
-      const html = stripStyles(await (await fetch(`${base}/p/demo/runs/${RUNNING_RUN_ID}/uno`)).text());
+      const html = stripStyles(await (await fetch(`${base}/p/demo/runs/${RUNNING_RUN_ID}/one`)).text());
       expect(html).toContain('&lt;b&gt;');
     } finally {
       server.stop(true);
     }
   });
 
-  test('?raw=1 lo sirve en texto plano, sin escapar', async () => {
+  test('?raw=1 serves it as plain text, unescaped', async () => {
     const { server, base } = await serve();
     try {
-      const res = await fetch(`${base}/p/demo/runs/${RUNNING_RUN_ID}/uno?raw=1`);
+      const res = await fetch(`${base}/p/demo/runs/${RUNNING_RUN_ID}/one?raw=1`);
       expect(res.headers.get('content-type')).toContain('text/plain');
       expect(await res.text()).toContain('<b>');
     } finally {
@@ -311,7 +310,7 @@ describe('GET /p/:name/runs/:runId/:stepId', () => {
     }
   });
 
-  test('un stepId que no está en el run es 404', async () => {
+  test('a stepId that is not in the run is 404', async () => {
     const { server, base } = await serve();
     try {
       const res = await fetch(`${base}/p/demo/runs/${RUNNING_RUN_ID}/${encodeURIComponent('../run')}`);
@@ -321,13 +320,12 @@ describe('GET /p/:name/runs/:runId/:stepId', () => {
     }
   });
 
-  // `run.steps[stepId] === undefined` es una búsqueda por la CADENA DE
-  // PROTOTIPOS: `constructor`, `toString`, `__proto__`... existen en
-  // cualquier objeto y no son `undefined`, así que devolvían 200 en vez de
-  // 404 pese a no ser pasos reales del run. No es una travesía, pero el
-  // comentario de al lado afirma "se valida contra las claves del run" y eso
-  // no es lo que hacía el código.
-  test('un stepId de la cadena de prototipos (constructor) es 404', async () => {
+  // `run.steps[stepId] === undefined` is a lookup through the PROTOTYPE CHAIN:
+  // `constructor`, `toString`, `__proto__`... exist on any object and are not
+  // `undefined`, so they returned 200 instead of 404 despite not being real
+  // steps of the run. It is not a traversal, but the comment next to it claims
+  // "validated against the run's keys" and that is not what the code did.
+  test('a stepId from the prototype chain (constructor) is 404', async () => {
     const { server, base } = await serve();
     try {
       const res = await fetch(`${base}/p/demo/runs/${RUNNING_RUN_ID}/constructor`);
@@ -337,30 +335,29 @@ describe('GET /p/:name/runs/:runId/:stepId', () => {
     }
   });
 
-  // Esta página SÍ debe suscribirse al vivo mientras el run está
-  // `running` — antes no lo hacía (`layout()` se llamaba sin `sse`), así que
-  // el evento `log` que manda `createRunStream` no tenía consumidor. Se
-  // comprueba que el script referencia el stream correcto Y que lleva su
-  // propio stepId para poder escoger su porción del log (commit siguiente
-  // en `sse.test.ts` comprueba que el evento la lleva de verdad).
-  test('se suscribe al stream del run mientras corre, con su propio stepId', async () => {
+  // This page DOES have to subscribe to the live view while the run is
+  // `running` — it didn't before (`layout()` was called without `sse`), so the
+  // `log` event that `createRunStream` sends had no consumer. It checks that
+  // the script references the right stream AND that it carries its own stepId
+  // to pick its portion of the log (the next commit in `sse.test.ts` checks
+  // that the event really carries it).
+  test('it subscribes to the run stream while it runs, with its own stepId', async () => {
     const { server, base } = await serve();
     try {
-      const html = await (await fetch(`${base}/p/demo/runs/${RUNNING_RUN_ID}/uno`)).text();
+      const html = await (await fetch(`${base}/p/demo/runs/${RUNNING_RUN_ID}/one`)).text();
       expect(html).toContain(`new EventSource("/sse/demo/${RUNNING_RUN_ID}")`);
-      expect(html).toContain('payload.stepId !== "uno"');
+      expect(html).toContain('payload.stepId !== "one"');
     } finally {
       server.stop(true);
     }
   });
 });
 
-describe('solo GET', () => {
-  // La única regla de esta superficie es "toda ruta es GET, nada muta".
-  // Con el handler suelto de Bun, cualquier
-  // verbo cae en la misma respuesta 200 — no hace falta que exista un
-  // exploit concreto para que sea una violación de esa regla.
-  test('un POST a / no devuelve la página', async () => {
+describe('GET only', () => {
+  // This surface's one rule is "every route is GET, nothing mutates". With
+  // Bun's bare handler, any verb falls into the same 200 response — no
+  // concrete exploit needs to exist for it to be a violation of that rule.
+  test('a POST to / does not return the page', async () => {
     const { server, base } = await serve();
     try {
       const res = await fetch(`${base}/`, { method: 'POST' });

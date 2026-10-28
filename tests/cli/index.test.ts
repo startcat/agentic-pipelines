@@ -14,7 +14,7 @@ function writePipeline(name: string, yaml: string) {
 function latestRunId(pipeline: string): string {
   const entries = readdirSync(join(root, '.runs', pipeline)).sort();
   const last = entries[entries.length - 1];
-  if (!last) throw new Error(`no hay runs de "${pipeline}"`);
+  if (!last) throw new Error(`no runs of "${pipeline}"`);
   return last;
 }
 
@@ -38,8 +38,8 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-describe('localización del repo independiente del directorio de invocación', () => {
-  test('--repo apunta a un repo fuera del cwd actual', async () => {
+describe('repo location independent of the invocation directory', () => {
+  test('--repo points to a repo outside the current cwd', async () => {
     writePipeline('ok', 'name: ok\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n');
     const elsewhere = mkdtempSync(join(tmpdir(), 'ap-elsewhere-'));
     try {
@@ -60,7 +60,7 @@ describe('localización del repo independiente del directorio de invocación', (
     }
   });
 
-  test('PIPELINES_REPO apunta a un repo fuera del cwd actual', async () => {
+  test('PIPELINES_REPO points to a repo outside the current cwd', async () => {
     writePipeline('ok', 'name: ok\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n');
     const elsewhere = mkdtempSync(join(tmpdir(), 'ap-elsewhere-'));
     try {
@@ -81,7 +81,7 @@ describe('localización del repo independiente del directorio de invocación', (
     }
   });
 
-  test('--repo tiene precedencia sobre PIPELINES_REPO', async () => {
+  test('--repo takes precedence over PIPELINES_REPO', async () => {
     writePipeline('ok', 'name: ok\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n');
     const decoy = mkdtempSync(join(tmpdir(), 'ap-decoy-'));
     writeFileSync(join(decoy, 'pipelines.yaml'), 'channels: {}\n');
@@ -96,8 +96,8 @@ describe('localización del repo independiente del directorio de invocación', (
         new Response(proc.stdout).text(),
         new Response(proc.stderr).text(),
       ]);
-      // Si PIPELINES_REPO (decoy, sin el pipeline "ok") ganara, esto fallaría
-      // nombrando los pipelines disponibles de decoy (ninguno).
+      // If PIPELINES_REPO (decoy, without the pipeline "ok") won, this would
+      // fail naming the available pipelines of decoy (none).
       expect(await proc.exited).toBe(0);
       expect(stdout + stderr).toContain('ok');
     } finally {
@@ -107,105 +107,104 @@ describe('localización del repo independiente del directorio de invocación', (
 });
 
 describe('pipelines validate', () => {
-  test('sale con 0 en un pipeline correcto', async () => {
+  test('exits 0 on a correct pipeline', async () => {
     writePipeline('ok', 'name: ok\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n');
     const { code, out } = await cli(['validate', 'ok']);
     expect(code).toBe(0);
     expect(out).toContain('ok');
   });
 
-  test('sale con 1 y explica el problema en un pipeline inválido', async () => {
-    writePipeline('malo', 'name: malo\nversion: 1\nsteps: []\n');
-    const { code, out } = await cli(['validate', 'malo']);
+  test('exits 1 and explains the problem on an invalid pipeline', async () => {
+    writePipeline('bad', 'name: bad\nversion: 1\nsteps: []\n');
+    const { code, out } = await cli(['validate', 'bad']);
     expect(code).toBe(1);
     expect(out).toContain('description');
   });
 
-  test('sale con 1 si un prompt referencia un param no declarado', async () => {
-    mkdirSync(join(root, 'pipelines', 'con-prompt'), { recursive: true });
+  test('exits 1 if a prompt references an undeclared param', async () => {
+    mkdirSync(join(root, 'pipelines', 'with-prompt'), { recursive: true });
     writeFileSync(
-      join(root, 'pipelines', 'con-prompt', 'pipeline.yaml'),
-      'name: con-prompt\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    agent: w\n    prompt: a.md\n',
+      join(root, 'pipelines', 'with-prompt', 'pipeline.yaml'),
+      'name: with-prompt\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    agent: w\n    prompt: a.md\n',
     );
-    writeFileSync(join(root, 'pipelines', 'con-prompt', 'a.md'), 'Sobre {{params.no_existe}}.');
+    writeFileSync(join(root, 'pipelines', 'with-prompt', 'a.md'), 'About {{params.not_declared}}.');
 
-    const { code, out } = await cli(['validate', 'con-prompt']);
+    const { code, out } = await cli(['validate', 'with-prompt']);
     expect(code).toBe(1);
     expect(out).toContain('a');
-    expect(out).toContain('no_existe');
+    expect(out).toContain('not_declared');
   });
 
-  test('sale con 0 si el prompt solo referencia params/outputs declarados', async () => {
-    mkdirSync(join(root, 'pipelines', 'con-prompt-ok'), { recursive: true });
+  test('exits 0 if the prompt only references declared params/outputs', async () => {
+    mkdirSync(join(root, 'pipelines', 'with-prompt-ok'), { recursive: true });
     writeFileSync(
-      join(root, 'pipelines', 'con-prompt-ok', 'pipeline.yaml'),
-      'name: con-prompt-ok\ndescription: d\nversion: 1\nparams:\n  tema:\n    description: t\nsteps:\n  - id: a\n    agent: w\n    prompt: a.md\n',
+      join(root, 'pipelines', 'with-prompt-ok', 'pipeline.yaml'),
+      'name: with-prompt-ok\ndescription: d\nversion: 1\nparams:\n  topic:\n    description: t\nsteps:\n  - id: a\n    agent: w\n    prompt: a.md\n',
     );
-    writeFileSync(join(root, 'pipelines', 'con-prompt-ok', 'a.md'), 'Resumen sobre {{params.tema}}.');
+    writeFileSync(join(root, 'pipelines', 'with-prompt-ok', 'a.md'), 'Summary about {{params.topic}}.');
 
-    const { code } = await cli(['validate', 'con-prompt-ok']);
+    const { code } = await cli(['validate', 'with-prompt-ok']);
     expect(code).toBe(0);
   });
 
-  test('sale con 1 con un mensaje claro si falta el fichero de prompt', async () => {
-    mkdirSync(join(root, 'pipelines', 'sin-prompt'), { recursive: true });
+  test('exits 1 with a clear message if the prompt file is missing', async () => {
+    mkdirSync(join(root, 'pipelines', 'no-prompt'), { recursive: true });
     writeFileSync(
-      join(root, 'pipelines', 'sin-prompt', 'pipeline.yaml'),
-      'name: sin-prompt\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    agent: w\n    prompt: no-existe.md\n',
+      join(root, 'pipelines', 'no-prompt', 'pipeline.yaml'),
+      'name: no-prompt\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    agent: w\n    prompt: missing.md\n',
     );
 
-    const { code, out } = await cli(['validate', 'sin-prompt']);
+    const { code, out } = await cli(['validate', 'no-prompt']);
     expect(code).toBe(1);
     expect(out).toContain('a');
-    expect(out).toContain('no-existe.md');
+    expect(out).toContain('missing.md');
   });
 
-  test('sale con 1 si un paso always referencia un paso inexistente', async () => {
+  test('exits 1 if an always step references a nonexistent step', async () => {
     writePipeline(
-      'con-always-malo',
-      'name: con-always-malo\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\nalways:\n  - id: cleanup\n    run: "git -C {{fantasma.path}} reset --hard"\n',
+      'with-always-bad',
+      'name: with-always-bad\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\nalways:\n  - id: cleanup\n    run: "git -C {{ghost-step.path}} reset --hard"\n',
     );
 
-    const { code, out } = await cli(['validate', 'con-always-malo']);
+    const { code, out } = await cli(['validate', 'with-always-bad']);
     expect(code).toBe(1);
     expect(out).toContain('cleanup');
-    expect(out).toContain('fantasma');
+    expect(out).toContain('ghost-step');
   });
 
-  test('sale con 1 si un paso always referencia un param no declarado', async () => {
+  test('exits 1 if an always step references an undeclared param', async () => {
     writePipeline(
-      'con-always-param-malo',
-      'name: con-always-param-malo\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\nalways:\n  - id: cleanup\n    run: "echo {{params.no_existe}}"\n',
+      'with-always-bad-param',
+      'name: with-always-bad-param\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\nalways:\n  - id: cleanup\n    run: "echo {{params.not_declared}}"\n',
     );
 
-    const { code, out } = await cli(['validate', 'con-always-param-malo']);
+    const { code, out } = await cli(['validate', 'with-always-bad-param']);
     expect(code).toBe(1);
     expect(out).toContain('cleanup');
-    expect(out).toContain('no_existe');
+    expect(out).toContain('not_declared');
   });
 
-  test('sale con 1 si notify.channel no existe en pipelines.yaml', async () => {
+  test('exits 1 if notify.channel does not exist in pipelines.yaml', async () => {
     writePipeline(
-      'con-notify-fantasma',
-      'name: con-notify-fantasma\ndescription: d\nversion: 1\nnotify:\n  on: [success]\n  channel: ghost\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
+      'with-notify-ghost',
+      'name: with-notify-ghost\ndescription: d\nversion: 1\nnotify:\n  on: [success]\n  channel: ghost\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
     );
 
-    const { code, out } = await cli(['validate', 'con-notify-fantasma']);
+    const { code, out } = await cli(['validate', 'with-notify-ghost']);
     expect(code).toBe(1);
     expect(out).toContain('ghost');
   });
 });
 
 describe('pipelines run', () => {
-  test('ejecuta y deja el registro en .runs/', async () => {
-    // Una versión anterior usaba `run: 'echo {"n":1}'`: un escalar YAML de
-    // comilla simple cuyo contenido pasa TAL CUAL a `sh -c`. Ahí, las
-    // comillas dobles sin proteger son sintaxis de shell (se comen a sí
-    // mismas) y el stdout real es `{n:1}`, JSON inválido — comprobado
-    // reproduciendo el fallo antes de este arreglo. `tests/runner/shell.test.ts`
-    // ya documenta y evita este mismo problema
-    // envolviendo el JSON en comillas simples adicionales para que sobrevivan
-    // al shell; se aplica aquí el mismo patrón.
+  test('runs and leaves the record in .runs/', async () => {
+    // An earlier version used `run: 'echo {"n":1}'`: a single-quoted YAML
+    // scalar whose content goes AS IS to `sh -c`. There, unprotected double
+    // quotes are shell syntax (they eat themselves) and the real stdout is
+    // `{n:1}`, invalid JSON — checked by reproducing the failure before this
+    // fix. `tests/runner/shell.test.ts` already documents and avoids this same
+    // problem by wrapping the JSON in additional single quotes so they survive
+    // the shell; the same pattern is applied here.
     writePipeline(
       'demo',
       'name: demo\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "echo \'{\\"n\\":1}\'"\n    outputs: { n: number }\n',
@@ -216,13 +215,13 @@ describe('pipelines run', () => {
     expect(out).toContain('success');
   });
 
-  // `run --force` existe porque verificar el motor en vivo exigía esperar a
-  // que la guarda dejara de morder: con `throttle: 46h` sobre un cron diario,
-  // una comprobación a mano se saltaba y no había forma de decir "ya lo sé,
-  // ejecútalo igual". Que el registro quede marcado es la otra mitad: un run
-  // forzado NO demuestra que las guardas habrían dejado pasar, y el historial
-  // no debe poder confundirse con uno que pasó por su propio pie.
-  test('--force ejecuta pese a una guarda que falla, y marca el run como forzado', async () => {
+  // `run --force` exists because verifying the engine live required waiting
+  // for the guard to stop biting: with `throttle: 46h` on a daily cron, a
+  // manual check got skipped and there was no way to say "I know, run it
+  // anyway". Having the record marked is the other half: a forced run does NOT
+  // prove that the guards would have let it through, and the history must not
+  // be mistakable for one that passed on its own.
+  test('--force runs despite a failing guard, and marks the run as forced', async () => {
     writePipeline(
       'demo-force',
       'name: demo-force\ndescription: d\nversion: 1\nwhen:\n  - shell: "false"\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
@@ -236,7 +235,7 @@ describe('pipelines run', () => {
     expect(run.forced).toBe(true);
   });
 
-  test('un run normal no lleva la marca de forzado', async () => {
+  test('a normal run does not carry the forced mark', async () => {
     writePipeline(
       'demo-normal',
       'name: demo-normal\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
@@ -249,66 +248,66 @@ describe('pipelines run', () => {
     expect(run.forced).toBeUndefined();
   });
 
-  test('status señala los runs forzados', async () => {
+  test('status flags forced runs', async () => {
     writePipeline(
-      'demo-marca',
-      'name: demo-marca\ndescription: d\nversion: 1\nwhen:\n  - shell: "false"\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
+      'demo-mark',
+      'name: demo-mark\ndescription: d\nversion: 1\nwhen:\n  - shell: "false"\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
     );
-    await cli(['run', 'demo-marca', '--force']);
-    const { out } = await cli(['status', 'demo-marca']);
-    expect(out).toContain('(guardas omitidas)');
+    await cli(['run', 'demo-mark', '--force']);
+    const { out } = await cli(['status', 'demo-mark']);
+    expect(out).toContain('(guards skipped)');
   });
 
-  test('un run saltado sale con código 0 y se marca skipped', async () => {
+  test('a skipped run exits with code 0 and is marked skipped', async () => {
     writePipeline(
-      'saltado',
-      'name: saltado\ndescription: d\nversion: 1\nwhen:\n  - shell: "false"\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
+      'skipped',
+      'name: skipped\ndescription: d\nversion: 1\nwhen:\n  - shell: "false"\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
     );
-    const { code, out } = await cli(['run', 'saltado']);
+    const { code, out } = await cli(['run', 'skipped']);
     expect(code).toBe(0);
-    expect(out).toContain('saltado');
+    expect(out).toContain('skipped');
   });
 
-  test('un fallo de paso sale con código 1', async () => {
-    writePipeline('falla', 'name: falla\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: exit 1\n');
-    const { code } = await cli(['run', 'falla']);
+  test('a step failure exits with code 1', async () => {
+    writePipeline('fails', 'name: fails\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: exit 1\n');
+    const { code } = await cli(['run', 'fails']);
     expect(code).toBe(1);
   });
 
-  test('falla antes de ejecutar si falta un param obligatorio', async () => {
+  test('fails before running if a required param is missing', async () => {
     writePipeline(
-      'conparam',
-      'name: conparam\ndescription: d\nversion: 1\nparams:\n  ruta:\n    description: r\n    required: true\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
+      'withparam',
+      'name: withparam\ndescription: d\nversion: 1\nparams:\n  path:\n    description: r\n    required: true\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
     );
-    const { code, out } = await cli(['run', 'conparam']);
+    const { code, out } = await cli(['run', 'withparam']);
     expect(code).toBe(1);
-    expect(out).toContain('ruta');
+    expect(out).toContain('path');
   });
 
-  test('--set proporciona el param que falta', async () => {
+  test('--set provides the missing param', async () => {
     writePipeline(
-      'conparam',
-      'name: conparam\ndescription: d\nversion: 1\nparams:\n  ruta:\n    description: r\n    required: true\nsteps:\n  - id: a\n    type: shell\n    run: echo {{params.ruta}}\n',
+      'withparam',
+      'name: withparam\ndescription: d\nversion: 1\nparams:\n  path:\n    description: r\n    required: true\nsteps:\n  - id: a\n    type: shell\n    run: echo {{params.path}}\n',
     );
-    const { code } = await cli(['run', 'conparam', '--set', 'ruta=/tmp']);
+    const { code } = await cli(['run', 'withparam', '--set', 'path=/tmp']);
     expect(code).toBe(0);
   });
 });
 
 describe('pipelines doctor', () => {
-  test('informa de una dependencia ausente y sale con 1', async () => {
+  test('reports a missing dependency and exits 1', async () => {
     writePipeline(
-      'necesita',
-      'name: necesita\ndescription: d\nversion: 1\nrequires:\n  bin: [binario-que-no-existe-xyz]\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
+      'needs',
+      'name: needs\ndescription: d\nversion: 1\nrequires:\n  bin: [nonexistent-binary-xyz]\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
     );
-    const { code, out } = await cli(['doctor', 'necesita']);
+    const { code, out } = await cli(['doctor', 'needs']);
     expect(code).toBe(1);
-    expect(out).toContain('binario-que-no-existe-xyz');
+    expect(out).toContain('nonexistent-binary-xyz');
   });
 });
 
 describe('pipelines show', () => {
-  test('imprime el run completo en JSON', async () => {
+  test('prints the whole run as JSON', async () => {
     writePipeline(
       'demo',
       'name: demo\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "echo \'{\\"n\\":1}\'"\n    outputs: { n: number }\n',
@@ -325,7 +324,7 @@ describe('pipelines show', () => {
     expect(parsed.steps.a.outputs).toEqual({ n: 1 });
   });
 
-  test('con un tercer argumento imprime solo ese paso', async () => {
+  test('with a third argument it prints only that step', async () => {
     writePipeline(
       'demo',
       'name: demo\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "echo \'{\\"n\\":1}\'"\n    outputs: { n: number }\n',
@@ -341,17 +340,17 @@ describe('pipelines show', () => {
     );
   });
 
-  test('un paso inexistente imprime un objeto vacío, no falla', async () => {
+  test('a nonexistent step prints an empty object, it does not fail', async () => {
     writePipeline('demo', 'name: demo\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n');
     await cli(['run', 'demo']);
     const runId = latestRunId('demo');
 
-    const { code, out } = await cli(['show', 'demo', runId, 'no-existe']);
+    const { code, out } = await cli(['show', 'demo', runId, 'nonexistent']);
     expect(code).toBe(0);
     expect(JSON.parse(out)).toEqual({});
   });
 
-  test('un run-id inexistente sale con 1 y un mensaje', async () => {
+  test('a nonexistent run-id exits with 1 and a message', async () => {
     writePipeline('demo', 'name: demo\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n');
     const { code, out } = await cli(['show', 'demo', '2020-01-01T00-00-00-000Z']);
     expect(code).toBe(1);
@@ -359,8 +358,8 @@ describe('pipelines show', () => {
   });
 });
 
-describe('notify: se ejecuta de verdad', () => {
-  test('un run success con notify.on: [success] invoca el canal', async () => {
+describe('notify: it really runs', () => {
+  test('a success run with notify.on: [success] invokes the channel', async () => {
     writeFileSync(
       join(root, 'pipelines.yaml'),
       `channels:\n  marker:\n    type: shell\n    run: "echo $PIPELINES_NOTIFY_STATUS > notify-marker.txt"\n`,
@@ -374,10 +373,10 @@ describe('notify: se ejecuta de verdad', () => {
     expect(await Bun.file(join(root, 'notify-marker.txt')).text()).toBe('success\n');
   });
 
-  test('el run.json guarda el rastro del canal: código y salida', async () => {
+  test('run.json keeps the trace of the channel: code and output', async () => {
     writeFileSync(
       join(root, 'pipelines.yaml'),
-      `channels:\n  marker:\n    type: shell\n    run: "echo enviat-$PIPELINES_NOTIFY_STATUS; echo detall >&2"\n`,
+      `channels:\n  marker:\n    type: shell\n    run: "echo sent-$PIPELINES_NOTIFY_STATUS; echo detail >&2"\n`,
     );
     writePipeline(
       'demo',
@@ -389,32 +388,32 @@ describe('notify: se ejecuta de verdad', () => {
     const [runId] = readdirSync(runsDir).filter((d) => !d.startsWith('.'));
     const record = JSON.parse(readFileSync(join(runsDir, runId!, 'run.json'), 'utf8'));
     expect(record.notify).toMatchObject({ channel: 'marker', code: 0 });
-    expect(record.notify.log).toContain('enviat-success');
-    expect(record.notify.log).toContain('detall');
+    expect(record.notify.log).toContain('sent-success');
+    expect(record.notify.log).toContain('detail');
   });
 
-  test('un canal que falla también deja su rastro en run.json', async () => {
+  test('a failing channel also leaves its trace in run.json', async () => {
     writeFileSync(
       join(root, 'pipelines.yaml'),
-      `channels:\n  roto:\n    type: shell\n    run: "echo motiu-del-canal >&2; exit 3"\n`,
+      `channels:\n  broken:\n    type: shell\n    run: "echo channel-reason >&2; exit 3"\n`,
     );
     writePipeline(
       'demo',
-      'name: demo\ndescription: d\nversion: 1\nnotify:\n  on: [success]\n  channel: roto\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
+      'name: demo\ndescription: d\nversion: 1\nnotify:\n  on: [success]\n  channel: broken\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
     );
     const { code } = await cli(['run', 'demo']);
     expect(code).toBe(0);
     const runsDir = join(root, '.runs', 'demo');
     const [runId] = readdirSync(runsDir).filter((d) => !d.startsWith('.'));
     const record = JSON.parse(readFileSync(join(runsDir, runId!, 'run.json'), 'utf8'));
-    expect(record.notify).toMatchObject({ channel: 'roto', code: 3 });
-    expect(record.notify.log).toContain('motiu-del-canal');
+    expect(record.notify).toMatchObject({ channel: 'broken', code: 3 });
+    expect(record.notify.log).toContain('channel-reason');
   });
 
-  test('un run failed con notify.on: [success] no invoca el canal', async () => {
+  test('a failed run with notify.on: [success] does not invoke the channel', async () => {
     writeFileSync(
       join(root, 'pipelines.yaml'),
-      `channels:\n  marker:\n    type: shell\n    run: "echo tocado > notify-marker.txt"\n`,
+      `channels:\n  marker:\n    type: shell\n    run: "echo touched > notify-marker.txt"\n`,
     );
     writePipeline(
       'demo',
@@ -425,24 +424,24 @@ describe('notify: se ejecuta de verdad', () => {
     expect(await Bun.file(join(root, 'notify-marker.txt')).exists()).toBe(false);
   });
 
-  test('un fallo del propio canal no cambia el exit code del run', async () => {
+  test('a failure of the channel itself does not change the exit code of the run', async () => {
     writeFileSync(
       join(root, 'pipelines.yaml'),
-      `channels:\n  roto:\n    type: shell\n    run: "exit 1"\n`,
+      `channels:\n  broken:\n    type: shell\n    run: "exit 1"\n`,
     );
     writePipeline(
       'demo',
-      'name: demo\ndescription: d\nversion: 1\nnotify:\n  on: [success]\n  channel: roto\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
+      'name: demo\ndescription: d\nversion: 1\nnotify:\n  on: [success]\n  channel: broken\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
     );
     const { code, out } = await cli(['run', 'demo']);
     expect(code).toBe(0);
-    expect(out).toContain('notify falló');
+    expect(out).toContain('notify failed');
   });
 });
 
-describe('validate — referencias de steps[].cwd/additional_dirs/when', () => {
-  test('un {{secrets.X}} en additional_dirs hace fallar validate', async () => {
-    writeFileSync(join(root, '.env'), 'API_KEY=una-clave-larga-de-verdad\n');
+describe('validate — references in steps[].cwd/additional_dirs/when', () => {
+  test('a {{secrets.X}} in additional_dirs makes validate fail', async () => {
+    writeFileSync(join(root, '.env'), 'API_KEY=a-really-long-key\n');
     writePipeline(
       'demo',
       'name: demo\ndescription: d\nversion: 1\nrequires:\n  env: [API_KEY]\nsteps:\n  - id: a\n    agent: writer\n    prompt: p.md\n    additional_dirs: ["{{secrets.API_KEY}}"]\n',
@@ -454,18 +453,18 @@ describe('validate — referencias de steps[].cwd/additional_dirs/when', () => {
   });
 });
 
-// Un chequeo `mcp-schema` (deriva de esquema de un servidor MCP) es
-// puramente informativo de `doctor` — nunca debió bloquear `run`. Antes de
-// este arreglo, `run` y `doctor` compartían literalmente `preflight()` y el
-// mismo criterio de gating (`!report.ok`).
+// An `mcp-schema` check (schema drift of an MCP server) is purely
+// informational for `doctor` — it should never have blocked `run`. Before
+// this fix, `run` and `doctor` literally shared `preflight()` and the same
+// gating criterion (`!report.ok`).
 //
-// El "servidor MCP" real de estos dos tests es un script propio que habla el
-// JSON-RPC mínimo que `listMcpToolsViaStdio` necesita, sin depender de
-// `npx`/`@playwright/mcp` reales ni de red — determinista y rápido. Su
-// `tools/list` devuelve `browser_take_screenshot` SIN el campo `filename`
-// (el único que `TOOL_FS_PROFILES` vigila para esa tool), así que el
-// chequeo `mcp-schema` falla siempre, de forma predecible.
-describe('run vs. doctor — un fallo mcp-schema no bloquea run, pero sí doctor', () => {
+// The real "MCP server" of these two tests is a script of our own that speaks
+// the minimal JSON-RPC that `listMcpToolsViaStdio` needs, without depending
+// on real `npx`/`@playwright/mcp` or on the network — deterministic and fast.
+// Its `tools/list` returns `browser_take_screenshot` WITHOUT the `filename`
+// field (the only one `TOOL_FS_PROFILES` watches for that tool), so the
+// `mcp-schema` check always fails, predictably.
+describe('run vs. doctor — an mcp-schema failure does not block run, but does block doctor', () => {
   function writeFakeMcpServer(): string {
     const path = join(root, 'fake-mcp-server.js');
     writeFileSync(
@@ -491,8 +490,8 @@ process.stdin.on('data', (chunk) => {
         result: {
           tools: [{
             name: 'browser_take_screenshot',
-            // Sin 'filename' a propósito: el único campo que TOOL_FS_PROFILES
-            // vigila para esta tool — dispara mcp-schema: ok:false siempre.
+            // No 'filename' on purpose: the only field TOOL_FS_PROFILES watches
+            // for this tool — it always triggers mcp-schema: ok:false.
             inputSchema: { properties: { element: {}, target: {}, type: {}, fullPage: {}, scale: {} } },
           }],
         },
@@ -509,48 +508,49 @@ process.stdin.on('data', (chunk) => {
     writePipeline(
       'demo',
       `name: demo\ndescription: d\nversion: 1\n` +
-        // Guarda siempre falsa: si \`run\` llega a evaluarla (en vez de
-        // cortar antes en preflight), la observable es un run 'skipped',
-        // no una ejecución real del paso agent — así este test no depende
-        // de la SDK real ni de red para demostrar que preflight no bloqueó.
+        // Always-false guard: if \`run\` gets to evaluate it (instead of
+        // cutting short in preflight), the observable is a 'skipped' run,
+        // not a real execution of the agent step — so this test depends on
+        // neither the real SDK nor the network to show that preflight did not
+        // block.
         `when:\n  - shell: "false"\n` +
         `mcp_servers:\n  pw:\n    command: bun\n    args: ["${scriptPath}"]\n    kind: playwright\n` +
         `steps:\n  - id: a\n    agent: writer\n    prompt: p.md\n    mcp_servers: [pw]\n    tools: [mcp__pw__browser_take_screenshot]\n`,
     );
   }
 
-  test('run: un fallo mcp-schema en solitario no bloquea — el run llega a evaluarse (se salta por la guarda, no por preflight)', async () => {
+  test('run: an mcp-schema failure on its own does not block — the run does get evaluated (skipped by the guard, not by preflight)', async () => {
     const scriptPath = writeFakeMcpServer();
     writeDriftPipeline(scriptPath);
     const { code, out } = await cli(['run', 'demo']);
-    // Antes del arreglo: "Faltan dependencias — no se ejecuta nada.", código 1,
-    // NINGÚN run creado — preflight cortaba antes de llegar a la guarda.
+    // Before the fix: "Missing dependencies — nothing will run.", code 1,
+    // NO run created — preflight cut short before reaching the guard.
     expect(code).toBe(0);
-    expect(out).toContain('saltado');
-    expect(out).not.toContain('Faltan dependencias');
-    // El aviso no bloqueante sigue siendo visible para quien opera el pipeline.
-    expect(out).toContain('aviso');
+    expect(out).toContain('skipped');
+    expect(out).not.toContain('Missing dependencies');
+    // The non-blocking warning is still visible to whoever operates the pipeline.
+    expect(out).toContain('warning');
     expect(out).toContain('mcp-schema');
   });
 
-  test('doctor: el mismo fallo mcp-schema SÍ bloquea — comportamiento sin cambios', async () => {
+  test('doctor: the same mcp-schema failure DOES block — unchanged behavior', async () => {
     const scriptPath = writeFakeMcpServer();
     writeDriftPipeline(scriptPath);
     const { code, out } = await cli(['doctor', 'demo']);
     expect(code).toBe(1);
     expect(out).toContain('mcp-schema');
     expect(out).toContain('pw');
-    expect(out).toContain('no se ejecutará');
+    expect(out).toContain('it will not run');
   });
 });
 
-// Diez noches seguidas de `skipped` sin que nadie se enterara: `dispatchNotify`
-// solo se invocaba en el camino de fin normal, así que el guard-skip y el
-// lock-blocked cerraban el run y salían en silencio. Ahora notifican todos los
-// caminos, y es el pipeline quien decide con `on:`/`stale_after` si eso genera
-// ruido o no.
-describe('notify: en los caminos que saltan el run', () => {
-  test('un run saltado por guarda invoca el canal si el pipeline está stale', async () => {
+// Ten nights in a row of `skipped` without anyone finding out: `dispatchNotify`
+// was only invoked on the normal-end path, so guard-skip and lock-blocked
+// closed the run and left silently. Now every path notifies, and it is the
+// pipeline that decides with `on:`/`stale_after` whether that makes noise or
+// not.
+describe('notify: on the paths that skip the run', () => {
+  test('a run skipped by a guard invokes the channel if the pipeline is stale', async () => {
     writeFileSync(
       join(root, 'pipelines.yaml'),
       `channels:\n  marker:\n    type: shell\n    run: "echo $PIPELINES_NOTIFY_STATUS/$PIPELINES_NOTIFY_STALE > notify-marker.txt"\n`,
@@ -565,10 +565,10 @@ describe('notify: en los caminos que saltan el run', () => {
     expect(await Bun.file(join(root, 'notify-marker.txt')).text()).toBe('skipped/1\n');
   });
 
-  test('un run saltado por guarda NO invoca el canal si el pipeline no declara stale_after', async () => {
+  test('a run skipped by a guard does NOT invoke the channel if the pipeline does not declare stale_after', async () => {
     writeFileSync(
       join(root, 'pipelines.yaml'),
-      `channels:\n  marker:\n    type: shell\n    run: "echo tocado > notify-marker.txt"\n`,
+      `channels:\n  marker:\n    type: shell\n    run: "echo touched > notify-marker.txt"\n`,
     );
     writePipeline(
       'demo',
@@ -579,7 +579,7 @@ describe('notify: en los caminos que saltan el run', () => {
     expect(await Bun.file(join(root, 'notify-marker.txt')).exists()).toBe(false);
   });
 
-  test('un run correcto apaga el aviso de stale aunque el pipeline lo declare', async () => {
+  test('a successful run turns off the stale warning even if the pipeline declares it', async () => {
     writeFileSync(
       join(root, 'pipelines.yaml'),
       `channels:\n  marker:\n    type: shell\n    run: "echo $PIPELINES_NOTIFY_STATUS/$PIPELINES_NOTIFY_STALE > notify-marker.txt"\n`,
@@ -594,8 +594,8 @@ describe('notify: en los caminos que saltan el run', () => {
   });
 });
 
-describe('doctor — los checks de plataforma no bloquean', () => {
-  test('con linger en rojo (systemd forzado), doctor sale con código 0 y lo muestra', async () => {
+describe('doctor — platform checks do not block', () => {
+  test('with linger red (systemd forced), doctor exits with code 0 and shows it', async () => {
     writePipeline('ok', 'name: ok\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n');
     const bin = (name: string, body: string) => {
       const p = join(root, name);
@@ -624,16 +624,16 @@ describe('doctor — los checks de plataforma no bloquean', () => {
     const out = stdout + stderr;
     expect(out).toContain('linger');
     expect(out).toContain('sudo loginctl enable-linger');
-    // Con un check de plataforma en rojo, «Todo listo» sería mentira.
-    expect(out).not.toContain('Todo listo');
-    expect(out).toContain('Listo para ejecutar; para instalar falta: linger.');
+    // With a red platform check, "All set" would be a lie.
+    expect(out).not.toContain('All set');
+    expect(out).toContain('Ready to run; to install, still missing: linger.');
   });
 
-  test('sin programador para la plataforma, doctor no lanza y se salta los checks de plataforma', async () => {
+  test('with no scheduler for the platform, doctor does not throw and skips the platform checks', async () => {
     writePipeline('ok', 'name: ok\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n');
     const proc = Bun.spawn(['bun', CLI, 'doctor', 'ok'], {
       cwd: root,
-      // Un valor desconocido hace que `schedulerFor()` lance, igual que en FreeBSD.
+      // An unknown value makes `schedulerFor()` throw, just as on FreeBSD.
       env: { ...process.env, ANTHROPIC_API_KEY: 'sk-test', PIPELINES_SCHEDULER: 'freebsd' },
       stdout: 'pipe',
       stderr: 'pipe',
@@ -644,7 +644,7 @@ describe('doctor — los checks de plataforma no bloquean', () => {
     ]);
     expect(await proc.exited).toBe(0);
     const out = stdout + stderr;
-    expect(out).toContain('Todo listo.');
+    expect(out).toContain('All set.');
     expect(out).not.toContain('platform');
   });
 });

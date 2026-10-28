@@ -3,7 +3,7 @@ import { parsePipeline } from '../../src/schema/pipeline.ts';
 import { buildGraph, GraphError } from '../../src/graph/build.ts';
 
 describe('buildGraph', () => {
-  test('deriva dependencias del campo inputs', () => {
+  test('derives dependencies from the inputs field', () => {
     const g = buildGraph(
       parsePipeline(`
 name: demo
@@ -25,7 +25,7 @@ steps:
     expect(g.order).toEqual(['scan', 'draft']);
   });
 
-  test('deriva dependencias de referencias en run, when y cwd', () => {
+  test('derives dependencies from references in run, when and cwd', () => {
     const g = buildGraph(
       parsePipeline(`
 name: demo
@@ -45,14 +45,14 @@ steps:
     expect(g.dependencies.get('notify')).toEqual(new Set(['scan']));
   });
 
-  // `checkStepReferences` (graph/prompts.ts) SÍ valida y acepta un
-  // `{{steps.x.field}}` dentro de `additional_dirs`, pero sin esta arista el
-  // grafo no sabía que el paso dependía de él — `additional_dirs: [scan.dir]`
-  // pasaba `pipelines validate` sin aviso y podía ejecutarse ANTES que
-  // "scan", produciendo un "Referencia sin resolver" en tiempo de ejecución
-  // (`interpolate()`, `runAgentStep`) en vez de que el grafo ordenara los
-  // pasos correctamente.
-  test('deriva dependencias de una referencia en additional_dirs de un paso agent', () => {
+  // `checkStepReferences` (graph/prompts.ts) DOES validate and accept a
+  // `{{steps.x.field}}` inside `additional_dirs`, but without this edge the
+  // graph did not know the step depended on it — `additional_dirs:
+  // [scan.dir]` passed `pipelines validate` with no warning and could run
+  // BEFORE "scan", producing an "Unresolved reference" at run time
+  // (`interpolate()`, `runAgentStep`) instead of the graph ordering the
+  // steps correctly.
+  test('derives dependencies from a reference in additional_dirs of an agent step', () => {
     const g = buildGraph(
       parsePipeline(`
 name: demo
@@ -74,7 +74,7 @@ steps:
     expect(g.order).toEqual(['scan', 'review']);
   });
 
-  test('ignora las referencias a params al construir el grafo', () => {
+  test('ignores references to params when building the graph', () => {
     const g = buildGraph(
       parsePipeline(`
 name: demo
@@ -91,7 +91,7 @@ steps:
     expect(g.dependencies.get('a')).toEqual(new Set());
   });
 
-  test('mantiene el orden declarado entre pasos independientes', () => {
+  test('keeps the declared order among independent steps', () => {
     const g = buildGraph(
       parsePipeline(`
 name: demo
@@ -112,7 +112,7 @@ steps:
     expect(g.order).toEqual(['a', 'b', 'c']);
   });
 
-  test('detecta un ciclo y nombra los pasos implicados', () => {
+  test('detects a cycle and names the steps involved', () => {
     try {
       buildGraph(
         parsePipeline(`
@@ -130,7 +130,7 @@ steps:
     outputs: { x: string }
 `),
       );
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(GraphError);
       const text = (err as GraphError).issues.join(' ');
@@ -139,7 +139,7 @@ steps:
     }
   });
 
-  test('rechaza una referencia a un paso inexistente', () => {
+  test('rejects a reference to a nonexistent step', () => {
     expect(() =>
       buildGraph(
         parsePipeline(`
@@ -149,13 +149,13 @@ version: 1
 steps:
   - id: a
     type: shell
-    run: echo {{fantasma.x}}
+    run: echo {{ghost.x}}
 `),
       ),
-    ).toThrow(/fantasma/);
+    ).toThrow(/ghost/);
   });
 
-  test('rechaza una referencia a un campo que el paso origen no declara', () => {
+  test('rejects a reference to a field the source step does not declare', () => {
     expect(() =>
       buildGraph(
         parsePipeline(`
@@ -175,7 +175,7 @@ steps:
     ).toThrow(/scan\.nope/);
   });
 
-  test('en un ciclo, no acusa a un paso meramente bloqueado de formar parte de él', () => {
+  test('in a cycle, does not accuse a merely blocked step of being part of it', () => {
     try {
       buildGraph(
         parsePipeline(`
@@ -197,25 +197,25 @@ steps:
     inputs: [a.x]
 `),
       );
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(GraphError);
       const issues = (err as GraphError).issues;
 
-      const cycleIssue = issues.find((i) => i.startsWith('ciclo de dependencias'));
+      const cycleIssue = issues.find((i) => i.startsWith('dependency cycle'));
       expect(cycleIssue).toBeDefined();
       const cycleMembers = cycleIssue!
-        .replace('ciclo de dependencias entre los pasos: ', '')
+        .replace('dependency cycle between the steps: ', '')
         .split(', ');
       expect(cycleMembers.sort()).toEqual(['a', 'b']);
 
-      const blockedIssue = issues.find((i) => i.startsWith('pasos bloqueados'));
+      const blockedIssue = issues.find((i) => i.startsWith('steps blocked'));
       expect(blockedIssue).toBeDefined();
       expect(blockedIssue).toContain('c');
     }
   });
 
-  test('acumula un input malformado junto a una referencia a un paso inexistente', () => {
+  test('accumulates a malformed input alongside a reference to a nonexistent step', () => {
     try {
       buildGraph(
         parsePipeline(`
@@ -225,24 +225,24 @@ version: 1
 steps:
   - id: a
     type: shell
-    run: echo {{fantasma.x}}
+    run: echo {{ghost.x}}
   - id: b
     type: shell
     run: 'true'
-    inputs: [huerfano]
+    inputs: [orphan]
 `),
       );
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(GraphError);
       const issues = (err as GraphError).issues;
-      expect(issues.some((i) => i.includes('fantasma'))).toBe(true);
-      expect(issues.some((i) => i.includes('huerfano'))).toBe(true);
+      expect(issues.some((i) => i.includes('ghost'))).toBe(true);
+      expect(issues.some((i) => i.includes('orphan'))).toBe(true);
       expect(issues.length).toBe(2);
     }
   });
 
-  test('reporta dos ciclos independientes por separado, sin fusionarlos ni etiquetarlos como bloqueo', () => {
+  test('reports two independent cycles separately, without merging them or labeling them as blocked', () => {
     try {
       buildGraph(
         parsePipeline(`
@@ -268,27 +268,27 @@ steps:
     outputs: { x: string }
 `),
       );
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(GraphError);
       const issues = (err as GraphError).issues;
 
-      const cycleIssues = issues.filter((i) => i.startsWith('ciclo de dependencias'));
+      const cycleIssues = issues.filter((i) => i.startsWith('dependency cycle'));
       expect(cycleIssues).toHaveLength(2);
 
       const cycleMembers = cycleIssues.map((i) =>
-        i.replace('ciclo de dependencias entre los pasos: ', '').split(', ').sort(),
+        i.replace('dependency cycle between the steps: ', '').split(', ').sort(),
       );
       expect(cycleMembers).toContainEqual(['a', 'b']);
       expect(cycleMembers).toContainEqual(['d', 'e']);
 
-      // Ningún paso queda etiquetado como "bloqueado": los cuatro son parte
-      // de un ciclo (el suyo), ninguno depende meramente de otro.
-      expect(issues.some((i) => i.startsWith('pasos bloqueados'))).toBe(false);
+      // No step is labeled "blocked": all four are part of a cycle (their
+      // own), none merely depends on another.
+      expect(issues.some((i) => i.startsWith('steps blocked'))).toBe(false);
     }
   });
 
-  test('funde en un solo ciclo dos ciclos simples que comparten vértice', () => {
+  test('merges into a single cycle two simple cycles that share a vertex', () => {
     try {
       buildGraph(
         parsePipeline(`
@@ -310,27 +310,27 @@ steps:
     outputs: { x: string }
 `),
       );
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(GraphError);
       const issues = (err as GraphError).issues;
 
-      // a↔b y b↔c comparten el vértice b: son una única componente
-      // fuertemente conexa, no dos ciclos separables. Debe reportarse como
-      // un solo ciclo con los tres miembros, no como un ciclo a↔b más c
-      // "bloqueado" (c sí es cíclico, solo que por el ciclo b↔c).
-      const cycleIssues = issues.filter((i) => i.startsWith('ciclo de dependencias'));
+      // a↔b and b↔c share vertex b: they are a single strongly connected
+      // component, not two separable cycles. It must be reported as a
+      // single cycle with the three members, not as an a↔b cycle plus a
+      // "blocked" c (c is cyclic, just through the b↔c cycle).
+      const cycleIssues = issues.filter((i) => i.startsWith('dependency cycle'));
       expect(cycleIssues).toHaveLength(1);
       const cycleMembers = cycleIssues[0]!
-        .replace('ciclo de dependencias entre los pasos: ', '')
+        .replace('dependency cycle between the steps: ', '')
         .split(', ');
       expect(cycleMembers.sort()).toEqual(['a', 'b', 'c']);
 
-      expect(issues.some((i) => i.startsWith('pasos bloqueados'))).toBe(false);
+      expect(issues.some((i) => i.startsWith('steps blocked'))).toBe(false);
     }
   });
 
-  test('rechaza un input con más de un punto en vez de truncarlo en silencio', () => {
+  test('rejects an input with more than one dot instead of truncating it silently', () => {
     try {
       buildGraph(
         parsePipeline(`
@@ -348,7 +348,7 @@ steps:
     inputs: [scan.pages.deep]
 `),
       );
-      throw new Error('debería haber lanzado');
+      throw new Error('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(GraphError);
       const issues = (err as GraphError).issues;

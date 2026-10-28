@@ -7,27 +7,27 @@ const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
 describe('triggerPeriodMs', () => {
-  test('un horario diario es un periodo de 24 h', () => {
+  test('a daily schedule is a 24 h period', () => {
     expect(triggerPeriodMs([{ Minute: 0, Hour: 3 }])).toBe(DAY);
   });
 
-  test('dos horarios diarios reparten el día', () => {
+  test('two daily schedules split the day', () => {
     expect(triggerPeriodMs([{ Minute: 0, Hour: 3 }, { Minute: 0, Hour: 15 }])).toBe(DAY / 2);
   });
 
-  test('sin hora fijada, dispara cada hora', () => {
+  test('with no hour pinned, it fires every hour', () => {
     expect(triggerPeriodMs([{ Minute: 0 }])).toBe(HOUR);
   });
 
-  test('sin minuto fijado, dispara cada minuto', () => {
+  test('with no minute pinned, it fires every minute', () => {
     expect(triggerPeriodMs([{}])).toBe(60_000);
   });
 
-  test('un día de la semana fijado estira el periodo a una semana', () => {
+  test('a pinned weekday stretches the period to a week', () => {
     expect(triggerPeriodMs([{ Minute: 0, Hour: 3, Weekday: 1 }])).toBe(7 * DAY);
   });
 
-  test('un día del mes fijado lo estira a un mes aproximado', () => {
+  test('a pinned day of the month stretches it to an approximate month', () => {
     expect(triggerPeriodMs([{ Minute: 0, Hour: 3, Day: 1 }])).toBe(30 * DAY);
   });
 });
@@ -35,31 +35,31 @@ describe('triggerPeriodMs', () => {
 const loaded = { loaded: true, disabled: false, artifactOnDisk: 'X', artifactExpected: 'X' };
 
 describe('evaluateTrigger', () => {
-  // Un pipeline manual no está roto: pintarlo en rojo sería ruido, y el ruido
-  // es lo que hace que nadie mire el panel.
-  test('sin triggers declarados es no-trigger, no un fallo', () => {
+  // A manual pipeline is not broken: painting it red would be noise, and noise
+  // is what makes nobody look at the dashboard.
+  test('with no declared triggers it is no-trigger, not a failure', () => {
     expect(evaluateTrigger(false, { loaded: false, disabled: false })).toBe('no-trigger');
   });
 
-  test('declara cron y no hay job: not-installed', () => {
+  test('declares cron and there is no job: not-installed', () => {
     expect(evaluateTrigger(true, { loaded: false, disabled: false })).toBe('not-installed');
   });
 
-  // Accionable gana a genérico: "deshabilitado" dice qué hacer.
-  test('deshabilitado manda sobre no-cargado', () => {
+  // Actionable beats generic: "disabled" says what to do.
+  test('disabled rules over not-loaded', () => {
     expect(evaluateTrigger(true, { loaded: false, disabled: true })).toBe('disabled');
   });
 
-  test('cargado y coincidente: installed', () => {
+  test('loaded and matching: installed', () => {
     expect(evaluateTrigger(true, loaded)).toBe('installed');
   });
 
-  test('cargado pero el plist no es el que install generaría hoy: drifted', () => {
+  test('loaded but the plist is not the one install would generate today: drifted', () => {
     expect(evaluateTrigger(true, { ...loaded, artifactExpected: 'OTRO' })).toBe('drifted');
   });
 
-  // Solo la marca de tiempo difiere: eso NO es una desviación.
-  test('la marca de tiempo no cuenta como desviación', () => {
+  // Only the timestamp differs: that is NOT a drift.
+  test('the timestamp does not count as drift', () => {
     expect(
       evaluateTrigger(true, {
         loaded: true,
@@ -70,9 +70,9 @@ describe('evaluateTrigger', () => {
     ).toBe('installed');
   });
 
-  // Cargado sin plist en disco es raro pero no es una desviación demostrable:
-  // afirmar `drifted` sin poder comparar sería inventarse un diagnóstico.
-  test('sin plist en disco no se afirma desviación', () => {
+  // Loaded with no plist on disk is odd but not a provable drift: claiming
+  // `drifted` without being able to compare would be making up a diagnosis.
+  test('with no plist on disk no drift is claimed', () => {
     expect(evaluateTrigger(true, { loaded: true, disabled: false })).toBe('installed');
   });
 });
@@ -87,40 +87,40 @@ function run(status: RunRecord['status'], startedAt: string, skipReason?: string
   };
 }
 
-/** Pipeline mínimo: solo se leen `triggers` y `name`. */
+/** Minimal pipeline: only `triggers` and `name` are read. */
 function pipe(cron?: string): Pipeline {
   return { name: 'demo', triggers: cron ? [{ cron }] : [] } as unknown as Pipeline;
 }
 
 const installed = { loaded: true, disabled: false };
-const nightly = '0 3 * * *'; // ventana = 48 h
+const nightly = '0 3 * * *'; // window = 48 h
 
-describe('evaluateHealth — eje de trabajo', () => {
-  test('sin runs es never-worked, no silent', () => {
+describe('evaluateHealth — work axis', () => {
+  test('with no runs it is never-worked, not silent', () => {
     expect(evaluateHealth(pipe(nightly), [], installed, NOW).work).toBe('never-worked');
   });
 
-  test('trabajo reciente con éxito es working', () => {
+  test('recent successful work is working', () => {
     const runs = [run('success', hoursAgo(9))];
     expect(evaluateHealth(pipe(nightly), runs, installed, NOW).work).toBe('working');
   });
 
-  test('el último trabajo real falló: failing', () => {
+  test('the last real work failed: failing', () => {
     const runs = [run('failed', hoursAgo(9))];
     expect(evaluateHealth(pipe(nightly), runs, installed, NOW).work).toBe('failing');
   });
 
-  // El caso de las diez noches: el disparador funciona, el trabajo no.
+  // The ten-nights case: the trigger works, the work doesn't.
   //
-  // La guarda culpable ya no se lee de `health.skipReason` (retirado: nadie
-  // en producción lo consumía — el visor lee `lastRun.skipReason`, el campo
-  // del propio RunRecord, que `evaluateHealth` no necesita repetir). Este
-  // caso sigue probando lo que le da su nombre: que se cuenten los saltos
-  // consecutivos y que el veredicto sea `stuck`.
-  test('se dispara y salta siempre: stuck, con el conteo de saltos', () => {
+  // The guilty guard is no longer read from `health.skipReason` (removed:
+  // nobody in production consumed it — the viewer reads `lastRun.skipReason`,
+  // the RunRecord's own field, which `evaluateHealth` doesn't need to repeat).
+  // This case still tests what gives it its name: that consecutive skips are
+  // counted and that the verdict is `stuck`.
+  test('it triggers and always skips: stuck, with the skip count', () => {
     const runs = [
-      run('skipped', hoursAgo(9), 'shell: guarda del tracker devolvió 1'),
-      run('skipped', hoursAgo(33), 'shell: guarda del tracker devolvió 1'),
+      run('skipped', hoursAgo(9), 'shell: tracker guard returned 1'),
+      run('skipped', hoursAgo(33), 'shell: tracker guard returned 1'),
       run('success', hoursAgo(240)),
     ];
     const health = evaluateHealth(pipe(nightly), runs, installed, NOW);
@@ -128,31 +128,32 @@ describe('evaluateHealth — eje de trabajo', () => {
     expect(health.consecutiveSkips).toBe(2);
   });
 
-  // El caso que stale_after no puede ver: ni un run, ni siquiera saltado.
-  test('nada dentro de la ventana: silent', () => {
+  // The case stale_after can't see: not a single run, not even a skipped one.
+  test('nothing inside the window: silent', () => {
     const runs = [run('success', hoursAgo(100))];
     expect(evaluateHealth(pipe(nightly), runs, installed, NOW).work).toBe('silent');
   });
 
-  test('un pipeline manual nunca es stuck ni silent', () => {
+  test('a manual pipeline is never stuck or silent', () => {
     const runs = [run('success', hoursAgo(500))];
     const health = evaluateHealth(pipe(), runs, { loaded: false, disabled: false }, NOW);
     expect(health.work).toBe('working');
     expect(health.windowMs).toBeUndefined();
   });
 
-  // Ni launchd ni .runs/ detectan esto por su cuenta.
-  test('installed + silent es la contradicción que hay que gritar', () => {
+  // Neither launchd nor .runs/ detects this on its own.
+  test('installed + silent is the contradiction that must be shouted', () => {
     const runs = [run('success', hoursAgo(100))];
     expect(evaluateHealth(pipe(nightly), runs, installed, NOW).contradiction).toBe(true);
   });
 
-  // Un plist DESVIADO sigue estando cargado en launchd: la desviación dice que
-  // no es el que `install` generaría hoy, no que no dispare. Exigir exactamente
-  // `installed` dejaba esta casilla sin alarma y, peor, sin la cola del log del
-  // job — que `server.ts` solo lee cuando `contradiction` es cierto, y que es
-  // el único rastro de un motor que muere antes de escribir `run.json`.
-  test('drifted + silent es la misma contradicción: el plist desviado también dispara', () => {
+  // A DRIFTED plist is STILL loaded in launchd: the drift says it is not the
+  // one `install` would generate today, not that it doesn't fire. Requiring
+  // exactly `installed` left this box without an alarm and, worse, without the
+  // job log's tail — which `server.ts` only reads when `contradiction` is true,
+  // and which is the only trace of an engine that dies before writing
+  // `run.json`.
+  test('drifted + silent is the same contradiction: the drifted plist also fires', () => {
     const runs = [run('success', hoursAgo(100))];
     const drifted = { loaded: true, disabled: false, artifactOnDisk: 'X', artifactExpected: 'OTRO' };
     const health = evaluateHealth(pipe(nightly), runs, drifted, NOW);
@@ -161,9 +162,9 @@ describe('evaluateHealth — eje de trabajo', () => {
     expect(health.contradiction).toBe(true);
   });
 
-  // La alarma es del CRUCE, no de un eje suelto: un plist desviado que trabaja
-  // con normalidad es una desviación, no una contradicción.
-  test('drifted y trabajando no es contradicción', () => {
+  // The alarm belongs to the CROSSING, not to a single axis: a drifted plist
+  // that works normally is a drift, not a contradiction.
+  test('drifted and working is not a contradiction', () => {
     const runs = [run('success', hoursAgo(9))];
     const drifted = { loaded: true, disabled: false, artifactOnDisk: 'X', artifactExpected: 'OTRO' };
     const health = evaluateHealth(pipe(nightly), runs, drifted, NOW);
@@ -171,26 +172,25 @@ describe('evaluateHealth — eje de trabajo', () => {
     expect(health.contradiction).toBe(false);
   });
 
-  test('deshabilitado y mudo no es contradicción: es coherente', () => {
+  test('disabled and silent is not a contradiction: it is coherent', () => {
     const runs = [run('success', hoursAgo(100))];
     const health = evaluateHealth(pipe(nightly), runs, { loaded: false, disabled: true }, NOW);
     expect(health.trigger).toBe('disabled');
     expect(health.contradiction).toBe(false);
   });
 
-  test('no-instalado y mudo no es contradicción: es coherente', () => {
+  test('not-installed and silent is not a contradiction: it is coherent', () => {
     const runs = [run('success', hoursAgo(100))];
     const health = evaluateHealth(pipe(nightly), runs, { loaded: false, disabled: false }, NOW);
     expect(health.work).toBe('silent');
     expect(health.contradiction).toBe(false);
   });
 
-  // `cronToCalendarIntervals` lanza sobre
-  // sintaxis que el subconjunto de launchd no soporta (aquí, el paso "/15").
-  // Un pipeline.yaml así no se puede instalar, pero sí puede existir en el
-  // repo — y una excepción aquí tumbaría el panel entero, el único sitio
-  // pensado para que nada falle en silencio.
-  test('un cron con sintaxis que launchd no soporta no revienta el panel', () => {
+  // `cronToCalendarIntervals` throws on syntax that launchd's subset doesn't
+  // support (here, the "/15" step). Such a pipeline.yaml can't be installed,
+  // but it can exist in the repo — and an exception here would take down the
+  // whole dashboard, the one place meant so that nothing fails silently.
+  test('a cron with syntax launchd does not support does not blow up the dashboard', () => {
     const runs = [run('success', hoursAgo(9))];
     const health = evaluateHealth(pipe('*/15 * * * *'), runs, installed, NOW);
     expect(health.windowMs).toBeUndefined();

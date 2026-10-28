@@ -38,8 +38,8 @@ function fakeAll(opts: { linger?: string; tz?: string; systemctl?: string }) {
   process.env.PIPELINES_TIMEDATECTL_BIN = fake('td', `echo ${opts.tz ?? 'Europe/Madrid'}`);
 }
 
-describe('checks de plataforma no bloqueantes', () => {
-  test('un check platform en rojo no tumba report.ok ni bloquea', () => {
+describe('non-blocking platform checks', () => {
+  test('a red platform check does not bring down report.ok nor block', () => {
     const report: PreflightReport = {
       ok: true,
       checks: [{ kind: 'platform', name: 'linger', ok: false, detail: 'x' }],
@@ -47,11 +47,11 @@ describe('checks de plataforma no bloqueantes', () => {
     expect(hasBlockingFailures(report)).toBe(false);
   });
 
-  test('launchd no tiene checks de plataforma', async () => {
+  test('launchd has no platform checks', async () => {
     expect(await platformChecks(launchdBackend)).toEqual([]);
   });
 
-  test('linger desactivado: check rojo con el comando en el detalle', async () => {
+  test('linger disabled: red check with the command in the detail', async () => {
     fakeAll({ linger: 'no' });
     const checks = await platformChecks(systemdBackend);
     const linger = checks.find((c) => c.name === 'linger')!;
@@ -60,36 +60,36 @@ describe('checks de plataforma no bloqueantes', () => {
     expect(linger.detail).toContain('sudo loginctl enable-linger');
   });
 
-  test('shell: verde si bash está en el PATH', async () => {
+  test('shell: green if bash is on the PATH', async () => {
     fakeAll({});
     const checks = await platformChecks(systemdBackend, () => '/usr/bin/bash');
     const shell = checks.find((c) => c.name === 'shell')!;
     expect(shell.kind).toBe('platform');
     expect(shell.ok).toBe(true);
-    expect(shell.detail).toBe('bash (los pasos shell se ejecutan con bash --posix)');
+    expect(shell.detail).toBe('bash (shell steps run with bash --posix)');
   });
 
-  test('shell: rojo si falta bash', async () => {
+  test('shell: red if bash is missing', async () => {
     fakeAll({});
     const checks = await platformChecks(systemdBackend, () => null);
     const shell = checks.find((c) => c.name === 'shell')!;
     expect(shell.ok).toBe(false);
-    expect(shell.detail).toBe('falta bash: los pasos shell no podrán arrancar — sudo apt install bash');
+    expect(shell.detail).toBe('bash is missing: shell steps will not be able to start — sudo apt install bash');
   });
 
-  test('linger activado: check verde', async () => {
+  test('linger enabled: green check', async () => {
     fakeAll({ linger: 'yes' });
     const checks = await platformChecks(systemdBackend);
     expect(checks.find((c) => c.name === 'linger')!.ok).toBe(true);
   });
 
-  test('systemd: ok aunque is-system-running salga con código distinto de 0 (degraded)', async () => {
+  test('systemd: ok even if is-system-running exits non-zero (degraded)', async () => {
     fakeAll({ systemctl: 'echo degraded; exit 1' });
     const checks = await platformChecks(systemdBackend);
     expect(checks.find((c) => c.name === 'systemd')!.ok).toBe(true);
   });
 
-  test('systemd: rojo con el texto de userBusError si no hay bus de usuario', async () => {
+  test('systemd: red with the userBusError text if there is no user bus', async () => {
     fakeAll({ systemctl: 'echo "Failed to connect to bus: No medium found" >&2; exit 1' });
     const checks = await platformChecks(systemdBackend);
     const sd = checks.find((c) => c.name === 'systemd')!;
@@ -97,18 +97,18 @@ describe('checks de plataforma no bloqueantes', () => {
     expect(sd.detail).toContain('ssh');
   });
 
-  test('systemd: rojo si systemctl no se puede ejecutar', async () => {
+  test('systemd: red if systemctl cannot be run', async () => {
     fakeAll({});
-    process.env.PIPELINES_SYSTEMCTL_BIN = join(dir, 'no-existe');
+    process.env.PIPELINES_SYSTEMCTL_BIN = join(dir, 'does-not-exist');
     const checks = await platformChecks(systemdBackend);
     const sd = checks.find((c) => c.name === 'systemd')!;
     expect(sd.ok).toBe(false);
-    expect(sd.detail).toContain('No se pudo ejecutar');
-    expect(sd.detail).toContain('sin systemctl no se puede instalar');
-    expect(sd.detail).not.toContain('disponible');
+    expect(sd.detail).toContain('Could not run');
+    expect(sd.detail).toContain('without systemctl nothing can be installed');
+    expect(sd.detail).not.toContain('available');
   });
 
-  test('zona UTC: siempre ok, con el consejo de Europe/Madrid', async () => {
+  test('UTC zone: always ok, with the Europe/Madrid advice', async () => {
     fakeAll({ tz: 'Etc/UTC' });
     const tz = (await platformChecks(systemdBackend)).find((c) => c.name === 'timezone')!;
     expect(tz.ok).toBe(true);
@@ -116,7 +116,7 @@ describe('checks de plataforma no bloqueantes', () => {
     expect(tz.detail).toContain('set-timezone Europe/Madrid');
   });
 
-  test('zona Europe/Madrid: sin consejo', async () => {
+  test('Europe/Madrid zone: no advice', async () => {
     fakeAll({ tz: 'Europe/Madrid' });
     const tz = (await platformChecks(systemdBackend)).find((c) => c.name === 'timezone')!;
     expect(tz.detail).toBe('Europe/Madrid');
@@ -124,20 +124,20 @@ describe('checks de plataforma no bloqueantes', () => {
 });
 
 describe('currentTimezone', () => {
-  test('usa timedatectl', async () => {
+  test('uses timedatectl', async () => {
     process.env.PIPELINES_TIMEDATECTL_BIN = fake('td', 'echo Europe/Lisbon');
     expect(await currentTimezone()).toBe('Europe/Lisbon');
   });
 
-  test('si timedatectl falla, nunca lanza y devuelve una zona', async () => {
-    process.env.PIPELINES_TIMEDATECTL_BIN = join(dir, 'no-existe');
+  test('if timedatectl fails, it never throws and returns a zone', async () => {
+    process.env.PIPELINES_TIMEDATECTL_BIN = join(dir, 'does-not-exist');
     const tz = await currentTimezone();
     expect(tz.length).toBeGreaterThan(0);
   });
 });
 
-describe('preflight con includePlatform en una plataforma sin programador', () => {
-  test('no lanza: se salta los checks de plataforma (FreeBSD)', async () => {
+describe('preflight with includePlatform on a platform without a scheduler', () => {
+  test('does not throw: it skips the platform checks (FreeBSD)', async () => {
     const pipeline = parsePipeline(
       'name: demo\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
     );

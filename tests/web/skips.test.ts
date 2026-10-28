@@ -1,120 +1,120 @@
 import { describe, expect, test } from 'bun:test';
 import type { RunRecord } from '../../src/runs/types.ts';
-import { guardaDe, agrupaHistorial } from '../../src/web/skips.ts';
+import { guardOf, groupHistory } from '../../src/web/skips.ts';
 
-// El motivo real de los ocho saltos del 22 al 29 de agosto, con sus paréntesis
-// DENTRO del comando: son los que no se pueden recortar.
+// The real reason of the eight skips from August 22 to 29, with its parentheses
+// INSIDE the command: those are the ones that can't be trimmed.
 const GREP =
-  'shell: "grep -qE "^\\| Slug \\(ca\\)\\s+\\| Estat\\s+" {{params.docs_repo}}/scripts/x.md" devolvió 1';
+  'shell: "grep -qE "^\\| Slug \\(ca\\)\\s+\\| Estat\\s+" {{params.docs_repo}}/scripts/x.md" returned 1';
 
-function run(dia: string, status: RunRecord['status'], skipReason?: string): RunRecord {
+function run(day: string, status: RunRecord['status'], skipReason?: string): RunRecord {
   return {
-    id: `2026-08-${dia}T01-00-00-000Z`,
+    id: `2026-08-${day}T01-00-00-000Z`,
     pipeline: 'demo', pipelineVersion: 1, status,
-    startedAt: `2026-08-${dia}T01:00:00.000Z`, params: {}, steps: {},
+    startedAt: `2026-08-${day}T01:00:00.000Z`, params: {}, steps: {},
     ...(skipReason === undefined ? {} : { skipReason }),
   };
 }
 
-describe('guardaDe', () => {
-  // Los dos saltos por throttle traen minutos distintos en el paréntesis. Si la
-  // clave fuera el motivo entero no agruparían, y son el mismo hecho.
-  test('el paréntesis final variable no forma parte de la guarda', () => {
-    expect(guardaDe('throttle: 46h (última ejecución hace 2211 min)')).toBe('throttle: 46h');
-    expect(guardaDe('throttle: 46h (última ejecución hace 771 min)')).toBe('throttle: 46h');
+describe('guardOf', () => {
+  // The two throttle skips carry different minutes in the parenthesis. If the
+  // key were the whole reason they wouldn't group, and they are the same fact.
+  test('the variable trailing parenthesis is not part of the guard', () => {
+    expect(guardOf('throttle: 46h (last run 2211 min ago)')).toBe('throttle: 46h');
+    expect(guardOf('throttle: 46h (last run 771 min ago)')).toBe('throttle: 46h');
   });
 
-  test('dos throttles con minutos distintos son la misma guarda', () => {
-    expect(guardaDe('throttle: 46h (hace 2211 min)')).toBe(guardaDe('throttle: 46h (hace 771 min)'));
+  test('two throttles with different minutes are the same guard', () => {
+    expect(guardOf('throttle: 46h (2211 min ago)')).toBe(guardOf('throttle: 46h (771 min ago)'));
   });
 
-  // Un comando shell lleva paréntesis propios que NO se pueden tocar: solo se
-  // recorta el paréntesis final, y este motivo no acaba en uno.
-  test('una guarda shell se queda entera, paréntesis internos incluidos', () => {
-    expect(guardaDe(GREP)).toBe(GREP);
-    expect(guardaDe(GREP)).toContain('\\(ca\\)');
+  // A shell command carries parentheses of its own that can NOT be touched:
+  // only the trailing parenthesis is trimmed, and this reason doesn't end in one.
+  test('a shell guard stays whole, inner parentheses included', () => {
+    expect(guardOf(GREP)).toBe(GREP);
+    expect(guardOf(GREP)).toContain('\\(ca\\)');
   });
 
-  test('sin motivo no hay guarda', () => {
-    expect(guardaDe(undefined)).toBe('');
+  test('with no reason there is no guard', () => {
+    expect(guardOf(undefined)).toBe('');
   });
 });
 
-describe('agrupaHistorial', () => {
-  test('un historial vacío da una lista vacía', () => {
-    expect(agrupaHistorial([])).toEqual([]);
+describe('groupHistory', () => {
+  test('an empty history gives an empty list', () => {
+    expect(groupHistory([])).toEqual([]);
   });
 
-  test('sin saltos no agrupa nada', () => {
+  test('with no skips nothing is grouped', () => {
     const runs = [run('31', 'success'), run('30', 'failed')];
-    expect(agrupaHistorial(runs).map((t) => t.kind)).toEqual(['run', 'run']);
+    expect(groupHistory(runs).map((t) => t.kind)).toEqual(['run', 'run']);
   });
 
-  // Un bloque para un solo salto ocuparía más que la fila que sustituye.
-  test('un salto suelto sigue siendo una fila', () => {
-    const tramos = agrupaHistorial([run('31', 'success'), run('30', 'skipped', GREP)]);
-    expect(tramos.map((t) => t.kind)).toEqual(['run', 'run']);
+  // A block for a single skip would take more room than the row it replaces.
+  test('a lone skip is still a row', () => {
+    const segments = groupHistory([run('31', 'success'), run('30', 'skipped', GREP)]);
+    expect(segments.map((t) => t.kind)).toEqual(['run', 'run']);
   });
 
-  // El caso real: 22 → 29 de agosto, ocho noches con el mismo grep.
-  test('dos o más saltos seguidos con la misma guarda se agrupan', () => {
+  // The real case: August 22 → 29, eight nights with the same grep.
+  test('two or more consecutive skips with the same guard are grouped', () => {
     const runs = [
       run('31', 'success'),
       run('29', 'skipped', GREP), run('28', 'skipped', GREP), run('27', 'skipped', GREP),
       run('19', 'success'),
     ];
-    const tramos = agrupaHistorial(runs);
-    expect(tramos.map((t) => t.kind)).toEqual(['run', 'saltos', 'run']);
-    const bloque = tramos[1];
-    if (bloque?.kind !== 'saltos') throw new Error('se esperaba un bloque de saltos');
-    expect(bloque.runs).toHaveLength(3);
-    expect(bloque.guarda).toBe(GREP);
+    const segments = groupHistory(runs);
+    expect(segments.map((t) => t.kind)).toEqual(['run', 'skips', 'run']);
+    const block = segments[1];
+    if (block?.kind !== 'skips') throw new Error('a skips block was expected');
+    expect(block.runs).toHaveLength(3);
+    expect(block.guard).toBe(GREP);
   });
 
-  test('dos guardas distintas no se mezclan en un bloque', () => {
+  test('two different guards are not mixed in one block', () => {
     const runs = [
       run('29', 'skipped', GREP), run('28', 'skipped', GREP),
-      run('21', 'skipped', 'throttle: 46h (última ejecución hace 2211 min)'),
-      run('20', 'skipped', 'throttle: 46h (última ejecución hace 771 min)'),
+      run('21', 'skipped', 'throttle: 46h (last run 2211 min ago)'),
+      run('20', 'skipped', 'throttle: 46h (last run 771 min ago)'),
     ];
-    const tramos = agrupaHistorial(runs);
-    expect(tramos.map((t) => t.kind)).toEqual(['saltos', 'saltos']);
-    const segundo = tramos[1];
-    if (segundo?.kind !== 'saltos') throw new Error('se esperaba un bloque de saltos');
-    expect(segundo.guarda).toBe('throttle: 46h');
+    const segments = groupHistory(runs);
+    expect(segments.map((t) => t.kind)).toEqual(['skips', 'skips']);
+    const second = segments[1];
+    if (second?.kind !== 'skips') throw new Error('a skips block was expected');
+    expect(second.guard).toBe('throttle: 46h');
   });
 
-  // Un run que trabajó entre dos saltos parte la racha: no son consecutivos.
-  test('un run que no es salto corta la racha', () => {
+  // A run that worked between two skips breaks the streak: they aren't consecutive.
+  test('a run that is not a skip cuts the streak', () => {
     const runs = [
       run('29', 'skipped', GREP), run('28', 'success'), run('27', 'skipped', GREP),
     ];
-    expect(agrupaHistorial(runs).map((t) => t.kind)).toEqual(['run', 'run', 'run']);
+    expect(groupHistory(runs).map((t) => t.kind)).toEqual(['run', 'run', 'run']);
   });
 
-  test('ningún run se pierde ni se duplica al agrupar', () => {
+  test('no run is lost or duplicated when grouping', () => {
     const runs = [
       run('31', 'success'),
       run('29', 'skipped', GREP), run('28', 'skipped', GREP), run('27', 'skipped', GREP),
-      run('21', 'skipped', 'throttle: 46h (hace 2211 min)'),
-      run('20', 'skipped', 'throttle: 46h (hace 771 min)'),
+      run('21', 'skipped', 'throttle: 46h (2211 min ago)'),
+      run('20', 'skipped', 'throttle: 46h (771 min ago)'),
       run('19', 'success'),
     ];
-    const vistos = agrupaHistorial(runs).flatMap((t) => (t.kind === 'run' ? [t.run] : t.runs));
-    expect(vistos.map((r) => r.id)).toEqual(runs.map((r) => r.id));
+    const seen = groupHistory(runs).flatMap((t) => (t.kind === 'run' ? [t.run] : t.runs));
+    expect(seen.map((r) => r.id)).toEqual(runs.map((r) => r.id));
   });
 
-  test('un historial entero de saltos iguales es un solo bloque', () => {
+  test('a whole history of identical skips is a single block', () => {
     const runs = ['29', '28', '27'].map((d) => run(d, 'skipped', GREP));
-    const tramos = agrupaHistorial(runs);
-    expect(tramos).toHaveLength(1);
-    expect(tramos[0]?.kind).toBe('saltos');
+    const segments = groupHistory(runs);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.kind).toBe('skips');
   });
 
-  test('un salto sin motivo agrupa con otro salto sin motivo', () => {
+  test('a skip with no reason groups with another skip with no reason', () => {
     const runs = [run('29', 'skipped'), run('28', 'skipped')];
-    const tramos = agrupaHistorial(runs);
-    expect(tramos).toHaveLength(1);
-    expect(tramos[0]?.kind).toBe('saltos');
+    const segments = groupHistory(runs);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.kind).toBe('skips');
   });
 });

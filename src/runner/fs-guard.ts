@@ -2,30 +2,29 @@ import { realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, normalize, sep } from 'node:path';
 
 /**
- * Perfil de superficie de filesystem de una tool. `kind: 'none'` para
- * tools sin ningún campo de ruta ni URL (la mayoría de las de Playwright:
- * clic, tipeo, espera...). `kind: 'url'` para `browser_navigate` — no es
- * una ruta de fichero, pero `file://` es una lectura local no modelada por
- * los otros dos tipos. `kind: 'path'`/`'multi-path'`
- * para todo lo que sí toca el filesystem; cada campo declara si su valor
- * debe tratarse como patrón glob (se corta en el primer metacarácter antes
- * de resolver) o como ruta llana, y si es obligatorio: un campo
- * obligatorio ausente (o de tipo inesperado) deniega la llamada entera —
- * ausencia silenciosa solo se permite en campos opcionales como el
- * `filename` de las tools de Playwright.
+ * Filesystem surface profile of a tool. `kind: 'none'` for tools with no
+ * path or URL field (most of the Playwright ones: click, type, wait...).
+ * `kind: 'url'` for `browser_navigate` — it is not a file path, but
+ * `file://` is a local read the other two kinds do not model.
+ * `kind: 'path'`/`'multi-path'` for everything that does touch
+ * the filesystem; each field declares whether its value must be treated as a
+ * glob pattern (cut at the first metacharacter before resolving)
+ * or as a plain path, and whether it is required: a missing required field
+ * (or one of an unexpected type) denies the whole call — silent absence is
+ * only allowed in optional fields such as the `filename` of the Playwright
+ * tools.
  */
 export type PathField = { name: string; glob: boolean; required: boolean };
 
 /**
- * `knownFields` — a diferencia de `field`/`fields` (el/los campo(s) que el
- * hook realmente vigila), esto es el conjunto COMPLETO de parámetros reales
- * de la tool, verificado contra una `tools/list` real (Playwright) o
- * `sdk-tools.d.ts` (nativas) — nunca de memoria, mismo criterio que el resto
- * de esta tabla. Solo lo usa `doctor` (`preflight/check.ts`) para
- * detectar deriva de esquema COMPLETA (campo nuevo, renombrado o
- * desaparecido) frente al paquete real; el hook de `evaluateToolCall` sigue
- * mirando únicamente `field`/`fields`, nunca `knownFields` — dos consumidores
- * con dos necesidades distintas de la misma tabla.
+ * `knownFields` — unlike `field`/`fields` (the field(s) the hook actually
+ * watches), this is the COMPLETE set of the tool's real parameters, verified
+ * against a real `tools/list` (Playwright) or `sdk-tools.d.ts` (native
+ * tools) — never from memory, same criterion as the rest of this table. Only
+ * `doctor` uses it (`preflight/check.ts`) to detect FULL schema
+ * drift (a new, renamed or removed field) against the real package; the
+ * `evaluateToolCall` hook still looks only at `field`/`fields`, never at
+ * `knownFields` — two consumers with two different needs of the same table.
  */
 export type ToolFsProfile =
   | { kind: 'none'; knownFields: string[] }
@@ -46,17 +45,18 @@ function deny(reason: string): PathCheckResult {
 }
 
 /**
- * Tabla de perfiles, construida contra `sdk-tools.d.ts` real (nativas) y
- * una `tools/list` real de `@playwright/mcp` (MCP) — nunca de memoria. Sin `MultiEdit`: no existe en esta versión del SDK.
+ * Profile table, built against the real `sdk-tools.d.ts` (native tools) and
+ * a real `tools/list` from `@playwright/mcp` (MCP) — never from memory. No
+ * `MultiEdit`: it does not exist in this SDK version.
  *
- * `knownFields` de las 6 entradas nativas: leído directamente de
+ * `knownFields` of the 6 native entries: read directly from
  * `node_modules/@anthropic-ai/claude-agent-sdk/sdk-tools.d.ts`
  * (`FileReadInput`/`FileWriteInput`/`FileEditInput`/`NotebookEditInput`/
- * `GlobInput`/`GrepInput`) el 2026-08-18. `knownFields` de las 20 entradas de
- * Playwright: capturado en vivo ese mismo día con `listMcpToolsViaStdio`
- * contra `npx -y @playwright/mcp@latest` real — no
- * copiado de la documentación del paquete, que puede no reflejar la versión
- * publicada de verdad.
+ * `GlobInput`/`GrepInput`) on 2026-08-18. `knownFields` of the 20 Playwright
+ * entries: captured live the same day with `listMcpToolsViaStdio` against a
+ * real `npx -y @playwright/mcp@latest` — not
+ * copied from the package documentation, which may not reflect the version
+ * actually published.
  */
 export const TOOL_FS_PROFILES: Record<string, ToolFsProfile> = {
   Read: {
@@ -109,31 +109,29 @@ export const TOOL_FS_PROFILES: Record<string, ToolFsProfile> = {
     ],
   },
   /**
-   * NO figura en `sdk-tools.d.ts` (a diferencia de las 6 entradas nativas de
-   * arriba) porque no es una capability que un paso conceda vía
-   * `step.tools`/`allowedTools` (`agent.ts`, `options.allowedTools =
-   * step.tools`): es el canal por el que el SDK DEVUELVE el resultado
-   * cuando `outputFormat` está activo (`step.outputs`, cualquiera que sea la
-   * lista de tools del paso) — su propio prompt interno obliga al modelo a
-   * llamarla exactamente una vez al final de cada turno; no es un mecanismo
-   * de corrección puntual, es el canal principal de salida de todo paso con
-   * `outputs:`. Confirmado leyendo la definición real en el binario nativo
-   * del SDK (`node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude`):
-   * `isMcp: false`, `call()` es total — se limita a devolver `{ data:
+   * NOT listed in `sdk-tools.d.ts` (unlike the 6 native entries above)
+   * because it is not a capability a step grants via `step.tools`/
+   * `allowedTools` (`agent.ts`, `options.allowedTools = step.tools`): it is
+   * the channel through which the SDK RETURNS the result when `outputFormat`
+   * is active (`step.outputs`, whatever the step's tool list) — its own
+   * internal prompt forces the model to call it exactly once at the end of
+   * each turn; it is not a one-off correction mechanism, it is the main
+   * output channel of every step with `outputs:`. Confirmed by reading the
+   * real definition in the SDK's native binary
+   * (`node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude`):
+   * `isMcp: false`, `call()` is total — it just returns `{ data:
    * "Structured output provided successfully", structured_output: e,
-   * endsTurn: true }`, sin fs ni red ni subproceso. Antes de esta entrada, la
-   * tabla la denegaba con "tool desconocida para el motor", tumbando el
-   * paso con "el resultado no es JSON válido" — la única razón por la que
-   * esto tardó hasta la primera ejecución real de un pipeline en
-   * manifestarse es
-   * que el motor venía sobreviviendo con el fallback de texto-JSON de la
-   * propia SDK cuando esta tool no estaba disponible — no que el fallo sea
-   * un caso raro: cualquier paso con `outputs:` la invoca en condiciones
-   * normales. `kind: 'none'`: no toca el filesystem bajo ninguna forma.
-   * `knownFields: []` porque sus campos son el esquema de `outputs:` del
-   * propio paso (el SDK expone su `inputSchema` como `passthrough()`), no un
-   * contrato fijo — no hay nada estático que comparar en una deriva de
-   * esquema.
+   * endsTurn: true }`, with no fs, network or subprocess. Before this entry,
+   * the table denied it with "unknown tool for the engine", bringing the
+   * step down with "the result is not valid JSON" — the only reason this
+   * took until the first real run of a pipeline to show up is
+   * that the engine had been surviving on the SDK's own text-JSON fallback
+   * when this tool was not available — not that the failure is a rare case:
+   * every step with `outputs:` calls it under normal conditions.
+   * `kind: 'none'`: it does not touch the filesystem in any form.
+   * `knownFields: []` because its fields are the step's own `outputs:` schema
+   * (the SDK exposes its `inputSchema` as `passthrough()`), not a fixed
+   * contract — there is nothing static to compare in a schema drift.
    */
   StructuredOutput: { kind: 'none', knownFields: [] },
   browser_take_screenshot: {
@@ -164,14 +162,14 @@ export const TOOL_FS_PROFILES: Record<string, ToolFsProfile> = {
     required: false,
     knownFields: ['static', 'filter', 'filename'],
   },
-  // `paths` es OPCIONAL en ambas — verificado contra el esquema real de
-  // `@playwright/mcp@0.0.79`: `browser_file_upload` sin `paths` cancela el selector de
-  // fichero en vez de fallar, y `browser_drop` puede invocarse solo con
-  // `data` (sin `paths` en absoluto). Antes marcado `required: true`, lo que
-  // denegaba por "obligatorio ausente" (ver `extractPathCandidates`) una
-  // llamada legítima sin ese campo — el mismo tipo de fallo-cerrado que la
-  // tabla persigue en general, pero aplicado sobre un campo que el paquete
-  // real no exige.
+  // `paths` is OPTIONAL in both — verified against the real schema of
+  // `@playwright/mcp@0.0.79`: `browser_file_upload` without `paths` cancels
+  // the file chooser instead of failing, and `browser_drop` can be invoked
+  // with `data` alone (no `paths` at all). It used to be marked
+  // `required: true`, which denied a legitimate call without that field as
+  // "required field missing" (see `extractPathCandidates`) — the same kind of
+  // fail-closed the table pursues in general, but applied to a field the real
+  // package does not require.
   browser_file_upload: {
     kind: 'multi-path',
     mutates: false,
@@ -212,13 +210,13 @@ export const TOOL_FS_PROFILES: Record<string, ToolFsProfile> = {
 };
 
 /**
- * Sin campo de ruta que un hook pueda acotar con sentido (`Bash`/`REPL`
- * ejecutan texto libre), o mutan el propio `cwd` en tiempo de ejecución
- * (`EnterWorktree`/`ExitWorktree` — socavarían la raíz capturada en
- * `captureRoots` si se permitieran), o ejecutan código arbitrario
- * (`browser_evaluate`/`browser_run_code_unsafe`). Sin opt-in: verificado
- * contra los pipelines reales que ninguno las necesita, y una puerta que
- * nadie usa solo es superficie de ataque.
+ * Tools with no path field a hook could meaningfully bound (`Bash`/`REPL`
+ * run free text), or that mutate the `cwd` itself at runtime
+ * (`EnterWorktree`/`ExitWorktree` — they would undermine the root captured
+ * in `captureRoots` if allowed), or that run arbitrary code
+ * (`browser_evaluate`/`browser_run_code_unsafe`). No opt-in: verified
+ * against real pipelines that none of them needs these, and a door nobody
+ * uses is only attack surface.
  */
 export const HARD_DENY_TOOLS: ReadonlySet<string> = new Set([
   'Bash',
@@ -235,7 +233,7 @@ function trimTrailingSep(path: string): string {
   return path.length > 1 && path.endsWith(sep) ? path.slice(0, -1) : path;
 }
 
-/** Resuelve `cwd`/`additionalDirs` UNA VEZ por paso, antes de la primera invocación del hook. */
+/** Resolves `cwd`/`additionalDirs` ONCE per step, before the hook's first invocation. */
 export function captureRoots(cwd: string, additionalDirs: string[]): FsRoots {
   return {
     cwdRoot: trimTrailingSep(realpathSync(cwd)),
@@ -254,12 +252,13 @@ function containsDotDotSegment(raw: string): boolean {
 const GLOB_MAGIC = /[*?[{]/;
 
 /**
- * Base literal de un patrón glob: todo lo anterior al primer segmento con
- * metacarácter. Un patrón sin ningún metacarácter se trata como ruta llana
- * (el bucle no encuentra nada que cortar y devuelve el patrón entero). Un
- * patrón cuyo primer segmento YA tiene metacarácter (`/**\/x` o `**\/x`)
- * produce una base vacía, ambigua entre "toda la raíz" y "cwd entero" — se
- * desambigua por si el patrón original era absoluto.
+ * Literal base of a glob pattern: everything before the first segment with a
+ * metacharacter. A pattern with no metacharacter at all is treated as a plain
+ * path (the loop finds nothing to cut and returns the whole pattern). A
+ * pattern whose first segment ALREADY has a metacharacter (`/**\/x` or
+ * `**\/x`) yields an empty base, ambiguous between "the whole root" and "the
+ * entire cwd" — it is disambiguated by whether the original pattern was
+ * absolute.
  */
 function globBase(pattern: string): string {
   const segments = pattern.split('/');
@@ -272,11 +271,11 @@ function globBase(pattern: string): string {
 }
 
 /**
- * Resuelve una ruta llana (ya libre de ".." — el llamante lo comprueba
- * antes) contra `cwdRoot`, con `realpath`. Si el objetivo no existe todavía
- * (un `Write` creando ficheros/directorios nuevos), sube al ancestro
- * existente más cercano, lo resuelve, y reañade la cola — segura porque ya
- * no puede contener "..".
+ * Resolves a plain path (already free of ".." — the caller checks that
+ * first) against `cwdRoot`, with `realpath`. If the target does not exist yet
+ * (a `Write` creating new files/directories), it walks up to the nearest
+ * existing ancestor, resolves it, and re-appends the tail — safe because the
+ * tail can no longer contain "..".
  */
 function resolvePlainPath(raw: string, cwdRoot: string): string {
   const joined = isAbsolute(raw) ? raw : join(cwdRoot, raw);
@@ -292,7 +291,7 @@ function resolvePlainPath(raw: string, cwdRoot: string): string {
         return join(realDir, ...tail.reverse());
       } catch {
         const parent = dirname(dir);
-        if (parent === dir) throw new Error(`ningún ancestro existente de "${raw}"`);
+        if (parent === dir) throw new Error(`no existing ancestor of "${raw}"`);
         tail.push(basename(dir));
         dir = parent;
       }
@@ -303,15 +302,15 @@ function resolvePlainPath(raw: string, cwdRoot: string): string {
 type PathCandidate = { raw: string; glob: boolean };
 
 /**
- * Resultado de extraer los candidatos de ruta de `toolInput` según el
- * perfil. `ok: false` cuando un campo marcado `required: true` está
- * ausente o tiene un tipo inesperado — se deniega la llamada entera en vez
- * de tratarla como "sin rutas que comprobar" (bug encontrado en la primera
- * pasada de este fichero: `Read` sin `file_path` caía en 0 candidatos y se
- * permitía por defecto, exactamente lo contrario de "fail closed"). Un
- * campo opcional ausente o de tipo inesperado simplemente se salta: la
- * mayoría de los campos de ruta de Playwright son opcionales (`filename?`),
- * y pasar `undefined`/un número al resolutor lanzaría.
+ * Result of extracting the path candidates from `toolInput` according to the
+ * profile. `ok: false` when a field marked `required: true` is missing or has
+ * an unexpected type — the whole call is denied instead of being treated as
+ * "no paths to check" (bug found in the first pass of this file: `Read`
+ * without `file_path` fell into 0 candidates and was allowed by default,
+ * exactly the opposite of "fail closed"). An optional field that is missing
+ * or of an unexpected type is simply skipped: most Playwright path fields are
+ * optional (`filename?`), and passing `undefined`/a number to the resolver
+ * would throw.
  */
 function extractPathCandidates(
   profile: Extract<ToolFsProfile, { kind: 'path' } | { kind: 'multi-path' }>,
@@ -336,34 +335,34 @@ function extractPathCandidates(
       }
     }
     if (!matched && f.required) {
-      return { ok: false, reason: `"${f.name}" es obligatorio y está ausente o tiene un tipo inesperado` };
+      return { ok: false, reason: `"${f.name}" is required and is missing or has an unexpected type` };
     }
   }
   return { ok: true, candidates: out };
 }
 
 /**
- * Decide si una llamada a `toolName` con `toolInput` puede ejecutarse dadas
- * `roots`. NUNCA lanza — cualquier excepción interna se convierte en un
- * DENY explícito: el sandbox nunca falla abierto.
+ * Decides whether a call to `toolName` with `toolInput` may run given
+ * `roots`. NEVER throws — any internal exception becomes an explicit DENY:
+ * the sandbox never fails open.
  */
 export function evaluateToolCall(toolName: string, toolInput: unknown, roots: FsRoots): PathCheckResult {
   try {
     if (HARD_DENY_TOOLS.has(toolName)) {
       return deny(
-        `"${toolName}" no está permitida en un paso agent — si necesitas ejecutar comandos, usa un paso type: shell`,
+        `"${toolName}" is not allowed in an agent step — if you need to run commands, use a type: shell step`,
       );
     }
     const profile = TOOL_FS_PROFILES[toolName];
-    if (!profile) return deny(`tool desconocida para el motor: "${toolName}"`);
+    if (!profile) return deny(`unknown tool for the engine: "${toolName}"`);
     if (profile.kind === 'none') return allow();
 
     if (profile.kind === 'url') {
       const input = toolInput !== null && typeof toolInput === 'object' ? (toolInput as Record<string, unknown>) : {};
       const value = input[profile.field];
-      if (typeof value !== 'string') return allow(); // campo ausente: nada que validar
+      if (typeof value !== 'string') return allow(); // field missing: nothing to validate
       if (!profile.schemes.some((s) => value.startsWith(`${s}://`))) {
-        return deny(`esquema no permitido en ${profile.field}: "${value}"`);
+        return deny(`scheme not allowed in ${profile.field}: "${value}"`);
       }
       return allow();
     }
@@ -372,9 +371,9 @@ export function evaluateToolCall(toolName: string, toolInput: unknown, roots: Fs
     if (!extracted.ok) return deny(extracted.reason);
 
     for (const { raw, glob } of extracted.candidates) {
-      if (containsDotDotSegment(raw)) return deny(`ruta con ".." rechazada: "${raw}"`);
+      if (containsDotDotSegment(raw)) return deny(`path with ".." rejected: "${raw}"`);
       if (profile.mutates && !isAbsolute(raw)) {
-        return deny(`"${raw}" debe ser una ruta absoluta para esta tool — su base relativa no es cwd`);
+        return deny(`"${raw}" must be an absolute path for this tool — its relative base is not cwd`);
       }
       const base = glob ? globBase(raw) : raw;
       const resolved = resolvePlainPath(base, roots.cwdRoot);
@@ -383,15 +382,15 @@ export function evaluateToolCall(toolName: string, toolInput: unknown, roots: Fs
         : (isUnder(resolved, roots.cwdRoot) ? roots.cwdRoot : roots.readRoots.find((r) => isUnder(resolved, r)));
       if (!allowedRoot) {
         return deny(
-          `"${raw}" resuelve fuera de toda raíz permitida ` +
-            `(escritura: ${roots.cwdRoot}${
-              profile.mutates ? '' : `; lectura: ${[roots.cwdRoot, ...roots.readRoots].join(', ')}`
+          `"${raw}" resolves outside every allowed root ` +
+            `(write: ${roots.cwdRoot}${
+              profile.mutates ? '' : `; read: ${[roots.cwdRoot, ...roots.readRoots].join(', ')}`
             })`,
         );
       }
     }
     return allow();
   } catch (err) {
-    return deny(`error interno validando la ruta — se deniega por defecto (${(err as Error).message})`);
+    return deny(`internal error validating the path — denied by default (${(err as Error).message})`);
   }
 }

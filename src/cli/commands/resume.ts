@@ -11,14 +11,14 @@ export function registerResume(program: Command): void {
     .command('resume')
     .argument('<name>')
     .argument('<run-id>')
-    .description('Retoma un run fallido donde se quedó')
+    .description('Resume a failed run where it left off')
     .action(async (name: string, runId: string) => {
       await withContext(async (ctx) => {
         const pipeline = await loadPipeline(ctx, name);
         const store = new RunStore(ctx.root);
         const previous = await store.readRun(name, runId);
         if (!previous) {
-          console.error(`No existe el run ${runId} de "${name}".`);
+          console.error(`Run ${runId} of "${name}" does not exist.`);
           process.exitCode = EXIT_FAILURE;
           return;
         }
@@ -46,11 +46,11 @@ export function registerResume(program: Command): void {
             if (record.status === 'failed') process.exitCode = EXIT_FAILURE;
           },
           async () => {
-            // `previous.pipelineVersion`, NO `pipeline.version`: este bloque
-            // registra el intento de RETOMAR ese run concreto, así que debe
-            // anclarse a la versión del pipeline que ese run tenía cuando
-            // corrió, no a la del pipeline.yaml recién cargado (que puede
-            // haber cambiado entre el run original y este intento de resume).
+            // `previous.pipelineVersion`, NOT `pipeline.version`: this block
+            // records the attempt to RESUME that specific run, so it must be
+            // anchored to the pipeline version that run had when it ran, not
+            // to the freshly loaded pipeline.yaml (which may have changed
+            // between the original run and this resume attempt).
             const blocked = await store.createRun(name, previous.pipelineVersion, previous.params);
             await store.finishRun(blocked, 'skipped', 'already_running');
             await notifyRunClosed(pipeline, blocked, ctx, store);

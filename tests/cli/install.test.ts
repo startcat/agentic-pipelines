@@ -14,8 +14,8 @@ function writePipeline(name: string, yaml: string) {
 }
 
 /**
- * `launchctl` de mentira: registra sus argumentos en un fichero y sale 0. La
- * suite NUNCA carga un job de verdad en el launchd de la máquina.
+ * Fake `launchctl`: records its arguments in a file and exits 0. The suite
+ * NEVER loads a real job into the machine's launchd.
  */
 function writeFakeLaunchctl(): string {
   const path = join(fakeHome, 'fake-launchctl');
@@ -25,11 +25,10 @@ function writeFakeLaunchctl(): string {
 }
 
 /**
- * `launchctl` de mentira cuyo `bootstrap` falla a propósito, con un mensaje
- * en stderr: antes `stdout`/`stderr` se descartaban
- * (`stdio: 'ignore'`), así que un `bootstrap` fallido no dejaba ningún
- * diagnóstico. `bootout` (llamado antes, dentro de `install`) sigue saliendo
- * 0 con normalidad.
+ * Fake `launchctl` whose `bootstrap` fails on purpose, with a message on
+ * stderr: `stdout`/`stderr` used to be discarded (`stdio: 'ignore'`), so a
+ * failed `bootstrap` left no diagnostic. `bootout` (called earlier, inside
+ * `install`) still exits 0 as usual.
  */
 function writeFailingLaunchctl(stderrMessage: string, exitCode: number): string {
   const path = join(fakeHome, 'fake-launchctl-failing');
@@ -53,7 +52,7 @@ async function cli(
       ...process.env,
       HOME: fakeHome,
       ANTHROPIC_API_KEY: 'sk-test',
-      // Estos tests son de launchd: en Linux el programador por defecto sería systemd.
+      // These tests are about launchd: on Linux the default scheduler would be systemd.
       PIPELINES_SCHEDULER: 'launchd',
       PIPELINES_LAUNCHCTL_BIN: opts.launchctlBin ?? writeFakeLaunchctl(),
     },
@@ -67,10 +66,10 @@ async function cli(
   return { code: await proc.exited, out: stdout + stderr };
 }
 
-/** Valor del `EnvironmentVariables/PATH` de un plist ya escrito, para las aserciones sobre él. */
+/** Value of the `EnvironmentVariables/PATH` of an already written plist, for assertions on it. */
 function pathFromPlist(xml: string): string {
   const match = /<key>PATH<\/key>\s*<string>([^<]*)<\/string>/.exec(xml);
-  if (!match) throw new Error('el plist no lleva ninguna clave PATH');
+  if (!match) throw new Error('the plist has no PATH key');
   return match[1]!;
 }
 
@@ -92,10 +91,10 @@ description: d
 version: 1
 params:
   docs_repo:
-    description: ruta
+    description: path
     required: true
   deploy_url:
-    description: url opcional
+    description: optional url
 requires:
   bin: [git]
 triggers:
@@ -111,7 +110,7 @@ steps:
 `;
 
 describe('pipelines install', () => {
-  test('escribe el plist y los params, y carga el job', async () => {
+  test('writes the plist and the params, and loads the job', async () => {
     writePipeline('demo', DEMO);
     const { code, out } = await cli(['install', 'demo', '--set', 'docs_repo=/repos/docs']);
     expect(code).toBe(0);
@@ -130,9 +129,9 @@ describe('pipelines install', () => {
     expect(out).toContain('cat.start.pipelines.demo');
   });
 
-  // Regla fija: ningún valor de param en el plist. Si esto se rompe,
-  // el plist vuelve a llevar información viva y puede desviarse del repo.
-  test('el plist no lleva ningún valor de parámetro', async () => {
+  // Fixed rule: no param value in the plist. If this breaks, the
+  // plist carries live information again and can drift from the repo.
+  test('the plist carries no param value', async () => {
     writePipeline('demo', DEMO);
     await cli(['install', 'demo', '--set', 'docs_repo=/repos/docs']);
     const plist = await Bun.file(
@@ -141,14 +140,14 @@ describe('pipelines install', () => {
     expect(plist).not.toContain('/repos/docs');
   });
 
-  test('avisa de los params opcionales sin valor y del paso que se saltará', async () => {
+  test('warns about optional params with no value and about the step that will be skipped', async () => {
     writePipeline('demo', DEMO);
     const { out } = await cli(['install', 'demo', '--set', 'docs_repo=/repos/docs']);
     expect(out).toContain('deploy_url');
     expect(out).toContain('deploy');
   });
 
-  test('falla nombrando el param obligatorio que falta, sin escribir nada', async () => {
+  test('fails naming the missing required param, writing nothing', async () => {
     writePipeline('demo', DEMO);
     const { code, out } = await cli(['install', 'demo']);
     expect(code).not.toBe(0);
@@ -158,68 +157,66 @@ describe('pipelines install', () => {
     ).toBe(false);
   });
 
-  test('falla si el pipeline no declara triggers', async () => {
+  test('fails if the pipeline declares no triggers', async () => {
     writePipeline(
-      'sin-trigger',
-      'name: sin-trigger\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
+      'no-trigger',
+      'name: no-trigger\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
     );
-    const { code, out } = await cli(['install', 'sin-trigger']);
+    const { code, out } = await cli(['install', 'no-trigger']);
     expect(code).not.toBe(0);
     expect(out).toContain('triggers');
   });
 
-  test('preserva las entradas de otros pipelines en .params.local.json', async () => {
+  test('preserves the entries of other pipelines in .params.local.json', async () => {
     writePipeline('demo', DEMO);
-    writeFileSync(join(root, '.params.local.json'), JSON.stringify({ otro: { x: '1' } }));
+    writeFileSync(join(root, '.params.local.json'), JSON.stringify({ other: { x: '1' } }));
     await cli(['install', 'demo', '--set', 'docs_repo=/repos/docs']);
     const params = await Bun.file(join(root, '.params.local.json')).json();
-    expect(params.otro.x).toBe('1');
+    expect(params.other.x).toBe('1');
     expect(params.demo.docs_repo).toBe('/repos/docs');
   });
 
-  test('avisa de un job ajeno que menciona la misma ruta y no instala sin --force', async () => {
+  test('warns about a foreign job that mentions the same path and does not install without --force', async () => {
     writePipeline('demo', DEMO);
     writeFileSync(
-      join(fakeHome, 'Library', 'LaunchAgents', 'com.otro.backup.plist'),
+      join(fakeHome, 'Library', 'LaunchAgents', 'com.other.backup.plist'),
       '<plist><dict><string>/repos/docs</string></dict></plist>',
     );
     const { code, out } = await cli(['install', 'demo', '--set', 'docs_repo=/repos/docs']);
     expect(code).not.toBe(0);
-    expect(out).toContain('com.otro.backup');
+    expect(out).toContain('com.other.backup');
     expect(out).toContain('--force');
   });
 
-  test('con --force instala igualmente pese al job ajeno', async () => {
+  test('with --force it installs anyway despite the foreign job', async () => {
     writePipeline('demo', DEMO);
     writeFileSync(
-      join(fakeHome, 'Library', 'LaunchAgents', 'com.otro.backup.plist'),
+      join(fakeHome, 'Library', 'LaunchAgents', 'com.other.backup.plist'),
       '<plist><dict><string>/repos/docs</string></dict></plist>',
     );
     const { code } = await cli(['install', 'demo', '--set', 'docs_repo=/repos/docs', '--force']);
     expect(code).toBe(0);
   });
 
-  // Reemplazar un job con la MISMA
-  // etiqueta debe seguir ocurriendo sin --force, pero avisando de que es un
-  // reemplazo y no una instalación nueva.
-  test('la segunda instalación avisa de que reemplaza el job existente', async () => {
+  // Replacing a job with the SAME label must still happen without --force,
+  // but warning that it is a replacement and not a new install.
+  test('the second install warns that it replaces the existing job', async () => {
     writePipeline('demo', DEMO);
     const first = await cli(['install', 'demo', '--set', 'docs_repo=/repos/docs']);
     expect(first.code).toBe(0);
-    expect(first.out).not.toContain('reemplazado');
+    expect(first.out).not.toContain('replaced');
 
     const second = await cli(['install', 'demo', '--set', 'docs_repo=/repos/docs']);
     expect(second.code).toBe(0);
-    expect(second.out).toContain('reemplazado');
+    expect(second.out).toContain('replaced');
     expect(second.out).toContain('cat.start.pipelines.demo');
   });
 
-  // Un PATH calculado solo desde
-  // `requires.bin` puede no incluir `/bin`, y en macOS `sh` SOLO vive ahí —
-  // sin él, el job instalado moriría en el primer paso `shell` o guarda
-  // `shell:`. Aserción sobre el plist REALMENTE escrito, no sobre `computePath`
-  // en aislado.
-  test('el PATH del plist instalado incluye /bin, así puede lanzar "sh"', async () => {
+  // A PATH computed only from `requires.bin` may not include `/bin`, and on
+  // macOS `sh` lives ONLY there — without it, the installed job would die on
+  // the first `shell` step or `shell:` guard. Assertion on the plist ACTUALLY
+  // written, not on `computePath` in isolation.
+  test('the PATH of the installed plist includes /bin, so it can launch "sh"', async () => {
     writePipeline('demo', DEMO);
     await cli(['install', 'demo', '--set', 'docs_repo=/repos/docs']);
     const plist = await Bun.file(
@@ -228,12 +225,11 @@ describe('pipelines install', () => {
     expect(pathFromPlist(plist).split(':')).toContain('/bin');
   });
 
-  // El único test anterior de "sin LANG/LC_ALL" llamaba a
-  // `renderPlist` con un spec que nunca los llevaba — no podía fallar nunca.
-  // La garantía real vive en cómo `install` construye `environmentVariables`
-  // (solo PATH y HOME), así que la aserción tiene que ir sobre el plist que
-  // el comando escribe de verdad.
-  test('el plist realmente instalado no declara LANG ni LC_ALL', async () => {
+  // The only previous "without LANG/LC_ALL" test called `renderPlist` with a
+  // spec that never carried them — it could never fail. The real guarantee
+  // lives in how `install` builds `environmentVariables` (only PATH and
+  // HOME), so the assertion has to go on the plist the command really writes.
+  test('the plist actually installed declares neither LANG nor LC_ALL', async () => {
     writePipeline('demo', DEMO);
     await cli(['install', 'demo', '--set', 'docs_repo=/repos/docs']);
     const plist = await Bun.file(
@@ -243,17 +239,16 @@ describe('pipelines install', () => {
     expect(plist).not.toContain('LC_ALL');
   });
 
-  // `computePath` ignoraba `mcp_servers[].command`, y hasta
-  // ahora funcionaba por casualidad cuando ese comando compartía directorio
-  // con algún `requires.bin` vecino. Aquí `requires.bin` solo declara "git"
-  // (que vive en /usr/bin, y además ya cubierto por el suelo de sistema), y
-  // el servidor MCP usa "node" (que en esta máquina vive en un directorio de
-  // nvm bien distinto) para demostrar que su directorio entra en el PATH por
-  // sí mismo.
-  test('el PATH del plist incluye el directorio del "command" de un servidor MCP', async () => {
+  // `computePath` ignored `mcp_servers[].command`, and until now it worked by
+  // chance when that command shared a directory with some neighboring
+  // `requires.bin`. Here `requires.bin` only declares "git" (which lives in
+  // /usr/bin, and is already covered by the system floor), and the MCP server
+  // uses "node" (which on this machine lives in a quite different nvm
+  // directory) to show that its directory enters the PATH on its own.
+  test('the plist PATH includes the directory of an MCP server "command"', async () => {
     const nodeBin = Bun.which('node');
     if (!nodeBin) {
-      // Entorno sin "node" en el PATH: no hay nada que demostrar aquí.
+      // Environment with no "node" on the PATH: nothing to show here.
       return;
     }
     const nodeDir = dirname(nodeBin);
@@ -286,27 +281,27 @@ steps:
     expect(pathFromPlist(plist).split(':')).toContain(nodeDir);
   });
 
-  // Con `--force`, la salida antes era indistinguible de una instalación
-  // limpia — ni el doctor en rojo ni los jobs ajenos se imprimían.
-  // "--force lo salta, AVISANDO".
-  test('con --force avisa igualmente del doctor en rojo y de los jobs ajenos detectados', async () => {
-    // El check en rojo es de tipo "env" (una var de `requires.env` sin
-    // definir), no "bin": un binario de `requires.bin` que no resuelve hace
-    // que `computePath` LANCE (necesita esa ruta para construir el PATH del
-    // job), y eso taparía la comprobación de esta prueba con un error
-    // distinto en vez de con el aviso de "--force" que se quiere comprobar.
+  // With `--force`, the output used to be indistinguishable from a clean
+  // install — neither the red doctor nor the foreign jobs were printed.
+  // "--force skips it, WITH A WARNING".
+  test('with --force it still warns about the red doctor and the foreign jobs detected', async () => {
+    // The red check is of kind "env" (an undefined `requires.env` var), not
+    // "bin": a `requires.bin` binary that does not resolve makes
+    // `computePath` THROW (it needs that path to build the job's PATH), and
+    // that would mask this test's check with a different error instead of the
+    // "--force" warning being tested.
     writePipeline(
-      'demo-rojo',
-      `name: demo-rojo
+      'demo-red',
+      `name: demo-red
 description: d
 version: 1
 params:
   docs_repo:
-    description: ruta
+    description: path
     required: true
 requires:
   bin: [git]
-  env: [SECRETO_AUSENTE_XYZ]
+  env: [MISSING_SECRET_XYZ]
 triggers:
   - cron: "0 3 * * *"
 steps:
@@ -316,26 +311,26 @@ steps:
 `,
     );
     writeFileSync(
-      join(fakeHome, 'Library', 'LaunchAgents', 'com.otro.backup.plist'),
+      join(fakeHome, 'Library', 'LaunchAgents', 'com.other.backup.plist'),
       '<plist><dict><string>/repos/docs</string></dict></plist>',
     );
     const { code, out } = await cli([
       'install',
-      'demo-rojo',
+      'demo-red',
       '--set',
       'docs_repo=/repos/docs',
       '--force',
     ]);
     expect(code).toBe(0);
-    expect(out).toContain('SECRETO_AUSENTE_XYZ');
-    expect(out).toContain('com.otro.backup');
+    expect(out).toContain('MISSING_SECRET_XYZ');
+    expect(out).toContain('com.other.backup');
     expect(out).toContain('--force');
   });
 
-  // Sin `mkdir(..., { recursive:
-  // true })`, una máquina limpia sin `~/Library/LaunchAgents` todavía sale
-  // con un ENOENT crudo en vez de crear el directorio.
-  test('crea ~/Library/LaunchAgents si todavía no existe', async () => {
+  // Without `mkdir(..., { recursive: true })`, a clean machine with no
+  // `~/Library/LaunchAgents` yet fails with a raw ENOENT instead of creating
+  // the directory.
+  test('creates ~/Library/LaunchAgents if it does not exist yet', async () => {
     rmSync(join(fakeHome, 'Library', 'LaunchAgents'), { recursive: true, force: true });
     writePipeline('demo', DEMO);
     const { code } = await cli(['install', 'demo', '--set', 'docs_repo=/repos/docs']);
@@ -345,10 +340,10 @@ steps:
     ).toBe(true);
   });
 
-  // Antes `stdout`/`stderr` de `launchctl` se descartaban
-  // (`stdio: 'ignore'`), así que un `bootstrap` fallido no dejaba ningún
-  // diagnóstico — justo el caso en que más hace falta.
-  test('si "launchctl bootstrap" falla, la salida incluye su stderr', async () => {
+  // `launchctl`'s `stdout`/`stderr` used to be discarded (`stdio: 'ignore'`),
+  // so a failed `bootstrap` left no diagnostic — exactly the case where it is
+  // most needed.
+  test('if "launchctl bootstrap" fails, the output includes its stderr', async () => {
     writePipeline('demo', DEMO);
     const failing = writeFailingLaunchctl('Load failed: 5: Input/output error', 5);
     const { code, out } = await cli(
@@ -361,12 +356,13 @@ steps:
   });
 });
 
-// `--dry-run` nace de una revisión: el paso que compara el plist generado
-// contra el que ya corre es lo que habría cazado el fallo del PATH sin `/bin`,
-// y era una entrada de checklist que se ejecuta a mano una vez — de hecho no
-// llegó a ejecutarse hasta que la revisión lo señaló. Como flag, es repetible.
+// `--dry-run` comes from a review: the step that compares the generated
+// plist against the one already running is what would have caught the
+// PATH-without-`/bin` failure, and it was a checklist entry run by hand once
+// — in fact it was not run until the review pointed it out. As a flag, it is
+// repeatable.
 describe('pipelines install --dry-run', () => {
-  test('imprime el plist que escribiría y no escribe ningún fichero', async () => {
+  test('prints the plist it would write and writes no file', async () => {
     writePipeline('demo', DEMO);
     const { code, out } = await cli(['install', 'demo', '--dry-run', '--set', 'docs_repo=/repos/docs']);
     expect(code).toBe(0);
@@ -377,27 +373,27 @@ describe('pipelines install --dry-run', () => {
     ).toBe(false);
   });
 
-  // Un "ensayo" que deja un efecto persistente deja de ser un ensayo.
-  test('no escribe .params.local.json aunque reciba --set', async () => {
+  // A "dry run" that leaves a persistent effect stops being a dry run.
+  test('does not write .params.local.json even when given --set', async () => {
     writePipeline('demo', DEMO);
     await cli(['install', 'demo', '--dry-run', '--set', 'docs_repo=/repos/docs']);
     expect(await Bun.file(join(root, '.params.local.json')).exists()).toBe(false);
   });
 
-  test('no invoca launchctl', async () => {
+  test('does not invoke launchctl', async () => {
     writePipeline('demo', DEMO);
     await cli(['install', 'demo', '--dry-run', '--set', 'docs_repo=/repos/docs']);
     expect(await Bun.file(launchctlLog).exists()).toBe(false);
   });
 
-  test('sigue fallando si falta un param obligatorio, para que sirva en un script', async () => {
+  test('still fails if a required param is missing, so it is useful in a script', async () => {
     writePipeline('demo', DEMO);
     const { code, out } = await cli(['install', 'demo', '--dry-run']);
     expect(code).not.toBe(0);
     expect(out).toContain('docs_repo');
   });
 
-  test('avisa igual de los params opcionales sin valor', async () => {
+  test('still warns about optional params with no value', async () => {
     writePipeline('demo', DEMO);
     const { out } = await cli(['install', 'demo', '--dry-run', '--set', 'docs_repo=/repos/docs']);
     expect(out).toContain('deploy_url');
@@ -405,7 +401,7 @@ describe('pipelines install --dry-run', () => {
 });
 
 describe('pipelines uninstall', () => {
-  test('descarga el job y borra el plist', async () => {
+  test('unloads the job and deletes the plist', async () => {
     writePipeline('demo', DEMO);
     await cli(['install', 'demo', '--set', 'docs_repo=/repos/docs']);
     const plistPath = join(fakeHome, 'Library', 'LaunchAgents', 'cat.start.pipelines.demo.plist');
@@ -418,23 +414,23 @@ describe('pipelines uninstall', () => {
     expect(out).toContain('.params.local.json');
   });
 
-  // Idempotente: repetir un uninstall no es un error. Un `uninstall` que
-  // falla la segunda vez empuja a la gente a comprobar estado a mano.
-  test('sobre un pipeline que no está instalado informa y sale 0', async () => {
+  // Idempotent: repeating an uninstall is not an error. An `uninstall` that
+  // fails the second time pushes people to check state by hand.
+  test('on a pipeline that is not installed it reports and exits 0', async () => {
     writePipeline('demo', DEMO);
     const { code, out } = await cli(['uninstall', 'demo']);
     expect(code).toBe(0);
-    expect(out).toContain('no está instalado');
+    expect(out).toContain('is not installed');
   });
 
-  // Si el plist se borra a mano pero el job sigue cargado,
-  // `uninstall` debe descargarlo igualmente — no basta con mirar si el
-  // fichero existe y salir sin más. `bootout` debe llamarse SIEMPRE.
-  test('llama a bootout aunque el plist se haya borrado a mano', async () => {
+  // If the plist is deleted by hand but the job is still loaded, `uninstall`
+  // must still unload it — it is not enough to look at whether the file
+  // exists and leave. `bootout` must ALWAYS be called.
+  test('calls bootout even if the plist was deleted by hand', async () => {
     writePipeline('demo', DEMO);
     await cli(['install', 'demo', '--set', 'docs_repo=/repos/docs']);
     const plistPath = join(fakeHome, 'Library', 'LaunchAgents', 'cat.start.pipelines.demo.plist');
-    rmSync(plistPath); // borrado a mano: el job puede seguir cargado en launchd
+    rmSync(plistPath); // deleted by hand: the job may still be loaded in launchd
 
     const bootoutsBefore = (await Bun.file(launchctlLog).text())
       .split('\n')
@@ -442,7 +438,7 @@ describe('pipelines uninstall', () => {
 
     const { code, out } = await cli(['uninstall', 'demo']);
     expect(code).toBe(0);
-    expect(out).toContain('no está instalado');
+    expect(out).toContain('is not installed');
 
     const bootoutsAfter = (await Bun.file(launchctlLog).text())
       .split('\n')
