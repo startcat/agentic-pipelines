@@ -1,6 +1,6 @@
 ---
 name: new-pipeline
-description: Use when someone wants a new pipeline in an agentic-pipelines data repo, described in their own words. For example "I want a pipeline that reviews stale PRs and tells me", "automate the weekly report", "every Monday, do this", "create a pipeline", "schedule an agent that…", or the same in any other language ("quiero una pipeline que…", "automatiza…", "cada lunes haz…"). Interviews the person one question at a time, writes pipeline.yaml and its prompts, validates until green, and only runs or installs it with permission.
+description: Use when someone wants a new pipeline in an agentic-pipelines data repo, described in their own words. For example "I want a pipeline that reviews stale PRs and tells me", "automate the weekly report", "every Monday, do this", "create a pipeline", "schedule an agent that…". Triggers work in any language the person writes in. Interviews the person one question at a time, writes pipeline.yaml and its prompts, validates until green, and only runs or installs it with permission.
 allowed-tools:
   - Read
   - Grep
@@ -8,6 +8,9 @@ allowed-tools:
   - Bash(pipelines validate *)
   - Bash(pipelines status *)
   - Bash(pipelines show *)
+  - Bash(bun run ~/agentic-pipelines/src/cli/index.ts validate *)
+  - Bash(bun run ~/agentic-pipelines/src/cli/index.ts status *)
+  - Bash(bun run ~/agentic-pipelines/src/cli/index.ts show *)
 ---
 
 # New pipeline
@@ -27,9 +30,12 @@ Do these three things once per conversation, before reading or writing any pipel
 
 A shell alias does not count, even if `command -v` reports one or you see it in a dotfile: the shell Claude Code runs commands in does not always load it. Below, `pipelines` stands for whichever command you found.
 
+`validate`, `status` and `show` are pre-approved in the first two forms. With `--repo`, or with the engine somewhere else, Claude Code asks each time; `bun link` in the engine's folder puts `pipelines` on the PATH once and for all.
+
 **2. Find the data repo.** Run `pipelines status --json`. The CLI decides which data repo it is (the `--repo` flag, else `PIPELINES_REPO`, else the nearest `pipelines.yaml` walking up from the current folder), and the `repo` field of its output is that path. Do not guess it from folder names.
 
 - If the command fails with `No data repo found`, there is no data repo here (the session may be in the engine's own checkout, for example). Do not create or change any file. Say so, and offer two ways on: clone the starter (`git clone https://github.com/startcat/pipelines-starter`, into a folder the person chooses, and open Claude Code there), or point at an existing data repo with `pipelines --repo <path> status --json`.
+- If it fails with `unknown option '--json'`, the engine is older than this plugin. Say so, and that `git -C <engine> pull && bun install` updates it (`<engine>` is the folder from step 3; the person runs it, or you do after a yes). Until then, use plain `pipelines status` for this session: it lists the latest runs, but not the verdicts, the next runs or the spend, and it does not print the repo, so the data repo is the folder with the nearest `pipelines.yaml` walking up from the current one (or the `--repo` path, or `PIPELINES_REPO`, if one is set). Say which answers you cannot give with it.
 - Before writing the first file, say which repo you are going to write in.
 
 **3. Find the reference.** The `pipeline.yaml` format is documented in the engine's `docs/reference.md`. The engine is the folder three levels above the real path of `src/cli/index.ts`: `~/agentic-pipelines` for the second form above, and for the first, resolve the link with `realpath "$(command -v pipelines)"`. If `<engine>/docs/reference.md` is not there, fetch `https://raw.githubusercontent.com/startcat/agentic-pipelines/main/docs/reference.md` and say you are using the version on GitHub, which may be newer than the installed engine. Do not load the whole reference into the conversation: search it for the section you need and read that part. When the reference and your memory disagree, the reference and `pipelines validate` win.
@@ -40,6 +46,8 @@ A shell alias does not count, even if `command -v` reports one or you see it in 
 - `pipelines doctor` is not pre-approved: it starts the pipeline's MCP servers and checks the network, so Claude Code will ask the person before it runs.
 - Never read, print or write `.env`, and never put a secret's value in any file or command. To know whether a secret is set, trust `pipelines doctor`. Say which variable is missing and that it goes in the data repo's `.env`; the person writes it.
 - Never edit files the engine generates: the launchd plist, the systemd units, `.params.local.json`. Never call `launchctl` or `systemctl` yourself. A param of an installed pipeline changes with `pipelines install <name> --set key=value`.
+- A param that is a path goes into `--set` as an absolute path: expand `~` to the home folder and resolve a relative path yourself, and say so. The engine saves the value as it is given, and a scheduled run uses it without expanding `~`, so `repo=~/docs` would break every run.
+- Say times the way `pipelines status --json` labels them: `nextLabel` and `startedLabel`, in the machine's time zone (`timeZone`). The ISO fields are UTC and are not for saying.
 - If the CLI cannot do what is asked (stop a run that is already running, pause for a few days), say so plainly instead of improvising with other tools.
 - Answer in the language the person writes in.
 <!-- /shared:locate -->
@@ -139,7 +147,7 @@ Propose `pipelines run <name>` (with `--set key=value` for required params), say
 
 ## 7. Install it, with permission
 
-If it has `triggers`, propose `pipelines install <name>` (with `--set key=value` for its params; they are saved for scheduled runs), offering `pipelines install <name> --dry-run` first if the person wants to see what it will write. Only install after a yes. Install from the engine checkout that is going to stay: the job keeps the path of the CLI it was installed with. Afterwards, say when it will run next (the `next` field of `pipelines status <name> --json`) and that `pipelines web` shows it on the dashboard (the person starts it; it is a server that keeps running).
+If it has `triggers`, propose `pipelines install <name>` (with `--set key=value` for its params; they are saved for scheduled runs), offering `pipelines install <name> --dry-run` first if the person wants to see what it will write. Only install after a yes. Install from the engine checkout that is going to stay: the job keeps the path of the CLI it was installed with. Afterwards, say when it will run next (the `nextLabel` field of `pipelines status <name> --json`, in the machine's time zone) and that `pipelines web` shows it on the dashboard (the person starts it; it is a server that keeps running).
 
 ## 8. Remember git
 

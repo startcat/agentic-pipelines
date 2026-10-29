@@ -10,6 +10,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { buildProgram } from '../../src/cli/program.ts';
+import { lintPipeline } from '../../src/lint/rules.ts';
 import { parsePipeline } from '../../src/schema/pipeline.ts';
 import {
   citationProblems,
@@ -90,6 +91,11 @@ describe('the shared section', () => {
       'status --json',
       'No data repo found',
       'pipelines-starter',
+      // An engine older than the plugin: say so, how to update, and fall back.
+      "unknown option '--json'",
+      'git -C <engine> pull && bun install',
+      // A path in a param is saved as given, and a scheduled run does not expand `~`.
+      'absolute path',
     ]) {
       expect(shared).toContain(needle);
     }
@@ -126,8 +132,11 @@ describe.each(EXPECTED_SKILLS.length > 0 ? EXPECTED_SKILLS : ['(none)'])('skill 
     expect(citationProblems(citedCommands(markdown), cliSurface(buildProgram()))).toEqual([]);
   });
 
-  test('every yaml block passes the pipeline schema', () => {
-    for (const block of yamlBlocks(markdown)) expect(() => parsePipeline(block)).not.toThrow();
+  test('every yaml block passes the pipeline schema and the shell rules validate applies', () => {
+    for (const block of yamlBlocks(markdown)) {
+      expect(() => parsePipeline(block)).not.toThrow();
+      expect(lintPipeline(parsePipeline(block))).toEqual([]);
+    }
   });
 
   test('the shared section is there and the same in every skill', () => {
