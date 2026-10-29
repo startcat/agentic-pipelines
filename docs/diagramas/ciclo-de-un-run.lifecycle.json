@@ -29,7 +29,7 @@
           "preflight",
           "skipped"
         ],
-        "note": "A skipped run is a normal outcome, exit 0, not a failure."
+        "note": "A skipped run is a normal outcome, not a failure: exit 0 for a false when guard, exit 3 when another run holds the lock."
       },
       {
         "id": "fallo",
@@ -66,7 +66,7 @@
       "id": "disparo",
       "type": "start",
       "label": "Trigger",
-      "sublabel": "launchd or pipelines run",
+      "sublabel": "scheduler or pipelines run",
       "lane": "main",
       "col": 0,
       "step": "01",
@@ -125,10 +125,10 @@
       "id": "skipped",
       "type": "neutral",
       "label": "skipped",
-      "sublabel": "false guard or lock",
+      "sublabel": "false guard or busy lock",
       "lane": "saltos",
       "col": 0,
-      "tag": "exit 0 / 3"
+      "tag": "0 guard · 3 lock"
     }
   ],
   "transitions": [
@@ -190,7 +190,7 @@
       "title": "Skip",
       "items": [
         "A throttle skip is normal: check skipReason",
-        "Busy lock exits with 3; false guard, with 0"
+        "False when guard exits 0; busy lock exits 3 (skipReason already_running)"
       ]
     },
     {
@@ -198,6 +198,7 @@
       "title": "Failure",
       "items": [
         "always runs anyway, on success or on failure",
+        "A failed preflight exits 1 and creates no run; a damaged lock exits 2",
         "resume reuses the params of the original run"
       ]
     }

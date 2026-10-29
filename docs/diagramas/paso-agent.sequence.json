@@ -230,7 +230,7 @@
       "title": "Preparation",
       "items": [
         "The agent is a .md with front matter in agents/",
-        "The prompt can use previous outputs and declared secrets"
+        "The prompt can read outputs of earlier steps and {{secrets.X}}; logs are stored redacted"
       ]
     },
     {
@@ -238,7 +238,7 @@
       "title": "Governance",
       "items": [
         "permissionMode bypass: the engine hook is in charge",
-        "cwd is the only write root; Bash is forbidden"
+        "cwd is the only write root; Bash and other pathless tools are always denied"
       ]
     },
     {

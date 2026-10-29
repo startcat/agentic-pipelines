@@ -10,7 +10,7 @@
         "id": "camino-principal",
         "label": "Main path",
         "focus": [
-          "launchd",
+          "scheduler",
           "cli",
           "repo",
           "runner",
@@ -34,11 +34,21 @@
         "id": "fuera-de-los-repos",
         "label": "What lives outside",
         "focus": [
-          "launchd",
+          "scheduler",
           "workspaces",
           "notify"
         ],
-        "note": "Three things you do not see by reading the code: plists, workspaces and the notification channel."
+        "note": "Three things you do not see by reading the code: the scheduler jobs, workspaces and the notification channel."
+      },
+      {
+        "id": "visor",
+        "label": "Web viewer",
+        "focus": [
+          "web",
+          "runs",
+          "scheduler"
+        ],
+        "note": "A local read-only server: it reads .runs/ and the scheduler state and never writes."
       }
     ]
   },
@@ -58,19 +68,19 @@
       ]
     },
     {
-      "id": "launchd",
+      "id": "scheduler",
       "type": "external",
-      "label": "launchd",
-      "sublabel": "cron plist",
+      "label": "launchd / systemd",
+      "sublabel": "plist or user timer",
       "pos": [
         20,
         210
       ],
       "size": [
-        120,
+        135,
         60
       ],
-      "tag": "macOS"
+      "tag": "macOS · Linux"
     },
     {
       "id": "cli",
@@ -214,6 +224,21 @@
         60
       ],
       "tag": "outside repo"
+    },
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "Web viewer",
+      "sublabel": "pipelines web · 127.0.0.1",
+      "pos": [
+        395,
+        540
+      ],
+      "size": [
+        170,
+        60
+      ],
+      "tag": "read-only"
     }
   ],
   "boundaries": [
@@ -247,8 +272,8 @@
       "label": "by hand"
     },
     {
-      "id": "launchd-cli",
-      "from": "launchd",
+      "id": "scheduler-cli",
+      "from": "scheduler",
       "to": "cli",
       "label": "at cron time",
       "variant": "emphasis"
@@ -321,6 +346,23 @@
       "variant": "dashed",
       "fromSide": "bottom",
       "toSide": "top"
+    },
+    {
+      "id": "web-runs",
+      "to": "runs",
+      "label": "reads run.json and logs",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "from": "web"
+    },
+    {
+      "id": "web-scheduler",
+      "to": "scheduler",
+      "label": "scheduler state",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "bottom",
+      "from": "web"
     }
   ],
   "cards": [
@@ -330,7 +372,7 @@
       "items": [
         "Contains no real pipeline",
         "Validates the YAML in strict mode before running anything",
-        "No built-in scheduler: install translates the cron to launchd"
+        "No scheduler inside: install translates the cron into launchd (macOS) or systemd user timers (Linux)"
       ]
     },
     {
@@ -346,9 +388,17 @@
       "dot": "rose",
       "title": "Outside both repos",
       "items": [
-        "launchd plists in ~/Library/LaunchAgents",
+        "Scheduler jobs: plists in ~/Library/LaunchAgents or units in ~/.config/systemd/user",
         "Workspaces: own clones, forced to origin/main",
-        "Retiring an old cron job is manual: launchctl disable"
+        "Retiring an old cron job is manual: disable it in launchd or systemd"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Web viewer",
+      "items": [
+        "pipelines web: 127.0.0.1, GET only, nothing is written",
+        "Overview, costs, pipeline, run and per-step log pages"
       ]
     }
   ]
