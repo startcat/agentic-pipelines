@@ -30,9 +30,11 @@ graders:
   - type: tool_used
     name: writes-nothing-yet
     tool: Write
+    min: 0
     max: 0
   - type: tool_used
     name: installs-nothing
     tool: Bash
     input_match: "index\\.ts.*\\b(install|uninstall|run|resume)\\b"
+    min: 0
     max: 0

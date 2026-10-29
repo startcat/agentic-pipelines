@@ -182,7 +182,11 @@ describe('eval cases', () => {
       expect(names.has(grader.name)).toBe(false);
       names.add(grader.name);
       if (grader.type === 'llm') expect(typeof grader.criteria).toBe('string');
-      if (grader.type === 'tool_used') expect(typeof grader.tool).toBe('string');
+      if (grader.type === 'tool_used') {
+        expect(typeof grader.tool).toBe('string');
+        // `min` defaults to 1: a "never called" grader needs `min: 0` too, or it can never pass.
+        if (grader.max === 0) expect(grader.min).toBe(0);
+      }
       if (grader.type === 'file_exists') expect(typeof grader.path).toBe('string');
     }
     const scaffold = parsed.context?.scaffold_script;

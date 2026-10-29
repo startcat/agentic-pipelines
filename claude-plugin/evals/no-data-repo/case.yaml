@@ -28,6 +28,7 @@ graders:
   - type: tool_used
     name: writes-nothing
     tool: Write
+    min: 0
     max: 0
   - type: file_exists
     name: no-pipeline-files

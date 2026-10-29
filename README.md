@@ -760,7 +760,8 @@ claude plugin eval claude-plugin --scaffold --runs 1 --no-publish \
   --allow-tools Write Edit \
   'Bash(bun run ./engine/src/cli/index.ts validate:*)' \
   'Bash(bun run ./engine/src/cli/index.ts status:*)' \
-  'Bash(bun run ./engine/src/cli/index.ts show:*)'
+  'Bash(bun run ./engine/src/cli/index.ts show:*)' \
+  'Bash(command -v pipelines)' 'Bash(test -f ~/agentic-pipelines/src/cli/index.ts)'
 ```
 
 Only the commands that read are granted: a skill that tried to install, run
@@ -769,7 +770,8 @@ instead of a real job landing in your scheduler.
 
 Each case in `claude-plugin/evals/` starts from a copy of
 `claude-plugin/evals/fixture-repo/`, a small data repo with two fabricated
-failed runs.
+failed runs, and a copy of this engine in `./engine`. `cli-discovery` has no
+engine copy: what it finds depends on the machine that runs it.
 
 `src/` is organized by responsibility: `schema/` (Zod, strict mode),
 `graph/` (dependencies and cycles), `guards/` (`when`), `runner/`

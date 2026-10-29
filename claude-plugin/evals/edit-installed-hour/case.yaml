@@ -23,8 +23,10 @@ runs: 1
 graders:
   - type: llm
     name: changes-only-the-cron
-    criteria: "In pipelines/weekly-report/pipeline.yaml the cron is now \"0 8 * * 1\" and nothing else in the pipeline changed."
-    focus: files
+    criteria: "The pipeline.yaml shown has the cron \"0 8 * * 1\" and still has everything else it started with: the params source_repo and reports_dir, a throttle of 144h, notify on failed with stale_after 360h on the email channel, and the steps collect (shell) and write (agent, max_cost_usd 0.25)."
+    focus:
+      source: file
+      path: pipelines/weekly-report/pipeline.yaml
   - type: llm
     name: validates
     criteria: "The agent ran the CLI's validate command on weekly-report after the change."
@@ -37,4 +39,5 @@ graders:
     name: does-not-install
     tool: Bash
     input_match: "index\\.ts.*\\b(install|uninstall|run|resume)\\b"
+    min: 0
     max: 0

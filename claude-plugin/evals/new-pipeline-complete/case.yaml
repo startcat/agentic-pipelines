@@ -5,7 +5,7 @@ tags: [new-pipeline]
 context:
   scaffold_script: scaffold.sh
 execution:
-  prompt: "I want a pipeline that reviews the stale pull requests of the repo I keep at ~/src/app and emails me a summary. Run it every Monday at 07:00. A PR is stale after 7 days without updates. It needs gh and jq, and github.com. Cap the agent at $0.50 per run. Notify me on the email channel when it fails and when it succeeds. The repo path should be a param. Use the existing writer agent. That is everything: write it and validate it, but do not run or install it."
+  prompt: "I want a pipeline that reviews the stale pull requests of the repo I keep at ~/src/app and emails me a summary. Run it every Monday at 07:00. A PR is stale after 7 days without updates. It needs gh and jq, and github.com. Cap the agent at $0.50 per run. Notify me on the email channel when it fails and when it succeeds. The repo path should be a param. Use the existing writer agent. Call it stale-prs. That is everything, and yes, the plan is fine: go ahead and write it and validate it, but do not run or install it."
   max_turns: 40
   timeout_seconds: 600
   allowed_tools:
@@ -23,8 +23,13 @@ runs: 1
 graders:
   - type: llm
     name: writes-the-pipeline
-    criteria: "A pipelines/<name>/pipeline.yaml was written with a Monday 07:00 cron, a param for the repo path, an agent step with max_cost_usd of at most 0.5, and notify on the email channel for failed and success."
-    focus: files
+    criteria: "The pipeline.yaml shown has a Monday 07:00 cron (0 7 * * 1), a param for the repo path, an agent step with max_cost_usd of at most 0.5, and notify on the email channel for failed and success."
+    focus:
+      source: file
+      path: pipelines/stale-prs/pipeline.yaml
+  - type: file_exists
+    name: pipeline-file-exists
+    path: pipelines/stale-prs/pipeline.yaml
   - type: llm
     name: validated-green
     criteria: "The agent ran the CLI's validate command on the new pipeline and the last validate it ran passed."
@@ -33,4 +38,5 @@ graders:
     name: no-run-or-install
     tool: Bash
     input_match: "index\\.ts.*\\b(install|uninstall|run|resume)\\b"
+    min: 0
     max: 0
