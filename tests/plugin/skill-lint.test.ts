@@ -42,6 +42,20 @@ describe('citedCommands', () => {
     expect(pick('```yaml\nrun: pipelines status --nope\n```')).toEqual([]);
   });
 
+  test('the bun run form of the CLI is read like the binary', () => {
+    expect(pick('`bun run ~/agentic-pipelines/src/cli/index.ts status --json`')).toEqual([
+      { command: 'status', flags: ['--json'] },
+    ]);
+  });
+
+  test('the bun run form with no command is not a citation', () => {
+    expect(pick('`bun run ~/agentic-pipelines/src/cli/index.ts`')).toEqual([]);
+  });
+
+  test('a shell line continued with a backslash keeps its flags', () => {
+    expect(pick('```bash\npipelines install x \\\n  --dry-run\n```')).toEqual([{ command: 'install', flags: ['--dry-run'] }]);
+  });
+
   test('keeps the text it came from', () => {
     expect(citedCommands('`pipelines show demo 1`')[0]?.text).toBe('pipelines show demo 1');
   });
@@ -61,6 +75,19 @@ describe('citationProblems against the real CLI', () => {
 
   test('real commands and flags are fine', () => {
     expect(problems('`pipelines install x --set k=v` and `pipelines validate --file d.yaml`')).toEqual([]);
+  });
+
+  test('a missing required argument is a problem', () => {
+    expect(problems('`pipelines show <name>`')).toHaveLength(1);
+    expect(problems('`pipelines doctor --set k=v`')).toHaveLength(1);
+  });
+
+  test('all required arguments, and option values that are not arguments, are fine', () => {
+    expect(problems('`pipelines show <name> <run-id>` `pipelines status -n 3` `pipelines run x --set k=v`')).toEqual([]);
+  });
+
+  test('a bare command is a mention of it, not an invocation', () => {
+    expect(problems('`pipelines doctor` and `pipelines resume`')).toEqual([]);
   });
 
   test('the global flags and help work with any command', () => {
