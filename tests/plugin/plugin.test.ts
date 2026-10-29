@@ -21,7 +21,7 @@ import {
 } from './skill-lint.ts';
 
 /** The skills the plugin ships, one folder each under `claude-plugin/skills/`. */
-export const EXPECTED_SKILLS: string[] = ['new-pipeline'];
+export const EXPECTED_SKILLS: string[] = ['new-pipeline', 'edit-pipeline'];
 
 const ROOT = join(import.meta.dir, '..', '..');
 const PLUGIN = join(ROOT, 'claude-plugin');
