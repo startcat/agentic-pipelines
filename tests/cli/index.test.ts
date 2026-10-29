@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { loadRepoContext } from '../../src/cli/context.ts';
+import { escapeHtml } from '../../src/web/render.ts';
+import { createServer } from '../../src/web/server.ts';
 
 let root: string;
 const CLI = join(import.meta.dir, '..', '..', 'src', 'cli', 'index.ts');
@@ -18,7 +21,7 @@ function latestRunId(pipeline: string): string {
   return last;
 }
 
-async function cli(args: string[]): Promise<{ code: number; out: string }> {
+async function cli(args: string[]): Promise<{ code: number; out: string; stdout: string }> {
   const proc = Bun.spawn(['bun', CLI, ...args], {
     cwd: root,
     env: { ...process.env, ANTHROPIC_API_KEY: 'sk-test' },
@@ -29,7 +32,7 @@ async function cli(args: string[]): Promise<{ code: number; out: string }> {
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
   ]);
-  return { code: await proc.exited, out: stdout + stderr };
+  return { code: await proc.exited, out: stdout + stderr, stdout };
 }
 
 beforeEach(() => {
@@ -707,5 +710,64 @@ describe('requires.env with templates, end to end', () => {
     writeFileSync(join(root, '.params.local.json'), JSON.stringify({ tpl: { app: 'other' } }));
     const { code } = await cli(['resume', 'tpl', latestRunId('tpl')]);
     expect(code).toBe(0);
+  });
+});
+
+describe('status --json', () => {
+  const OK_YAML = 'name: ok\ndescription: d\nversion: 1\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n';
+
+  test('prints the overview as JSON on stdout, exit 0', async () => {
+    writePipeline('ok', OK_YAML);
+    const { code, stdout } = await cli(['status', '--json']);
+    expect(code).toBe(0);
+    const json = JSON.parse(stdout);
+    expect(json.repo).toBe(realpathSync(root));
+    expect(json.pipelines.map((p: { name: string }) => p.name)).toEqual(['ok']);
+    expect(json.costs.month.runs).toBe(0);
+  });
+
+  test('a folder with no pipeline.yaml is an entry with an error, still exit 0', async () => {
+    writePipeline('ok', OK_YAML);
+    mkdirSync(join(root, 'pipelines', 'half'), { recursive: true });
+    const { code, stdout } = await cli(['status', '--json']);
+    expect(code).toBe(0);
+    const json = JSON.parse(stdout);
+    expect(json.pipelines).toContainEqual({ name: 'half', error: 'the folder has no pipeline.yaml' });
+    expect(json.pipelines.find((p: { name: string }) => p.name === 'ok')).toHaveProperty('verdict');
+  });
+
+  test('with a name, only that pipeline', async () => {
+    writePipeline('ok', OK_YAML);
+    writePipeline('other', OK_YAML.replace('name: ok', 'name: other'));
+    const { code, stdout } = await cli(['status', 'ok', '--json']);
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout).pipelines.length).toBe(1);
+  });
+
+  test('an unknown name fails like the text status does', async () => {
+    writePipeline('ok', OK_YAML);
+    const { code, out } = await cli(['status', 'nope', '--json']);
+    expect(code).toBe(1);
+    expect(out).toContain('does not exist');
+  });
+
+  test('without --json the text output is unchanged', async () => {
+    writePipeline('ok', OK_YAML);
+    const { code, stdout } = await cli(['status']);
+    expect(code).toBe(0);
+    expect(stdout).toBe('\nok\n  (no runs)\n');
+  });
+
+  test('the verdict is the one the dashboard draws', async () => {
+    writePipeline('ok', OK_YAML);
+    const { stdout } = await cli(['status', '--json']);
+    const line: string = JSON.parse(stdout).pipelines[0].verdict.line;
+    const server = createServer(await loadRepoContext(root), { port: 0 });
+    try {
+      const html = await (await fetch(`http://127.0.0.1:${server.port}/`)).text();
+      expect(html).toContain(escapeHtml(line));
+    } finally {
+      server.stop(true);
+    }
   });
 });
