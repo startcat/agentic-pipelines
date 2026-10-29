@@ -28,6 +28,7 @@ see the [README](../README.md).
 - [Command reference](#command-reference)
   - [Scheduling backends](#scheduling-backends)
   - [`validate`: the five rules and `--file`](#validate-the-five-rules-and---file)
+  - [`status --json`](#status---json)
   - [Exit codes](#exit-codes)
 - [`.runs/`: what is persisted](#runs-what-is-persisted)
 - [Data repo layout](#data-repo-layout)
@@ -529,7 +530,7 @@ current directory.
 | `uninstall` | `pipelines uninstall <name>` | Unloads the job (always, even if its files no longer exist) and deletes its files if it finds them: the plist on macOS; the `.service` and the `.timer` on Linux. Never uses `launchctl disable` or `systemctl mask`. Doesn't touch `.params.local.json` or the logs. Idempotent. |
 | `run` | `pipelines run <name> [--set key=value ...] [--force]` | Runs the pipeline now. `--set` is repeatable, to pass/override params. Evaluates `requires` (blocking) and the `when:` guards (a `skipped` is a success, not an error) before starting. Acquires an exclusive per-pipeline lock for the duration of the run. `--force` skips the `when:` guards (policy: "not today") but NOT `requires`, which measures whether this machine can run the pipeline; it warns on stderr and marks the run with `forced: true`, which `status` shows as `(guards skipped)`. A forced run doesn't prove the guards would have let it through, and it does anchor the `throttle` like any other run that executed. |
 | `resume` | `pipelines resume <name> <run-id>` | Resumes a `failed` run from where it stopped, reusing its original params. |
-| `status` | `pipelines status [name] [-n, --limit <n>]` | Lists the latest runs (5 by default) of one pipeline, or of all of them if the name is omitted: id, status, cost, skip reason if any. |
+| `status` | `pipelines status [name] [-n, --limit <n>] [--json]` | Lists the latest runs (5 by default) of one pipeline, or of all of them if the name is omitted: id, status, cost, skip reason if any. With `--json`, prints the dashboard's overview instead (verdict, next run, last run, month spend); see [`status --json`](#status---json). |
 | `show` | `pipelines show <name> <run-id> [step]` | Dumps the full `RunRecord` as JSON, or the `StepRecord` of a specific step if given (including `denials` if the step had any tool denied). The `RunRecord` includes `notify` when the channel was invoked: channel, exit code, timestamp and the (redacted) tail of its output, also when the channel failed. The `error` of a failed shell step includes the last lines of its stderr. |
 | `web` | `pipelines web [-p, --port <n>]` | Starts a local, read-only server over the repo and its runs: health overview (with the trigger axis and the work axis, the next run and this month's spend), a costs page (`/costs`), a page per pipeline (with its spending caps), run detail (with the outputs of its agent steps) and the log of each finished step with numbered lines (a step gets its page as soon as it ends; the run's page updates itself while it runs). Follows the system's light or dark mode and serves its fonts locally. Listens only on `127.0.0.1`, with no flag to change it: exposing it to the network is a different design, with its own conversation about auth. Default port **7717**. |
 
@@ -663,6 +664,42 @@ resolve; it doesn't execute anything. A `pipeline.yaml` can pass
 `validate --file` without a single warning and still fail at 3 a.m. because
 of something no static check can see, a `tail -n +4` that miscounts a blank
 line, for example. The risk narrows; it doesn't close.
+
+### `status --json`
+
+`pipelines status [name] --json` prints, as one JSON object on stdout, what
+the dashboard's overview shows: the same reads of `.runs/` and the same
+verdict, next-run and spend functions, so the two can't disagree. It only
+reads. `--limit` doesn't apply. An unknown `name` fails with exit code 1, as
+the text output does; a pipeline that can't be read is an entry with an
+`error`, not a failed command (exit code 0).
+
+| Field | Notes |
+|---|---|
+| `generatedAt` | ISO instant the overview was computed at. |
+| `repo` | Absolute path of the data repo the CLI resolved (`--repo`, `PIPELINES_REPO` or the nearest `pipelines.yaml`). |
+| `scheduler` | `launchd`, `systemd`, or `—` on a platform without one. |
+| `summary` | `{ line, tone, sub }`: the dashboard's headline, its tone and the line that counts every category (`7 pipelines · 1 not triggered · 2 failing`). Covers the pipelines listed. |
+| `pipelines[]` | One entry per pipeline (or only `name`), in name order. See below. |
+| `costs` | `{ month: { label, total, runs, withAgent }, previous: { label, total }, unreadableRuns }`: this month's spend in USD, its runs and how many had an `agent` step, last month's total, and how many `run.json` files couldn't be read and so aren't in the sums. Always the **whole repo's**, as on `/costs`, even when `name` is given. Only what `agent` steps measure is counted. |
+
+A pipeline that can be read:
+
+| Field | Notes |
+|---|---|
+| `name`, `description` | From its `pipeline.yaml`. |
+| `verdict` | `{ line, tone }`: the dashboard's sentence and its tone, one of `bad`, `warn`, `live`, `neutral`, `ok`. |
+| `trigger` | `installed`, `drifted` (installed, but the job files no longer match what `install` would write now), `not-installed`, `disabled` or `no-trigger` (no `triggers`). |
+| `work` | `working`, `failing`, `stuck`, `silent` or `never-worked`. |
+| `contradiction` | `true` when the job is loaded and nothing has run in its window. |
+| `consecutiveSkips` | Skipped runs in a row, counting back from the latest one. |
+| `lastRun` | `{ id, status, startedAt, costUsd, forced, skipReason? }`, or `null` with no runs. `id` is the run's directory, the one `pipelines show <name> <run-id>` takes; `costUsd` is `totalCostUsd`, or `null` if the run has none. |
+| `next` | ISO instant of the next scheduled run, or `null`. |
+| `nextReason` | Only when `next` is `null`: `not-installed`, `disabled`, `manual` (no `triggers`) or `unknown` (installed, but its cron can't be worked out). A time is never made up. |
+
+A pipeline that can't be read (a folder with no `pipeline.yaml`, a YAML that
+doesn't parse, a `run.json` cut short) is `{ name, error }`, with the reason
+in plain text; the others are listed whole.
 
 ### Exit codes
 
