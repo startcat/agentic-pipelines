@@ -32,6 +32,6 @@ graders:
   - type: tool_used
     name: does-not-install
     tool: Bash
-    input_match: "index\\.ts.*\\b(install|uninstall|run|resume)\\b"
+    input_match: "(pipelines|index\\.ts)( --repo \\S+)? (install|uninstall|run|resume)\\b"
     min: 0
     max: 0

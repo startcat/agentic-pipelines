@@ -25,7 +25,7 @@ graders:
     focus: last_message
   - type: llm
     name: no-interrogation
-    criteria: "The reply asks one question (or at most two closely related ones), not a long list of questions at once."
+    criteria: "The reply asks about one topic only (a single proposal followed by \"does that work?\" counts as one question), and does not ask a list of separate questions at once."
     focus: last_message
   - type: tool_used
     name: writes-nothing-yet
@@ -35,6 +35,6 @@ graders:
   - type: tool_used
     name: installs-nothing
     tool: Bash
-    input_match: "index\\.ts.*\\b(install|uninstall|run|resume)\\b"
+    input_match: "(pipelines|index\\.ts)( --repo \\S+)? (install|uninstall|run|resume)\\b"
     min: 0
     max: 0
