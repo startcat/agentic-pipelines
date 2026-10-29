@@ -1,0 +1,11 @@
+{
+  "name": "agentic-pipelines",
+  "description": "Create, edit and check agentic-pipelines from Claude Code.",
+  "author": {
+    "name": "Start.cat",
+    "url": "https://start.cat"
+  },
+  "homepage": "https://github.com/startcat/agentic-pipelines",
+  "repository": "https://github.com/startcat/agentic-pipelines",
+  "license": "MIT"
+}

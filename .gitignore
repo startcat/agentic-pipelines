@@ -4,3 +4,4 @@ node_modules/
 .env
 .params.local.json
 .runs/
+claude-plugin/evals/results/
