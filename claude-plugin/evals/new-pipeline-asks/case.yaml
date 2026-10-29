@@ -1,0 +1,40 @@
+schema_version: "1.0"
+name: new-pipeline-asks
+description: "Asking for a new pipeline in a few words gets one question with a proposal, not a file."
+tags: [new-pipeline]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: "I want a pipeline that reviews stale PRs and tells me."
+  max_turns: 15
+  timeout_seconds: 600
+  allowed_tools:
+    - "Skill"
+    - "Read"
+    - "Glob"
+    - "Grep"
+    - "Bash(bun run ./engine/src/cli/index.ts:*)"
+    - "Bash(command -v:*)"
+    - "Bash(test:*)"
+    - "Bash(realpath:*)"
+    - "Bash(ls:*)"
+  append_system_prompt: "For this session, the agentic-pipelines CLI is `bun run ./engine/src/cli/index.ts`: the engine is checked out at ./engine in the working directory, and no other `pipelines` command should be used. Nobody will answer follow-up questions: if the skill would ask the person something, ask it and stop."
+runs: 1
+graders:
+  - type: llm
+    name: asks-cadence-with-proposal
+    criteria: "The reply asks a single question about when the pipeline should run and proposes a concrete day and time for the person to accept."
+    focus: last_message
+  - type: llm
+    name: no-interrogation
+    criteria: "The reply asks one question (or at most two closely related ones), not a long list of questions at once."
+    focus: last_message
+  - type: tool_used
+    name: writes-nothing-yet
+    tool: Write
+    max: 0
+  - type: tool_used
+    name: installs-nothing
+    tool: Bash
+    input_match: "index\\.ts.*\\b(install|uninstall|run|resume)\\b"
+    max: 0

@@ -1,0 +1,18 @@
+name: docs-check
+description: Every morning, checks that a repo still has its docs folder and a README in it.
+version: 1
+params:
+  repo:
+    description: Local clone whose docs are checked.
+    required: true
+triggers:
+  - cron: "0 9 * * *"
+steps:
+  - id: check
+    type: shell
+    cwd: "{{params.repo}}"
+    timeout: 1m
+    run: |
+      set -euo pipefail
+      test -d docs
+      test -f docs/README.md

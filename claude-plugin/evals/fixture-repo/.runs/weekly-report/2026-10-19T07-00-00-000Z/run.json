@@ -1,0 +1,57 @@
+{
+  "id": "2026-10-19T07-00-00-000Z",
+  "pipeline": "weekly-report",
+  "pipelineVersion": 1,
+  "status": "failed",
+  "startedAt": "2026-10-19T07:00:00.000Z",
+  "finishedAt": "2026-10-19T07:00:43.000Z",
+  "params": {
+    "source_repo": "/Users/me/src/app",
+    "reports_dir": "/Users/me/reports"
+  },
+  "steps": {
+    "collect": {
+      "id": "collect",
+      "status": "success",
+      "startedAt": "2026-10-19T07:00:00.000Z",
+      "durationMs": 900,
+      "outputs": {
+        "commits": "fix the login redirect\nadd CSV export\nbump dependencies"
+      },
+      "effects": [],
+      "attempts": 1
+    },
+    "write": {
+      "id": "write",
+      "status": "failed",
+      "startedAt": "2026-10-19T07:00:01.000Z",
+      "durationMs": 41000,
+      "outputs": {},
+      "effects": [],
+      "attempts": 1,
+      "costUsd": 0.08,
+      "inputTokens": 6210,
+      "outputTokens": 880,
+      "toolsUsed": [
+        "Read",
+        "Write"
+      ],
+      "error": "Contract not met in \"write\": missing field \"summary\" (string)",
+      "denials": [
+        {
+          "toolName": "Write",
+          "toolUseId": "toolu_01FixtureDenial",
+          "reason": "\"/Users/me/Desktop/weekly-report.md\" resolves outside every allowed root (write: /Users/me/reports)",
+          "source": "both"
+        }
+      ]
+    }
+  },
+  "totalCostUsd": 0.08,
+  "notify": {
+    "channel": "email",
+    "code": 0,
+    "at": "2026-10-19T07:00:43.000Z",
+    "log": "would email: weekly-report failed\n"
+  }
+}

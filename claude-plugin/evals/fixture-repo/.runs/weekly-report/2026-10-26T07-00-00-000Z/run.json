@@ -1,0 +1,49 @@
+{
+  "id": "2026-10-26T07-00-00-000Z",
+  "pipeline": "weekly-report",
+  "pipelineVersion": 1,
+  "status": "failed",
+  "startedAt": "2026-10-26T07:00:00.000Z",
+  "finishedAt": "2026-10-26T07:03:12.000Z",
+  "params": {
+    "source_repo": "/Users/me/src/app",
+    "reports_dir": "/Users/me/reports"
+  },
+  "steps": {
+    "collect": {
+      "id": "collect",
+      "status": "success",
+      "startedAt": "2026-10-26T07:00:00.000Z",
+      "durationMs": 900,
+      "outputs": {
+        "commits": "fix the login redirect\nadd CSV export\nbump dependencies"
+      },
+      "effects": [],
+      "attempts": 1
+    },
+    "write": {
+      "id": "write",
+      "status": "failed",
+      "startedAt": "2026-10-26T07:00:01.000Z",
+      "durationMs": 191000,
+      "outputs": {},
+      "effects": [],
+      "attempts": 1,
+      "costUsd": 0.25,
+      "inputTokens": 48200,
+      "outputTokens": 5100,
+      "toolsUsed": [
+        "Read",
+        "Write"
+      ],
+      "error": "SDK failure: error_max_budget_usd"
+    }
+  },
+  "totalCostUsd": 0.25,
+  "notify": {
+    "channel": "email",
+    "code": 0,
+    "at": "2026-10-26T07:03:12.000Z",
+    "log": "would email: weekly-report failed\n"
+  }
+}

@@ -8,6 +8,7 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { parse as parseYaml } from 'yaml';
 import { buildProgram } from '../../src/cli/program.ts';
 import { parsePipeline } from '../../src/schema/pipeline.ts';
 import {
@@ -133,5 +134,49 @@ describe.each(EXPECTED_SKILLS.length > 0 ? EXPECTED_SKILLS : ['(none)'])('skill 
     const shared = sharedSection(markdown, 'locate');
     expect(shared).toBeDefined();
     expect(shared).toBe(sharedSection(readSkill(EXPECTED_SKILLS[0]!), 'locate'));
+  });
+});
+
+/**
+ * The eval cases are only run by hand (`claude plugin eval` costs money), and
+ * a case that does not load is only found out then. This checks what can be
+ * checked for free: the shape `claude plugin eval` reads, and that each case's
+ * scaffold script is there.
+ */
+describe('eval cases', () => {
+  const EVALS = join(PLUGIN, 'evals');
+  const cases = readdirSync(EVALS, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && existsSync(join(EVALS, entry.name, 'case.yaml')))
+    .map((entry) => entry.name);
+  const GRADERS = new Set(['regex', 'tool_order', 'tool_used', 'file_exists', 'llm', 'baseline']);
+
+  test('there is at least one case per skill', () => {
+    const tags = cases.flatMap((name) => {
+      const parsed = parseYaml(readFileSync(join(EVALS, name, 'case.yaml'), 'utf8')) as { tags?: string[] };
+      return parsed.tags ?? [];
+    });
+    for (const skill of EXPECTED_SKILLS) expect(tags).toContain(skill);
+  });
+
+  test.each(cases)('%s has the shape claude plugin eval reads', (name) => {
+    const parsed = parseYaml(readFileSync(join(EVALS, name, 'case.yaml'), 'utf8')) as Record<string, any>;
+    expect(typeof parsed.schema_version).toBe('string');
+    expect(parsed.name).toBe(name);
+    expect(typeof parsed.execution?.prompt === 'string' && parsed.execution.prompt.length > 0).toBe(true);
+    expect(Number.isInteger(parsed.runs ?? 3)).toBe(true);
+    expect(Number.isInteger(parsed.execution?.max_turns ?? 10)).toBe(true);
+    expect(Array.isArray(parsed.graders) && parsed.graders.length > 0).toBe(true);
+    const names = new Set<string>();
+    for (const grader of parsed.graders) {
+      expect(GRADERS.has(grader.type)).toBe(true);
+      expect(typeof grader.name).toBe('string');
+      expect(names.has(grader.name)).toBe(false);
+      names.add(grader.name);
+      if (grader.type === 'llm') expect(typeof grader.criteria).toBe('string');
+      if (grader.type === 'tool_used') expect(typeof grader.tool).toBe('string');
+      if (grader.type === 'file_exists') expect(typeof grader.path).toBe('string');
+    }
+    const scaffold = parsed.context?.scaffold_script;
+    if (scaffold !== undefined) expect(existsSync(join(EVALS, name, scaffold))).toBe(true);
   });
 });

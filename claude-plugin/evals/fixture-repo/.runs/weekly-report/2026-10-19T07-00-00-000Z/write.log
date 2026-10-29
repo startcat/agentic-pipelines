@@ -1,0 +1,4 @@
+[assistant] I'll write the report to the Desktop so it is easy to find.
+[tool_use] Write /Users/me/Desktop/weekly-report.md
+[tool_result] denied: "/Users/me/Desktop/weekly-report.md" resolves outside every allowed root (write: /Users/me/reports)
+[assistant] I could not save the report: writing to the Desktop was denied.

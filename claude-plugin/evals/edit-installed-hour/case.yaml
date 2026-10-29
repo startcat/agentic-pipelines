@@ -1,0 +1,42 @@
+schema_version: "1.0"
+name: edit-installed-hour
+description: "Moving an installed pipeline to another hour changes the cron only and proposes a reinstall."
+tags: [edit-pipeline]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: "Move weekly-report to 08:00. It is installed."
+  max_turns: 25
+  timeout_seconds: 600
+  allowed_tools:
+    - "Skill"
+    - "Read"
+    - "Glob"
+    - "Grep"
+    - "Bash(bun run ./engine/src/cli/index.ts:*)"
+    - "Bash(command -v:*)"
+    - "Bash(test:*)"
+    - "Bash(realpath:*)"
+    - "Bash(ls:*)"
+    - "Write"
+    - "Edit"
+  append_system_prompt: "For this session, the agentic-pipelines CLI is `bun run ./engine/src/cli/index.ts`: the engine is checked out at ./engine in the working directory, and no other `pipelines` command should be used. Nobody will answer follow-up questions: if the skill would ask the person something, ask it and stop."
+runs: 1
+graders:
+  - type: llm
+    name: changes-only-the-cron
+    criteria: "In pipelines/weekly-report/pipeline.yaml the cron is now \"0 8 * * 1\" and nothing else in the pipeline changed."
+    focus: files
+  - type: llm
+    name: validates
+    criteria: "The agent ran the CLI's validate command on weekly-report after the change."
+    focus: trace
+  - type: llm
+    name: proposes-reinstall
+    criteria: "The reply says the scheduled job keeps the old time until it is reinstalled and proposes `pipelines install weekly-report` (on this machine or on the one that runs it), asking before doing it."
+    focus: last_message
+  - type: tool_used
+    name: does-not-install
+    tool: Bash
+    input_match: "index\\.ts.*\\b(install|uninstall|run|resume)\\b"
+    max: 0

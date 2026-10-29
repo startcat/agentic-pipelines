@@ -1,0 +1,4 @@
+channels:
+  email:
+    type: shell
+    run: scripts/notify-email.sh
