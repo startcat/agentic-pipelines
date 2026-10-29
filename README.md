@@ -197,6 +197,12 @@ plugin from it.
 From a terminal, `claude plugin install agentic-pipelines --marketplace
 startcat/agentic-pipelines` does both in one step.
 
+[pipelines-starter](https://github.com/startcat/pipelines-starter) turns
+the plugin on for everyone who clones it: open it in Claude Code, accept the
+folder trust prompt, and the marketplace and the plugin are set up with
+nothing to install. Without folder trust, or in a cloud session, use the two
+commands above.
+
 The skills start on their own when what you ask fits them. To call one by
 name: `/agentic-pipelines:new-pipeline`, `/agentic-pipelines:edit-pipeline`
 or `/agentic-pipelines:pipelines-status`. They use the `pipelines` command
