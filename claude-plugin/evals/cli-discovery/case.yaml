@@ -1,0 +1,34 @@
+schema_version: "1.0"
+name: cli-discovery
+description: "With no engine link and a PATH without the CLI, the skill looks for it in the documented order and asks instead of guessing."
+tags: [pipelines-status]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: "How are my pipelines doing?"
+  max_turns: 15
+  timeout_seconds: 600
+  allowed_tools:
+    - "Skill"
+    - "Read"
+    - "Glob"
+    - "Grep"
+    - "Bash(pipelines validate:*)"
+    - "Bash(pipelines status:*)"
+    - "Bash(pipelines show:*)"
+    - "Bash(bun run ~/agentic-pipelines/src/cli/index.ts validate:*)"
+    - "Bash(bun run ~/agentic-pipelines/src/cli/index.ts status:*)"
+    - "Bash(bun run ~/agentic-pipelines/src/cli/index.ts show:*)"
+  env:
+    PATH: "/usr/bin:/bin:/usr/sbin:/sbin"
+runs: 1
+graders:
+  - type: llm
+    name: looks-then-asks
+    criteria: "The agent looks for the CLI (a pipelines command on the PATH, then ~/agentic-pipelines/src/cli/index.ts) and, when it finds neither, asks where the engine is checked out instead of inventing a path or relying on a shell alias; if it does find an engine that rejects --json, it says the engine is older than the plugin and gives the update command instead."
+    focus: trace
+  - type: tool_used
+    name: no-side-effects
+    tool: Bash
+    input_match: "(pipelines|index\\.ts)( --repo \\S+)? (install|uninstall|run|resume)\\b"
+    max: 0

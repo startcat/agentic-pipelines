@@ -13,11 +13,9 @@ execution:
     - "Read"
     - "Glob"
     - "Grep"
-    - "Bash(bun run ./engine/src/cli/index.ts:*)"
-    - "Bash(command -v:*)"
-    - "Bash(test:*)"
-    - "Bash(realpath:*)"
-    - "Bash(ls:*)"
+    - "Bash(bun run ./engine/src/cli/index.ts validate:*)"
+    - "Bash(bun run ./engine/src/cli/index.ts status:*)"
+    - "Bash(bun run ./engine/src/cli/index.ts show:*)"
     - "Write"
     - "Edit"
   append_system_prompt: "For this session, the agentic-pipelines CLI is `bun run ./engine/src/cli/index.ts`: the engine is checked out at ./engine in the working directory, and no other `pipelines` command should be used. Nobody will answer follow-up questions: if the skill would ask the person something, ask it and stop."
@@ -25,7 +23,7 @@ runs: 1
 graders:
   - type: llm
     name: proposes-install-set
-    criteria: "The reply proposes `pipelines install docs-check --set repo=~/docs` (or the same with an expanded home path) and asks before running it."
+    criteria: "The reply proposes `pipelines install docs-check --set repo=<path>` with the path written out as an absolute path (the home folder expanded, not starting with `~`), says why, and asks before running it."
     focus: last_message
   - type: file_exists
     name: no-params-file
