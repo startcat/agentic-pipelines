@@ -21,7 +21,7 @@ import {
 } from './skill-lint.ts';
 
 /** The skills the plugin ships, one folder each under `claude-plugin/skills/`. */
-export const EXPECTED_SKILLS: string[] = [];
+export const EXPECTED_SKILLS: string[] = ['new-pipeline'];
 
 const ROOT = join(import.meta.dir, '..', '..');
 const PLUGIN = join(ROOT, 'claude-plugin');
@@ -77,6 +77,22 @@ describe('manifests', () => {
     // Translated checkouts name it `referencia.md`.
     const names = ['reference.md', 'referencia.md'];
     expect(names.some((name) => existsSync(join(ROOT, 'docs', name)))).toBe(true);
+  });
+});
+
+describe('the shared section', () => {
+  test('finds the CLI and the data repo the way the CLI does, and never trusts an alias', () => {
+    const shared = sharedSection(readSkill(EXPECTED_SKILLS[0]!), 'locate') ?? '';
+    for (const needle of [
+      'command -v pipelines',
+      '~/agentic-pipelines/src/cli/index.ts',
+      'status --json',
+      'No data repo found',
+      'pipelines-starter',
+    ]) {
+      expect(shared).toContain(needle);
+    }
+    expect(shared).not.toContain('alias pipelines=');
   });
 });
 
