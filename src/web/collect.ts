@@ -176,8 +176,12 @@ export async function collectOverview(
       unreadableRuns += unreadable.length;
       // Health, though, is not judged on a partial history: the CLI's
       // `status` refuses one (`RunStore.listRuns` throws), and the entry says
-      // why with the same message instead of a verdict on what is left.
-      if (unreadable.length > 0) throw new Error(unreadable[0]!.reason);
+      // why with the same message instead of a verdict on what is left, and
+      // which run it is, so nobody has to list `.runs/` to find it.
+      const broken = unreadable[0];
+      if (broken !== undefined) {
+        throw new Error(broken.id === undefined ? broken.reason : `run ${broken.id}: ${broken.reason}`);
+      }
       const pipeline = await loadPipeline(ctx, name);
       const health = evaluateHealth(pipeline, runs, await facts(pipeline, ctx, now), now);
       const next = nextRun(health.trigger, pipeline.triggers.map((t) => t.cron), now);

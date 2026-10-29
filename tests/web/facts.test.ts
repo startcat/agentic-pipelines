@@ -1,9 +1,18 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { jobBunPath } from '../../src/cli/install-helpers.ts';
 import { collectJobFacts, createJobFactsCache } from '../../src/web/facts.ts';
+
+// The fake launchctl must not outlive this file: bun runs every test file in
+// one process, and a leftover one that answers "loaded" for any label makes
+// later tests see jobs that do not exist.
+const savedLaunchctl = process.env.PIPELINES_LAUNCHCTL_BIN;
+afterEach(() => {
+  if (savedLaunchctl === undefined) delete process.env.PIPELINES_LAUNCHCTL_BIN;
+  else process.env.PIPELINES_LAUNCHCTL_BIN = savedLaunchctl;
+});
 
 async function fakeLaunchctl(stdout: string, code: number): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'launchctl-'));

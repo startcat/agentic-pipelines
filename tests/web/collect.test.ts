@@ -7,14 +7,14 @@ import { collectOverview, type FactsSource, type OverviewEntry } from '../../src
 import { addUnparseablePipeline, fixture, RUNNING_RUN_ID, SKIPPED_RUN_ID } from './fixture.ts';
 
 const NOW = new Date('2026-08-29T03:00:00.000Z');
-const loaded: FactsSource = async (): Promise<JobFacts> => ({ loaded: true, disabled: false });
+const noJob: FactsSource = async (): Promise<JobFacts> => ({ loaded: false, disabled: false });
 const byName = (entries: OverviewEntry[], name: string): OverviewEntry | undefined =>
   entries.find((entry) => entry.name === name);
 
 describe('collectOverview', () => {
   test('a healthy pipeline comes with its runs, ids, health and next run', async () => {
     const ctx = await loadRepoContext(await fixture());
-    const { entries, unreadableRuns } = await collectOverview(ctx, ['demo'], NOW, loaded);
+    const { entries, unreadableRuns } = await collectOverview(ctx, ['demo'], NOW, noJob);
     const demo = byName(entries, 'demo');
     if (demo === undefined || 'error' in demo) throw new Error(`expected a healthy entry, got ${JSON.stringify(demo)}`);
     expect(demo.pipeline.name).toBe('demo');
@@ -29,7 +29,7 @@ describe('collectOverview', () => {
     const root = await fixture();
     await addUnparseablePipeline(root, 'half');
     const ctx = await loadRepoContext(root);
-    const { entries } = await collectOverview(ctx, ['demo', 'half'], NOW, loaded);
+    const { entries } = await collectOverview(ctx, ['demo', 'half'], NOW, noJob);
     expect(byName(entries, 'half')).toEqual({ name: 'half', error: 'the folder has no pipeline.yaml' });
     expect(byName(entries, 'demo')).toHaveProperty('health');
   });
@@ -40,8 +40,11 @@ describe('collectOverview', () => {
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'run.json'), '{"id":');
     const ctx = await loadRepoContext(root);
-    const { entries, costRuns, unreadableRuns } = await collectOverview(ctx, ['demo'], NOW, loaded);
-    expect(byName(entries, 'demo')).toHaveProperty('error');
+    const { entries, costRuns, unreadableRuns } = await collectOverview(ctx, ['demo'], NOW, noJob);
+    const demo = byName(entries, 'demo');
+    if (demo === undefined || !('error' in demo)) throw new Error('expected an error entry');
+    // The entry names the broken run, so nobody has to list `.runs/` to find it.
+    expect(demo.error).toStartWith('run 2026-08-29T00-00-00-000Z: ');
     expect(unreadableRuns).toBe(1);
     expect(costRuns.map((run) => run.id).sort()).toEqual([SKIPPED_RUN_ID, RUNNING_RUN_ID]);
   });
@@ -62,7 +65,7 @@ describe('collectOverview', () => {
     const root = await fixture();
     await addUnparseablePipeline(root, 'half');
     const ctx = await loadRepoContext(root);
-    const { entries } = await collectOverview(ctx, ['demo'], NOW, loaded);
+    const { entries } = await collectOverview(ctx, ['demo'], NOW, noJob);
     expect(entries.map((entry) => entry.name)).toEqual(['demo']);
   });
 });
