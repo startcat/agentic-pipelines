@@ -185,7 +185,7 @@ params:
   app:
     description: a
     required: true
-  entorno:
+  stage:
     description: e
     default: pro
 steps:
@@ -194,18 +194,18 @@ steps:
     run: 'true'
 `);
 
-  test('no lanza si falta un obligatorio: devuelve lo que hay', () => {
-    expect(resolveParamsLenient(P, {})).toEqual({ entorno: 'pro' });
+  test('does not throw if a required one is missing: returns what there is', () => {
+    expect(resolveParamsLenient(P, {})).toEqual({ stage: 'pro' });
   });
 
-  test('aplica la misma precedencia que resolveParams', () => {
+  test('applies the same precedence as resolveParams', () => {
     expect(resolveParamsLenient(P, { local: { app: 'a1' }, overrides: { app: 'a2' } })).toEqual({
       app: 'a2',
-      entorno: 'pro',
+      stage: 'pro',
     });
   });
 
-  test('sigue rechazando un override no declarado', () => {
-    expect(() => resolveParamsLenient(P, { overrides: { ap: 'x' } })).toThrow('no está declarado');
+  test('still rejects an undeclared override', () => {
+    expect(() => resolveParamsLenient(P, { overrides: { ap: 'x' } })).toThrow('is not declared');
   });
 });

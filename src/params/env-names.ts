@@ -1,9 +1,9 @@
 import { findReferences, interpolate } from './resolve.ts';
 
 /**
- * Nombre de variable de entorno que `sh` puede leer como `$NOMBRE`. Solo se
- * exige a los nombres que salen de una plantilla: un nombre literal ya
- * declarado hoy se respeta tal cual, para no romper ningún pipeline existente.
+ * An environment variable name that `sh` can read as `$NAME`. Only required
+ * of names that come out of a template: a literal name already declared today
+ * is kept as is, so as not to break any existing pipeline.
  */
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -14,16 +14,16 @@ export type EnvNameResolution =
   | { declared: string; ok: false; reason: 'bad-reference'; refs: string[] };
 
 /**
- * Resuelve las plantillas `{{params.*}}` de `requires.env` contra los params
- * del run. Así un pipeline genérico (parametrizado por app y entorno) declara
- * secretos cuyo nombre depende de esos params, y el motor los sigue
- * comprobando en `doctor`, pasando a los pasos `shell` y redactando en los
- * logs como cualquier otro secreto.
+ * Resolves the `{{params.*}}` templates in `requires.env` against the run's
+ * params. That way a generic pipeline (parametrized by app and environment)
+ * declares secrets whose name depends on those params, and the engine still
+ * checks them in `doctor`, passes them to `shell` steps and redacts them in
+ * the logs like any other secret.
  *
- * Nunca lanza: cada entrada devuelve su resultado, y quien la llama decide
- * (el preflight lo convierte en un check en rojo; `run` solo lee las
- * resueltas). `validate` ya rechaza las referencias que no son a params,
- * pero esta función no da por hecho que se haya ejecutado.
+ * Never throws: each entry returns its result, and the caller decides (the
+ * preflight turns it into a red check; `run` only reads the resolved ones).
+ * `validate` already rejects references that are not to params, but this
+ * function does not assume it has run.
  */
 export function resolveEnvNames(declared: string[], params: Record<string, string>): EnvNameResolution[] {
   return declared.map((entry): EnvNameResolution => {
@@ -44,7 +44,7 @@ export function resolveEnvNames(declared: string[], params: Record<string, strin
   });
 }
 
-/** Los nombres resueltos y válidos, sin repetir: los que se leen del `.env` para un run. */
+/** The resolved, valid names, without repeats: the ones read from the `.env` for a run. */
 export function resolvedEnvNames(declared: string[], params: Record<string, string>): string[] {
   const names = resolveEnvNames(declared, params).flatMap((r) => (r.ok ? [r.name] : []));
   return [...new Set(names)];

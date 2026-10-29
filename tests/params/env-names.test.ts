@@ -2,61 +2,61 @@ import { describe, expect, test } from 'bun:test';
 import { resolvedEnvNames, resolveEnvNames } from '../../src/params/env-names.ts';
 
 describe('resolveEnvNames', () => {
-  test('un nombre literal pasa tal cual', () => {
+  test('a literal name passes as is', () => {
     expect(resolveEnvNames(['MY_TOKEN'], {})).toEqual([
       { declared: 'MY_TOKEN', ok: true, name: 'MY_TOKEN' },
     ]);
   });
 
-  test('un nombre literal no se valida como variable, para no romper lo que ya existe', () => {
+  test('a literal name is not validated as a variable, so as not to break what already exists', () => {
     expect(resolveEnvNames(['raro-pero-literal'], {})).toEqual([
       { declared: 'raro-pero-literal', ok: true, name: 'raro-pero-literal' },
     ]);
   });
 
-  test('una plantilla se resuelve con los params', () => {
+  test('a template is resolved with the params', () => {
     expect(
-      resolveEnvNames(['QA_{{params.app}}_{{params.entorno}}_USUARIO'], { app: 'myapp', entorno: 'pro' }),
+      resolveEnvNames(['QA_{{params.app}}_{{params.stage}}_USER'], { app: 'myapp', stage: 'pro' }),
     ).toEqual([
-      { declared: 'QA_{{params.app}}_{{params.entorno}}_USUARIO', ok: true, name: 'QA_myapp_pro_USUARIO' },
+      { declared: 'QA_{{params.app}}_{{params.stage}}_USER', ok: true, name: 'QA_myapp_pro_USER' },
     ]);
   });
 
-  test('una plantilla con params sin valor no se resuelve y dice cuáles faltan', () => {
-    expect(resolveEnvNames(['QA_{{params.app}}_{{params.entorno}}_USUARIO'], { app: 'myapp' })).toEqual([
+  test('a template with params with no value is not resolved and says which are missing', () => {
+    expect(resolveEnvNames(['QA_{{params.app}}_{{params.stage}}_USER'], { app: 'myapp' })).toEqual([
       {
-        declared: 'QA_{{params.app}}_{{params.entorno}}_USUARIO',
+        declared: 'QA_{{params.app}}_{{params.stage}}_USER',
         ok: false,
         reason: 'missing-params',
-        missing: ['entorno'],
+        missing: ['stage'],
       },
     ]);
   });
 
-  test('un nombre resuelto que no es variable válida se rechaza', () => {
-    expect(resolveEnvNames(['QA_{{params.app}}_USUARIO'], { app: 'my-app' })).toEqual([
-      { declared: 'QA_{{params.app}}_USUARIO', ok: false, reason: 'invalid-name', name: 'QA_my-app_USUARIO' },
+  test('a resolved name that is not a valid variable is rejected', () => {
+    expect(resolveEnvNames(['QA_{{params.app}}_USER'], { app: 'my-app' })).toEqual([
+      { declared: 'QA_{{params.app}}_USER', ok: false, reason: 'invalid-name', name: 'QA_my-app_USER' },
     ]);
   });
 
-  test('una referencia que no es a params se rechaza sin lanzar', () => {
-    expect(resolveEnvNames(['X_{{secrets.OTRO}}', 'Y_{{paso.campo}}'], {})).toEqual([
-      { declared: 'X_{{secrets.OTRO}}', ok: false, reason: 'bad-reference', refs: ['secrets.OTRO'] },
-      { declared: 'Y_{{paso.campo}}', ok: false, reason: 'bad-reference', refs: ['paso.campo'] },
+  test('a reference that is not to params is rejected without throwing', () => {
+    expect(resolveEnvNames(['X_{{secrets.OTHER}}', 'Y_{{step.field}}'], {})).toEqual([
+      { declared: 'X_{{secrets.OTHER}}', ok: false, reason: 'bad-reference', refs: ['secrets.OTHER'] },
+      { declared: 'Y_{{step.field}}', ok: false, reason: 'bad-reference', refs: ['step.field'] },
     ]);
   });
 });
 
 describe('resolvedEnvNames', () => {
-  test('devuelve solo los nombres resueltos y válidos', () => {
+  test('returns only the resolved, valid names', () => {
     expect(
-      resolvedEnvNames(['MY_TOKEN', 'QA_{{params.app}}_USUARIO', 'QA_{{params.falta}}_X'], { app: 'myapp' }),
-    ).toEqual(['MY_TOKEN', 'QA_myapp_USUARIO']);
+      resolvedEnvNames(['MY_TOKEN', 'QA_{{params.app}}_USER', 'QA_{{params.missing}}_X'], { app: 'myapp' }),
+    ).toEqual(['MY_TOKEN', 'QA_myapp_USER']);
   });
 
-  test('no repite un nombre que llega por dos entradas', () => {
-    expect(resolvedEnvNames(['QA_myapp_USUARIO', 'QA_{{params.app}}_USUARIO'], { app: 'myapp' })).toEqual([
-      'QA_myapp_USUARIO',
+  test('does not repeat a name that comes from two entries', () => {
+    expect(resolvedEnvNames(['QA_myapp_USER', 'QA_{{params.app}}_USER'], { app: 'myapp' })).toEqual([
+      'QA_myapp_USER',
     ]);
   });
 });

@@ -19,8 +19,8 @@ export function registerDoctor(program: Command): void {
     .action(async (name: string, opts: { set: string[] }) => {
       await withContext(async (ctx) => {
         const pipeline = await loadPipeline(ctx, name);
-        // Leniente a propósito: un param ausente no corta `doctor`; aparece
-        // como check en rojo en los secretos que dependen de él.
+        // Lenient on purpose: a missing param does not stop `doctor`; it shows
+        // up as a red check on the secrets that depend on it.
         const params = resolveParamsLenient(pipeline, {
           local: await loadLocalParams(ctx, name),
           overrides: parseSetFlags(opts.set),

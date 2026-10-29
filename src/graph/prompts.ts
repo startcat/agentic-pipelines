@@ -206,10 +206,9 @@ export function checkGuardReferences(pipeline: Pipeline): string[] {
 }
 
 /**
- * Comprueba las referencias `{{x.y}}` de los nombres de `requires.env`. Esos
- * nombres se resuelven en el preflight, antes de que corra ningún paso y sin
- * secrets en el scope (`params/env-names.ts`), así que solo pueden depender
- * de params declarados.
+ * Checks the `{{x.y}}` references in the `requires.env` names. Those names
+ * are resolved in the preflight, before any step runs and with no secrets in
+ * scope (`params/env-names.ts`), so they can only depend on declared params.
  */
 export function checkEnvReferences(pipeline: Pipeline): string[] {
   const issues: string[] = [];
@@ -219,18 +218,18 @@ export function checkEnvReferences(pipeline: Pipeline): string[] {
     for (const ref of findReferences(entry)) {
       if (ref.kind === 'param') {
         if (!(ref.name in pipeline.params)) {
-          issues.push(`${label}: referencia "{{params.${ref.name}}}", no declarado en params`);
+          issues.push(`${label}: references "{{params.${ref.name}}}", not declared in params`);
         }
         continue;
       }
       if (ref.kind === 'secret') {
         issues.push(
-          `${label}: referencia "{{secrets.${ref.name}}}" — el nombre de un secreto solo puede depender de params`,
+          `${label}: references "{{secrets.${ref.name}}}" — the name of a secret can only depend on params`,
         );
         continue;
       }
       issues.push(
-        `${label}: referencia "${ref.step}.${ref.field}" — el nombre de un secreto se resuelve antes de que corra ningún paso, solo puede depender de params`,
+        `${label}: references "${ref.step}.${ref.field}" — the name of a secret is resolved before any step runs, it can only depend on params`,
       );
     }
   });

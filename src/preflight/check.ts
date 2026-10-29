@@ -58,7 +58,7 @@ export type PreflightEnv = {
   userClaudeDir: string;
   processEnv: Record<string, string | undefined>;
   dotEnv: Record<string, string>;
-  /** Params del run, para resolver las plantillas `{{params.*}}` de `requires.env`. */
+  /** The run's params, to resolve the `{{params.*}}` templates in `requires.env`. */
   params?: Record<string, string>;
   probes?: Partial<Probes>;
   /** Adds the platform checks (systemd, linger, zone). `doctor` only: `run` must not take longer. */
@@ -445,8 +445,8 @@ export async function preflight(
     }
   }
 
-  // Un mismo nombre puede llegar por dos entradas (literal y plantilla): se
-  // comprueba una vez.
+  // The same name may come from two entries (literal and template): it is
+  // checked once.
   const checkedEnv = new Set<string>();
   for (const resolution of resolveEnvNames(pipeline.requires.env, env.params ?? {})) {
     if (!resolution.ok) {
@@ -456,10 +456,10 @@ export async function preflight(
         ok: false,
         detail:
           resolution.reason === 'missing-params'
-            ? `depende de params sin valor: ${resolution.missing.join(', ')} (pásalos con --set)`
+            ? `depends on params with no value: ${resolution.missing.join(', ')} (pass them with --set)`
             : resolution.reason === 'invalid-name'
-              ? `el nombre resultante "${resolution.name}" no es un nombre de variable válido (solo letras, dígitos y _, y no puede empezar por dígito)`
-              : `solo admite referencias {{params.*}}: ${resolution.refs.join(', ')}`,
+              ? `the resulting name "${resolution.name}" is not a valid variable name (only letters, digits and _, and it cannot start with a digit)`
+              : `only {{params.*}} references are allowed: ${resolution.refs.join(', ')}`,
       });
       continue;
     }

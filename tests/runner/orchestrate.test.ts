@@ -610,10 +610,10 @@ steps:
   });
 });
 
-describe('runPipeline — secretos en el prompt de pasos agent', () => {
-  // `{{secrets.X}}` en un prompt solo resuelve para nombres LITERALES de
-  // requires.env (mismo criterio que `validate`); los nombres resueltos desde
-  // plantillas {{params.*}} siguen en `secrets` para redacción/MCP/subproceso.
+describe('runPipeline — secrets in the prompt of agent steps', () => {
+  // `{{secrets.X}}` in a prompt only resolves for LITERAL names in
+  // requires.env (same criterion as `validate`); names resolved from
+  // {{params.*}} templates remain in `secrets` for redaction/MCP/subprocess.
   const yaml = `
 name: demo
 description: d
@@ -621,14 +621,14 @@ version: 1
 params:
   app: { type: string, description: app, default: myapp }
 requires:
-  env: [LITERAL_TOKEN, 'QA_{{params.app}}_USUARIO']
+  env: [LITERAL_TOKEN, 'QA_{{params.app}}_USER']
 steps:
   - id: a
     type: agent
     agent: worker
     prompt: a.md
 `;
-  const secrets = { LITERAL_TOKEN: 'valor-literal', QA_myapp_USUARIO: 'valor-qa' };
+  const secrets = { LITERAL_TOKEN: 'literal-value', QA_myapp_USER: 'qa-value' };
 
   const runWithPrompt = async (promptText: string) => {
     const pipelineDir = join(root, 'pipelines', 'demo');
@@ -657,17 +657,17 @@ steps:
     return { received, ...record };
   };
 
-  test('un secreto literal de requires.env sigue resolviendo en el prompt', async () => {
+  test('a literal requires.env secret still resolves in the prompt', async () => {
     const { received, r } = await runWithPrompt('Token: {{secrets.LITERAL_TOKEN}}');
     expect(r?.status).toBe('success');
-    expect(received).toBe('Token: valor-literal');
+    expect(received).toBe('Token: literal-value');
   });
 
-  test('un nombre resuelto desde plantilla no se puede referenciar desde el prompt', async () => {
-    const { received, r, err } = await runWithPrompt('Usuario: {{secrets.QA_myapp_USUARIO}}');
+  test('a name resolved from a template cannot be referenced from the prompt', async () => {
+    const { received, r, err } = await runWithPrompt('User: {{secrets.QA_myapp_USER}}');
     expect(received).toBe('');
     expect(r?.status === 'success').toBe(false);
-    if (err) expect(String(err)).toContain('QA_myapp_USUARIO');
+    if (err) expect(String(err)).toContain('QA_myapp_USER');
   });
 });
 

@@ -55,10 +55,10 @@ export type AgentStepContext = StepContext & {
   /** Claude credential taken from the data repo's `.env`; it only reaches `agent` steps. */
   agentAuth?: Record<string, string>;
   /**
-   * Secretos que el prompt puede interpolar con `{{secrets.X}}`: solo los
-   * nombres literales de `requires.env` (mismo criterio que `validate`). Si
-   * falta, se usa `secrets`. `secrets` (completo) sigue siendo lo que se usa
-   * para redactar, el `env` de los servidores MCP y el subproceso.
+   * Secrets the prompt can interpolate with `{{secrets.X}}`: only the literal
+   * names in `requires.env` (same criterion as `validate`). If missing,
+   * `secrets` is used. `secrets` (in full) is still what is used for
+   * redaction, the `env` of the MCP servers and the subprocess.
    */
   promptSecrets?: Record<string, string>;
   queryFn?: QueryFn;

@@ -537,7 +537,7 @@ steps:
 });
 
 describe('checkEnvReferences', () => {
-  const conEnv = (env: string) =>
+  const withEnv = (env: string) =>
     parsePipeline(`
 name: demo
 description: d
@@ -553,29 +553,29 @@ steps:
     run: 'true'
 `);
 
-  test('un nombre literal no da problemas', () => {
-    expect(checkEnvReferences(conEnv('MY_TOKEN'))).toEqual([]);
+  test('a literal name raises no issues', () => {
+    expect(checkEnvReferences(withEnv('MY_TOKEN'))).toEqual([]);
   });
 
-  test('una referencia a un param declarado no da problemas', () => {
-    expect(checkEnvReferences(conEnv('QA_{{params.app}}_TOKEN'))).toEqual([]);
+  test('a reference to a declared param raises no issues', () => {
+    expect(checkEnvReferences(withEnv('QA_{{params.app}}_TOKEN'))).toEqual([]);
   });
 
-  test('una referencia a un param no declarado es un problema', () => {
-    expect(checkEnvReferences(conEnv('QA_{{params.entorno}}_TOKEN'))).toEqual([
-      'requires.env.0: referencia "{{params.entorno}}", no declarado en params',
+  test('a reference to an undeclared param is an issue', () => {
+    expect(checkEnvReferences(withEnv('QA_{{params.stage}}_TOKEN'))).toEqual([
+      'requires.env.0: references "{{params.stage}}", not declared in params',
     ]);
   });
 
-  test('una referencia a secrets es un problema', () => {
-    expect(checkEnvReferences(conEnv('QA_{{secrets.OTRO}}'))).toEqual([
-      'requires.env.0: referencia "{{secrets.OTRO}}" — el nombre de un secreto solo puede depender de params',
+  test('a reference to secrets is an issue', () => {
+    expect(checkEnvReferences(withEnv('QA_{{secrets.OTHER}}'))).toEqual([
+      'requires.env.0: references "{{secrets.OTHER}}" — the name of a secret can only depend on params',
     ]);
   });
 
-  test('una referencia a un output es un problema', () => {
-    expect(checkEnvReferences(conEnv('QA_{{scan.count}}'))).toEqual([
-      'requires.env.0: referencia "scan.count" — el nombre de un secreto se resuelve antes de que corra ningún paso, solo puede depender de params',
+  test('a reference to an output is an issue', () => {
+    expect(checkEnvReferences(withEnv('QA_{{scan.count}}'))).toEqual([
+      'requires.env.0: references "scan.count" — the name of a secret is resolved before any step runs, it can only depend on params',
     ]);
   });
 });

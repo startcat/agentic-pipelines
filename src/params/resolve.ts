@@ -75,7 +75,7 @@ function resolveWithMissing(
   return { resolved, missing };
 }
 
-/** Resuelve los params con la precedencia default < local < override. */
+/** Resolves the params with the precedence default < local < override. */
 export function resolveParams(
   pipeline: Pipeline,
   sources: ParamSources,
@@ -86,11 +86,11 @@ export function resolveParams(
 }
 
 /**
- * Como `resolveParams`, pero sin lanzar por params obligatorios ausentes:
- * devuelve lo que hay. Es para `doctor`, que debe enseñar TODOS los checks
- * (incluido qué secreto no se puede nombrar sin un param) en vez de cortar
- * en el primero. Un override no declarado sigue siendo un error: suele ser
- * una errata en `--set`.
+ * Like `resolveParams`, but without throwing on missing required params: it
+ * returns what there is. It is for `doctor`, which must show ALL the checks
+ * (including which secret cannot be named without a param) instead of stopping
+ * at the first one. An undeclared override is still an error: it is usually a
+ * typo in `--set`.
  */
 export function resolveParamsLenient(
   pipeline: Pipeline,

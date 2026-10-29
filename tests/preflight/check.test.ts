@@ -668,7 +668,7 @@ describe('listMcpToolsViaStdio — handshake timeout', () => {
   });
 });
 
-describe('preflight — requires.env con plantillas', () => {
+describe('preflight — requires.env with templates', () => {
   const TPL = parsePipeline(`
 name: tpl
 description: d
@@ -693,35 +693,35 @@ steps:
 
   const envCheck = (report: PreflightReport) => report.checks.find((c) => c.kind === 'env');
 
-  test('resuelve el nombre con los params y lo busca en .env', async () => {
-    const report = await preflight(TPL, { ...base(), dotEnv: { QA_myapp_TOKEN: 'secreto-valido' }, params: { app: 'myapp' } });
-    expect(envCheck(report)).toEqual({ kind: 'env', name: 'QA_myapp_TOKEN', ok: true, detail: 'definida' });
+  test('resolves the name with the params and looks it up in .env', async () => {
+    const report = await preflight(TPL, { ...base(), dotEnv: { QA_myapp_TOKEN: 'a-valid-secret' }, params: { app: 'myapp' } });
+    expect(envCheck(report)).toEqual({ kind: 'env', name: 'QA_myapp_TOKEN', ok: true, detail: 'set' });
   });
 
-  test('nombre resuelto sin valor en .env', async () => {
+  test('resolved name with no value in .env', async () => {
     const report = await preflight(TPL, { ...base(), dotEnv: {}, params: { app: 'myapp' } });
     expect(envCheck(report)).toEqual({
       kind: 'env',
       name: 'QA_myapp_TOKEN',
       ok: false,
-      detail: 'sin definir (añádela a .env)',
+      detail: 'not set (add it to .env)',
     });
   });
 
-  test('sin el param, el check falla y dice cuál falta', async () => {
+  test('without the param, the check fails and says which one is missing', async () => {
     const report = await preflight(TPL, { ...base(), dotEnv: {} });
     expect(envCheck(report)).toEqual({
       kind: 'env',
       name: 'QA_{{params.app}}_TOKEN',
       ok: false,
-      detail: 'depende de params sin valor: app (pásalos con --set)',
+      detail: 'depends on params with no value: app (pass them with --set)',
     });
     expect(hasBlockingFailures(report)).toBe(true);
   });
 
-  test('dos entradas que resuelven al mismo nombre dan un solo check', async () => {
-    const DOBLE = parsePipeline(`
-name: doble
+  test('two entries that resolve to the same name give a single check', async () => {
+    const DOUBLE = parsePipeline(`
+name: double
 description: d
 version: 1
 params:
@@ -734,30 +734,30 @@ steps:
     type: shell
     run: 'true'
 `);
-    const report = await preflight(DOBLE, { ...base(), dotEnv: { QA_myapp_TOKEN: 'secreto-valido' }, params: { app: 'myapp' } });
+    const report = await preflight(DOUBLE, { ...base(), dotEnv: { QA_myapp_TOKEN: 'a-valid-secret' }, params: { app: 'myapp' } });
     expect(report.checks.filter((c) => c.kind === 'env')).toEqual([
-      { kind: 'env', name: 'QA_myapp_TOKEN', ok: true, detail: 'definida' },
+      { kind: 'env', name: 'QA_myapp_TOKEN', ok: true, detail: 'set' },
     ]);
   });
 
-  test('un nombre resuelto inválido falla y nombra el resultado', async () => {
+  test('an invalid resolved name fails and names the result', async () => {
     const report = await preflight(TPL, { ...base(), dotEnv: {}, params: { app: 'my-app' } });
     expect(envCheck(report)).toEqual({
       kind: 'env',
       name: 'QA_{{params.app}}_TOKEN',
       ok: false,
-      detail: 'el nombre resultante "QA_my-app_TOKEN" no es un nombre de variable válido (solo letras, dígitos y _, y no puede empezar por dígito)',
+      detail: 'the resulting name "QA_my-app_TOKEN" is not a valid variable name (only letters, digits and _, and it cannot start with a digit)',
     });
   });
 
-  test('un nombre resuelto que empieza por dígito falla con el mismo mensaje', async () => {
+  test('a resolved name starting with a digit fails with the same message', async () => {
     const report = await preflight(
       { ...TPL, requires: { ...TPL.requires, env: ['{{params.app}}_X'] } } as typeof TPL,
       { ...base(), dotEnv: {}, params: { app: '9app' } },
     );
     expect(envCheck(report)).toMatchObject({
       ok: false,
-      detail: 'el nombre resultante "9app_X" no es un nombre de variable válido (solo letras, dígitos y _, y no puede empezar por dígito)',
+      detail: 'the resulting name "9app_X" is not a valid variable name (only letters, digits and _, and it cannot start with a digit)',
     });
   });
 });
