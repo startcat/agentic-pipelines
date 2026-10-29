@@ -546,7 +546,7 @@ function redactOutcome(outcome: AgentOutcome, secrets: Record<string, string>): 
  *
  * `permissionMode: 'bypassPermissions'` is deliberate: an unattended run has
  * nobody to approve anything. The real control over what the step can do is
- * `tools` (decision 15): `allowedTools` on its own restricts NOTHING — it is
+ * `tools`: `allowedTools` on its own restricts NOTHING — it is
  * only the list that is auto-approved without asking (`sdk.d.ts`
  * ~1369-1371, "To restrict which tools are available, use the `tools` option
  * instead") — so both are passed: `tools` so the SDK exposes nothing to the

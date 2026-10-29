@@ -16,12 +16,12 @@ import { EXIT_FAILURE, withContext } from '../shared.ts';
  *   through a pipe → 98,304 B on one attempt and 69,279 B on another, cut
  *                    mid-string (the point varies: it is a race, not a fixed cap)
  *
- * What it cost: `notify-resend.sh` captures this output with `$( … )` — a
+ * What it cost: a notify script captures this output with `$( … )` — a
  * pipe — and feeds it to `jq`. `jq` died with "Unfinished string at EOF", the
  * script swallowed it (`2>/dev/null || echo ""`) and was left without
  * `alerts`. Without alerts, the email of a pipeline that HAD found things went
- * out as "ATURAT" ("stopped"), which is the notice that it has not run for days.
- * Exactly the symptom the notify fix of 09-13 was meant to remove, and could
+ * out as a "stopped" notice, which is the notice that it has not run for days.
+ * Exactly the symptom an earlier notify fix was meant to remove, and could
  * not remove because it never got to see the data.
  */
 function writeStdout(text: string): void {

@@ -14,7 +14,7 @@ async function fakeLaunchctl(stdout: string, code: number): Promise<string> {
 }
 
 describe('createJobFactsCache', () => {
-  // Decision 8: launchctl is not queried per tick. A subprocess per pipeline
+  // launchctl is not queried on every tick. A subprocess per pipeline
   // per second is abusive for a datum that changes when you change it.
   test('within the TTL it does not ask launchctl again', async () => {
     process.env.PIPELINES_LAUNCHCTL_BIN = await fakeLaunchctl('', 0);
