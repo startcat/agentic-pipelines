@@ -72,6 +72,7 @@ Answer with `summary.line` first, then one line per pipeline from worst to best 
    - **The spending cap ran out**: the step's error mentions `error_max_budget_usd` or the budget, and its `costUsd` is about its `max_cost_usd`. Either raise the cap or give the agent less to do.
    - **A shell step failed**: the error says `exit code N` with the last lines of stderr, or `timed out after …`. The fix is in the command, or in what it depends on.
    - **The agent did not deliver its contract**: the error says `Contract not met` (a field missing or of the wrong type) or that the result is not valid JSON. The fix is usually in the step's prompt, which must ask for exactly the `outputs` fields.
+   When a step has `denials` and also fails for another reason (often its `outputs` contract), the denial usually comes first: the agent could not do what it needed and then could not deliver. Name the denial as the cause.
 4. Propose the fix. A change to the pipeline is the `edit-pipeline` skill. If it was a passing problem (a network error, a service down) and nothing needs to change, propose `pipelines resume <name> <run-id>`, which picks up from the failed step with the same params; it may spend money again, so only after a yes.
 
 ## Spend
@@ -82,7 +83,7 @@ Use `costs`: this month's total, the number of runs and how many had agent steps
 
 Stopping means taking it off the schedule, not cutting a run that is in progress (the CLI cannot do that; say so if that is what is asked).
 
-1. Check `trigger` in `pipelines status <name> --json`. If the pipeline does not exist, or it is `not-installed` or `no-trigger`, nothing is scheduled: say so and do not uninstall anything. If it is `disabled`, the scheduler already does not fire it; offer to remove its job anyway.
+1. Check `trigger` in `pipelines status <name> --json`. If the pipeline does not exist, or it is `not-installed` or `no-trigger`, nothing is scheduled: say so and do not uninstall anything. If it is `disabled`, the scheduler already does not fire it; offer to remove its job anyway. If the person expected it to be scheduled, it may be installed on another machine that shares this data repo: `pipelines uninstall <name>` has to run there.
 2. Propose `pipelines uninstall <name>` and wait for a yes. Explain that it unloads and deletes the scheduled job only: the pipeline's files, its saved params and its run history stay, and `pipelines install <name>` puts it back.
 3. Afterwards, `pipelines status <name> --json` should show `not-installed`.
 
