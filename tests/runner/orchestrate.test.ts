@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { parsePipeline } from '../../src/schema/pipeline.ts';
 import { RunStore } from '../../src/runs/store.ts';
 import { interpolate, type InterpolationScope } from '../../src/params/resolve.ts';
+import { runAgentStep } from '../../src/runner/agent.ts';
 import { runPipeline, type RunOptions } from '../../src/runner/orchestrate.ts';
 
 let root: string;
@@ -606,6 +607,67 @@ steps:
     const log = await Bun.file(join(root, '.runs', 'demo', record.id, 'a.log')).text();
     expect(log).not.toContain('super-secret-value');
     expect(log).toContain('[redacted]');
+  });
+});
+
+describe('runPipeline — secrets in the prompt of agent steps', () => {
+  // `{{secrets.X}}` in a prompt only resolves for LITERAL names in
+  // requires.env (same criterion as `validate`); names resolved from
+  // {{params.*}} templates remain in `secrets` for redaction/MCP/subprocess.
+  const yaml = `
+name: demo
+description: d
+version: 1
+params:
+  app: { type: string, description: app, default: myapp }
+requires:
+  env: [LITERAL_TOKEN, 'QA_{{params.app}}_USER']
+steps:
+  - id: a
+    type: agent
+    agent: worker
+    prompt: a.md
+`;
+  const secrets = { LITERAL_TOKEN: 'literal-value', QA_myapp_USER: 'qa-value' };
+
+  const runWithPrompt = async (promptText: string) => {
+    const pipelineDir = join(root, 'pipelines', 'demo');
+    mkdirSync(pipelineDir, { recursive: true });
+    writeFileSync(join(pipelineDir, 'a.md'), promptText);
+    let received = '';
+    const agentRunner: NonNullable<RunOptions['agentRunner']> = (step, ctx) =>
+      runAgentStep(step, {
+        ...ctx,
+        queryFn: ({ prompt }) => {
+          received = prompt;
+          return (async function* () {
+            yield {
+              type: 'result', subtype: 'success', duration_ms: 1, duration_api_ms: 1,
+              is_error: false, num_turns: 1, result: 'ok', stop_reason: 'end_turn',
+              total_cost_usd: 0, usage: {}, modelUsage: {}, permission_denials: [],
+              uuid: '00000000-0000-0000-0000-000000000000', session_id: 's',
+            } as never;
+          })();
+        },
+      });
+    const record = await run(yaml, { params: { app: 'myapp' }, secrets, agentRunner }).then(
+      (r) => ({ r, err: undefined as unknown }),
+      (err: unknown) => ({ r: undefined, err }),
+    );
+    return { received, ...record };
+  };
+
+  test('a literal requires.env secret still resolves in the prompt', async () => {
+    const { received, r } = await runWithPrompt('Token: {{secrets.LITERAL_TOKEN}}');
+    expect(r?.status).toBe('success');
+    expect(received).toBe('Token: literal-value');
+  });
+
+  test('a name resolved from a template cannot be referenced from the prompt', async () => {
+    const { received, r, err } = await runWithPrompt('User: {{secrets.QA_myapp_USER}}');
+    expect(received).toBe('');
+    expect(r?.status === 'success').toBe(false);
+    if (err) expect(String(err)).toContain('QA_myapp_USER');
   });
 });
 

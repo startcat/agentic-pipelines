@@ -204,3 +204,35 @@ export function checkGuardReferences(pipeline: Pipeline): string[] {
 
   return issues;
 }
+
+/**
+ * Checks the `{{x.y}}` references in the `requires.env` names. Those names
+ * are resolved in the preflight, before any step runs and with no secrets in
+ * scope (`params/env-names.ts`), so they can only depend on declared params.
+ */
+export function checkEnvReferences(pipeline: Pipeline): string[] {
+  const issues: string[] = [];
+
+  pipeline.requires.env.forEach((entry, index) => {
+    const label = `requires.env.${index}`;
+    for (const ref of findReferences(entry)) {
+      if (ref.kind === 'param') {
+        if (!(ref.name in pipeline.params)) {
+          issues.push(`${label}: references "{{params.${ref.name}}}", not declared in params`);
+        }
+        continue;
+      }
+      if (ref.kind === 'secret') {
+        issues.push(
+          `${label}: references "{{secrets.${ref.name}}}" — the name of a secret can only depend on params`,
+        );
+        continue;
+      }
+      issues.push(
+        `${label}: references "${ref.step}.${ref.field}" — the name of a secret is resolved before any step runs, it can only depend on params`,
+      );
+    }
+  });
+
+  return issues;
+}

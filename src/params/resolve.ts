@@ -39,14 +39,16 @@ export type InterpolationScope = {
 const REFERENCE_RE = /\{\{\s*([a-zA-Z0-9_-]+)\.([a-zA-Z0-9_-]+)\s*\}\}/g;
 
 /**
- * Resolves the params with the precedence default < local < override.
+ * Validates the overrides against the declared params and applies the
+ * precedence default < local < override. Returns what was resolved and the
+ * required params without a value.
  * All values are normalized to string: the YAML may bring numbers or
  * booleans, but interpolation always produces text.
  */
-export function resolveParams(
+function resolveWithMissing(
   pipeline: Pipeline,
   sources: ParamSources,
-): Record<string, string> {
+): { resolved: Record<string, string>; missing: string[] } {
   const declared = new Set(Object.keys(pipeline.params));
 
   for (const key of Object.keys(sources.overrides ?? {})) {
@@ -70,8 +72,31 @@ export function resolveParams(
     resolved[name] = String(value);
   }
 
+  return { resolved, missing };
+}
+
+/** Resolves the params with the precedence default < local < override. */
+export function resolveParams(
+  pipeline: Pipeline,
+  sources: ParamSources,
+): Record<string, string> {
+  const { resolved, missing } = resolveWithMissing(pipeline, sources);
   if (missing.length > 0) throw new MissingParamsError(missing);
   return resolved;
+}
+
+/**
+ * Like `resolveParams`, but without throwing on missing required params: it
+ * returns what there is. It is for `doctor`, which must show ALL the checks
+ * (including which secret cannot be named without a param) instead of stopping
+ * at the first one. An undeclared override is still an error: it is usually a
+ * typo in `--set`.
+ */
+export function resolveParamsLenient(
+  pipeline: Pipeline,
+  sources: ParamSources,
+): Record<string, string> {
+  return resolveWithMissing(pipeline, sources).resolved;
 }
 
 /** Extracts all `{{x.y}}` references from a text, in order of appearance. */

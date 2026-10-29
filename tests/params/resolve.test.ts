@@ -6,6 +6,7 @@ import {
   interpolateForShell,
   MissingParamsError,
   resolveParams,
+  resolveParamsLenient,
 } from '../../src/params/resolve.ts';
 
 const PIPELINE = parsePipeline(`
@@ -172,5 +173,39 @@ describe('interpolateForShell', () => {
     });
     expect(command).toBe('echo ${__PIPELINES_REF_0}_final');
     expect(env.__PIPELINES_REF_0).toBe('hello');
+  });
+});
+
+describe('resolveParamsLenient', () => {
+  const P = parsePipeline(`
+name: demo
+description: d
+version: 1
+params:
+  app:
+    description: a
+    required: true
+  stage:
+    description: e
+    default: pro
+steps:
+  - id: a
+    type: shell
+    run: 'true'
+`);
+
+  test('does not throw if a required one is missing: returns what there is', () => {
+    expect(resolveParamsLenient(P, {})).toEqual({ stage: 'pro' });
+  });
+
+  test('applies the same precedence as resolveParams', () => {
+    expect(resolveParamsLenient(P, { local: { app: 'a1' }, overrides: { app: 'a2' } })).toEqual({
+      app: 'a2',
+      stage: 'pro',
+    });
+  });
+
+  test('still rejects an undeclared override', () => {
+    expect(() => resolveParamsLenient(P, { overrides: { ap: 'x' } })).toThrow('is not declared');
   });
 });

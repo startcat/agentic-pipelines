@@ -121,6 +121,16 @@ describe('pipelines validate', () => {
     expect(out).toContain('description');
   });
 
+  test('exits 1 if requires.env uses an undeclared param', async () => {
+    writePipeline(
+      'tpl',
+      'name: tpl\ndescription: d\nversion: 1\nrequires:\n  env: ["QA_{{params.app}}_TOKEN"]\nsteps:\n  - id: a\n    type: shell\n    run: "true"\n',
+    );
+    const { code, out } = await cli(['validate', 'tpl']);
+    expect(code).toBe(1);
+    expect(out).toContain('requires.env.0: references "{{params.app}}", not declared in params');
+  });
+
   test('exits 1 if a prompt references an undeclared param', async () => {
     mkdirSync(join(root, 'pipelines', 'with-prompt'), { recursive: true });
     writeFileSync(
@@ -646,5 +656,56 @@ describe('doctor — platform checks do not block', () => {
     const out = stdout + stderr;
     expect(out).toContain('All set.');
     expect(out).not.toContain('platform');
+  });
+});
+
+describe('requires.env with templates, end to end', () => {
+  const TPL =
+    'name: tpl\ndescription: d\nversion: 1\n' +
+    'params:\n  app:\n    description: a\n    required: true\n' +
+    'requires:\n  env: ["QA_{{params.app}}_TOKEN"]\n' +
+    'steps:\n  - id: use\n    type: shell\n    run: |\n      set -euo pipefail\n      test -n "$QA_demo_TOKEN"\n      echo "value=$QA_demo_TOKEN" >&2\n';
+
+  test('run resolves the name, passes the secret to the step and redacts it in the log', async () => {
+    writePipeline('tpl', TPL);
+    writeFileSync(join(root, '.env'), 'QA_demo_TOKEN=a-very-long-secret\n');
+    const { code } = await cli(['run', 'tpl', '--set', 'app=demo']);
+    expect(code).toBe(0);
+    const log = readFileSync(join(root, '.runs', 'tpl', latestRunId('tpl'), 'use.log'), 'utf8');
+    expect(log).not.toContain('a-very-long-secret');
+    expect(log).toContain('[redacted]');
+  });
+
+  test('doctor without --set points out the missing param and exits 1', async () => {
+    writePipeline('tpl', TPL);
+    const { code, out } = await cli(['doctor', 'tpl']);
+    expect(code).toBe(1);
+    expect(out).toContain('depends on params with no value: app (pass them with --set)');
+  });
+
+  test('doctor with --set checks the resolved name', async () => {
+    writePipeline('tpl', TPL);
+    writeFileSync(join(root, '.env'), 'QA_demo_TOKEN=a-very-long-secret\n');
+    const { code, out } = await cli(['doctor', 'tpl', '--set', 'app=demo']);
+    expect(out).toContain('QA_demo_TOKEN');
+    expect(code).toBe(0);
+  });
+
+  test('resume resolves the names with the params of the original run', async () => {
+    const TPL_FAILS =
+      'name: tpl\ndescription: d\nversion: 1\n' +
+      'params:\n  app:\n    description: a\n    required: true\n' +
+      'requires:\n  env: ["QA_{{params.app}}_TOKEN"]\n' +
+      'steps:\n  - id: use\n    type: shell\n    run: |\n      set -euo pipefail\n      test -n "$QA_demo_TOKEN"\n      exit 1\n';
+    writePipeline('tpl', TPL_FAILS);
+    writeFileSync(join(root, '.env'), 'QA_demo_TOKEN=a-very-long-secret\n');
+    const first = await cli(['run', 'tpl', '--set', 'app=demo']);
+    expect(first.code).toBe(1);
+    writePipeline('tpl', TPL);
+    // Local params different from the original run's: if resume resolved
+    // with these (QA_other_TOKEN, missing from the .env), the step would fail.
+    writeFileSync(join(root, '.params.local.json'), JSON.stringify({ tpl: { app: 'other' } }));
+    const { code } = await cli(['resume', 'tpl', latestRunId('tpl')]);
+    expect(code).toBe(0);
   });
 });

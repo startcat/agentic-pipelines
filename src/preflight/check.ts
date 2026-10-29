@@ -6,6 +6,7 @@ import { platformChecks } from '../install/platform-checks.ts';
 import type { Pipeline } from '../schema/pipeline.ts';
 import { TOOL_FS_PROFILES, type ToolFsProfile } from '../runner/fs-guard.ts';
 import type { McpServerConfig } from '../schema/pipeline.ts';
+import { resolveEnvNames } from '../params/env-names.ts';
 
 /**
  * Minimum length for a `requires.env` value to count as a real secret.
@@ -57,6 +58,8 @@ export type PreflightEnv = {
   userClaudeDir: string;
   processEnv: Record<string, string | undefined>;
   dotEnv: Record<string, string>;
+  /** The run's params, to resolve the `{{params.*}}` templates in `requires.env`. */
+  params?: Record<string, string>;
   probes?: Partial<Probes>;
   /** Adds the platform checks (systemd, linger, zone). `doctor` only: `run` must not take longer. */
   includePlatform?: boolean;
@@ -442,7 +445,27 @@ export async function preflight(
     }
   }
 
-  for (const name of pipeline.requires.env) {
+  // The same name may come from two entries (literal and template): it is
+  // checked once.
+  const checkedEnv = new Set<string>();
+  for (const resolution of resolveEnvNames(pipeline.requires.env, env.params ?? {})) {
+    if (!resolution.ok) {
+      checks.push({
+        kind: 'env',
+        name: resolution.declared,
+        ok: false,
+        detail:
+          resolution.reason === 'missing-params'
+            ? `depends on params with no value: ${resolution.missing.join(', ')} (pass them with --set)`
+            : resolution.reason === 'invalid-name'
+              ? `the resulting name "${resolution.name}" is not a valid variable name (only letters, digits and _, and it cannot start with a digit)`
+              : `only {{params.*}} references are allowed: ${resolution.refs.join(', ')}`,
+      });
+      continue;
+    }
+    const name = resolution.name;
+    if (checkedEnv.has(name)) continue;
+    checkedEnv.add(name);
     const value = env.dotEnv[name] ?? env.processEnv[name];
     const ok = value !== undefined && value.trim().length >= MIN_SECRET_LENGTH;
     checks.push({

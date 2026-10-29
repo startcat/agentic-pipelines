@@ -54,6 +54,13 @@ export type AgentStepContext = StepContext & {
   mcpServers: Record<string, McpServerConfig>;
   /** Claude credential taken from the data repo's `.env`; it only reaches `agent` steps. */
   agentAuth?: Record<string, string>;
+  /**
+   * Secrets the prompt can interpolate with `{{secrets.X}}`: only the literal
+   * names in `requires.env` (same criterion as `validate`). If missing,
+   * `secrets` is used. `secrets` (in full) is still what is used for
+   * redaction, the `env` of the MCP servers and the subprocess.
+   */
+  promptSecrets?: Record<string, string>;
   queryFn?: QueryFn;
 };
 
@@ -583,7 +590,7 @@ export async function runAgentStep(
   // `{{secrets.X}}` cannot resolve anywhere else (`cwd:` of this same step,
   // `run:`/`shell:` guard of any other): a secret only reaches the prompt of
   // the agent step that asks for it.
-  const prompt = interpolate(ctx.promptText, { ...ctx.scope, secrets: ctx.secrets });
+  const prompt = interpolate(ctx.promptText, { ...ctx.scope, secrets: ctx.promptSecrets ?? ctx.secrets });
   const cwd = step.cwd ? interpolate(step.cwd, ctx.scope) : ctx.defaultCwd;
   const additionalDirs = step.additionalDirs.map((d) => interpolate(d, ctx.scope));
   // Resolve the roots BEFORE creating the AbortController/timer: if

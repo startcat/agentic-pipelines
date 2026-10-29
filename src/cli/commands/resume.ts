@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { resolvedEnvNames } from '../../params/env-names.ts';
 import { runPipeline } from '../../runner/orchestrate.ts';
 import { RunStore } from '../../runs/store.ts';
 import { collectAgentAuth, collectSecrets, loadPipeline } from '../context.ts';
@@ -32,7 +33,7 @@ export function registerResume(program: Command): void {
               repoRoot: ctx.root,
               store,
               params: previous.params,
-              secrets: collectSecrets(ctx, pipeline.requires.env),
+              secrets: collectSecrets(ctx, resolvedEnvNames(pipeline.requires.env, previous.params)),
               agentAuth: collectAgentAuth(ctx),
               resumeFrom: previous,
             });
