@@ -186,25 +186,23 @@ They ask before every `pipelines install`, `uninstall`, `run`, `resume` and
 `--force`, never read or write `.env`, and never touch the files the engine
 generates. They answer in the language you write in.
 
-Install the plugin from Claude Code:
-
-```
-/plugin install agentic-pipelines --marketplace startcat/agentic-pipelines
-```
-
-On Claude Code versions before 2.1.275, add the marketplace first and then
-install it:
+Install the plugin from Claude Code: add the marketplace, then install the
+plugin from it.
 
 ```
 /plugin marketplace add startcat/agentic-pipelines
 /plugin install agentic-pipelines@startcat
 ```
 
+From a terminal, `claude plugin install agentic-pipelines --marketplace
+startcat/agentic-pipelines` does both in one step.
+
 The skills start on their own when what you ask fits them. To call one by
 name: `/agentic-pipelines:new-pipeline`, `/agentic-pipelines:edit-pipeline`
 or `/agentic-pipelines:pipelines-status`. They use the `pipelines` command
-if it is on your `PATH`, or else `bun run ~/agentic-pipelines/src/cli/index.ts`,
-and they read this engine's [`docs/reference.md`](docs/reference.md) so that
+if it is on your `PATH` (`bun link` in the engine's folder puts it there), or
+else `bun run ~/agentic-pipelines/src/cli/index.ts`; `validate`, `status`
+and `show` run without asking in either form. They read this engine's [`docs/reference.md`](docs/reference.md) so that
 what they write matches the version that validates it.
 
 ## Installation
@@ -759,8 +757,15 @@ by hand before a change to the skills, not in CI:
 
 ```bash
 claude plugin eval claude-plugin --scaffold --runs 1 --no-publish \
-  --allow-tools Write Edit 'Bash(bun run ./engine/src/cli/index.ts:*)'
+  --allow-tools Write Edit \
+  'Bash(bun run ./engine/src/cli/index.ts validate:*)' \
+  'Bash(bun run ./engine/src/cli/index.ts status:*)' \
+  'Bash(bun run ./engine/src/cli/index.ts show:*)'
 ```
+
+Only the commands that read are granted: a skill that tried to install, run
+or uninstall on its own is denied, and the case's graders see the attempt,
+instead of a real job landing in your scheduler.
 
 Each case in `claude-plugin/evals/` starts from a copy of
 `claude-plugin/evals/fixture-repo/`, a small data repo with two fabricated
