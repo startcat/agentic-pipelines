@@ -1,0 +1,36 @@
+schema_version: "1.0"
+name: no-data-repo
+description: "Outside a data repo, it writes nothing and points at the starter."
+tags: [new-pipeline]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: "Create a pipeline that sends me a summary of my open GitHub issues every morning."
+  max_turns: 15
+  timeout_seconds: 600
+  allowed_tools:
+    - "Skill"
+    - "Read"
+    - "Glob"
+    - "Grep"
+    - "Bash(bun run ./engine/src/cli/index.ts validate:*)"
+    - "Bash(bun run ./engine/src/cli/index.ts status:*)"
+    - "Bash(bun run ./engine/src/cli/index.ts show:*)"
+    - "Write"
+    - "Edit"
+  append_system_prompt: "For this session, the agentic-pipelines CLI is `bun run ./engine/src/cli/index.ts`: the engine is checked out at ./engine in the working directory, and no other `pipelines` command should be used. Nobody will answer follow-up questions: if the skill would ask the person something, ask it and stop."
+runs: 1
+graders:
+  - type: llm
+    name: says-no-repo
+    criteria: "The reply says there is no data repo here (no pipelines.yaml) and suggests cloning pipelines-starter or pointing at an existing data repo."
+    focus: last_message
+  - type: tool_used
+    name: writes-nothing
+    tool: Write
+    min: 0
+    max: 0
+  - type: file_exists
+    name: no-pipeline-files
+    path: "pipelines"
+    exists: false

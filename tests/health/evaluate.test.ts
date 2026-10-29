@@ -41,6 +41,16 @@ describe('evaluateTrigger', () => {
     expect(evaluateTrigger(false, { loaded: false, disabled: false })).toBe('no-trigger');
   });
 
+  // The YAML lost its triggers but the scheduler still has the old job: it
+  // keeps firing on the old cadence, so calling it manual would hide it.
+  test('with no declared triggers but a loaded job it is drifted', () => {
+    expect(evaluateTrigger(false, { loaded: true, disabled: false })).toBe('drifted');
+  });
+
+  test('with no declared triggers and a disabled job it is still no-trigger', () => {
+    expect(evaluateTrigger(false, { loaded: true, disabled: true })).toBe('no-trigger');
+  });
+
   test('declares cron and there is no job: not-installed', () => {
     expect(evaluateTrigger(true, { loaded: false, disabled: false })).toBe('not-installed');
   });

@@ -1,0 +1,38 @@
+name: weekly-report
+description: Every Monday morning, writes a one-page report of last week's commits in the reports folder.
+version: 1
+params:
+  source_repo:
+    description: Local clone whose commits the report covers.
+    required: true
+  reports_dir:
+    description: Folder where the report is written.
+    required: true
+requires:
+  bin: [git, jq]
+  agents: [writer]
+when:
+  - throttle: 144h
+triggers:
+  - cron: "0 7 * * 1"
+notify:
+  on: [failed]
+  stale_after: 360h
+  channel: email
+steps:
+  - id: collect
+    type: shell
+    timeout: 1m
+    run: |
+      set -euo pipefail
+      git -C "{{params.source_repo}}" log --since=7.days --pretty=format:%s | jq -R -s -c '{commits: .}'
+    outputs:
+      commits: string
+  - id: write
+    agent: writer
+    prompt: steps/write.md
+    cwd: "{{params.reports_dir}}"
+    tools: [Read, Write]
+    max_cost_usd: 0.25
+    outputs:
+      summary: string

@@ -32,6 +32,7 @@ the commands and what gets persisted is in [`docs/reference.md`](docs/reference.
 - [What happens during a run](#what-happens-during-a-run)
 - [What an `agent` step does](#what-an-agent-step-does)
 - [The dashboard](#the-dashboard)
+- [Using it from Claude Code](#using-it-from-claude-code)
 - [Installation](#installation)
 - [Install on Linux](#install-on-linux)
 - [Your first pipeline in ten minutes](#your-first-pipeline-in-ten-minutes)
@@ -159,6 +160,50 @@ mode and serves its fonts locally, so it works offline.
   text.
 
 The dashboard updates live while a run is in progress.
+
+## Using it from Claude Code
+
+This repo is also a Claude Code plugin marketplace. Its `agentic-pipelines`
+plugin brings three skills, so you can work on a data repo in your own words:
+
+- **`new-pipeline`**: "I want a pipeline that reviews stale PRs every Monday
+  and tells me". It asks what it needs to know, one question at a time and
+  each with a proposal (when, what it needs, what the agent may do, how much
+  it may spend, what it delivers, who it tells), sums it up, writes
+  `pipeline.yaml` and its prompts, and runs `pipelines validate` until it is
+  green.
+- **`edit-pipeline`**: "move the weekly report to 08:00", "raise the
+  spending cap". It makes the smallest change, validates it and, when the
+  pipeline is installed, proposes reinstalling it so the scheduled job
+  matches the YAML. Params change with `pipelines install <name> --set`,
+  never by hand.
+- **`pipelines-status`**: "how are the pipelines doing?", "why did X fail?",
+  "how much have I spent?", "stop X", "start X". It reads
+  `pipelines status --json` (the same verdicts, next runs and spend as the
+  dashboard) and explains a failed run from its record and logs.
+
+They ask before every `pipelines install`, `uninstall`, `run`, `resume` and
+`--force`, never read or write `.env`, and never touch the files the engine
+generates. They answer in the language you write in.
+
+Install the plugin from Claude Code: add the marketplace, then install the
+plugin from it.
+
+```
+/plugin marketplace add startcat/agentic-pipelines
+/plugin install agentic-pipelines@startcat
+```
+
+From a terminal, `claude plugin install agentic-pipelines --marketplace
+startcat/agentic-pipelines` does both in one step.
+
+The skills start on their own when what you ask fits them. To call one by
+name: `/agentic-pipelines:new-pipeline`, `/agentic-pipelines:edit-pipeline`
+or `/agentic-pipelines:pipelines-status`. They use the `pipelines` command
+if it is on your `PATH` (`bun link` in the engine's folder puts it there), or
+else `bun run ~/agentic-pipelines/src/cli/index.ts`; `validate`, `status`
+and `show` run without asking in either form. They read this engine's [`docs/reference.md`](docs/reference.md) so that
+what they write matches the version that validates it.
 
 ## Installation
 
@@ -702,6 +747,31 @@ Beyond the linter, these are the conventions every pipeline should follow:
 bun test              # the full suite
 bun x tsc --noEmit    # typecheck
 ```
+
+The plugin lives in [`claude-plugin/`](claude-plugin/) and the marketplace
+that lists it in `.claude-plugin/marketplace.json`. `bun test` checks every
+skill against the real CLI and schema: each `pipelines …` command and option
+a skill cites must exist, and each ```` ```yaml ```` block must parse as a
+pipeline. Its behaviour is checked with evals, which cost money and are run
+by hand before a change to the skills, not in CI:
+
+```bash
+claude plugin eval claude-plugin --scaffold --runs 1 --no-publish \
+  --allow-tools Write Edit \
+  'Bash(bun run ./engine/src/cli/index.ts validate:*)' \
+  'Bash(bun run ./engine/src/cli/index.ts status:*)' \
+  'Bash(bun run ./engine/src/cli/index.ts show:*)' \
+  'Bash(command -v pipelines)' 'Bash(test -f ~/agentic-pipelines/src/cli/index.ts)'
+```
+
+Only the commands that read are granted: a skill that tried to install, run
+or uninstall on its own is denied, and the case's graders see the attempt,
+instead of a real job landing in your scheduler.
+
+Each case in `claude-plugin/evals/` starts from a copy of
+`claude-plugin/evals/fixture-repo/`, a small data repo with two fabricated
+failed runs, and a copy of this engine in `./engine`. `cli-discovery` has no
+engine copy: what it finds depends on the machine that runs it.
 
 `src/` is organized by responsibility: `schema/` (Zod, strict mode),
 `graph/` (dependencies and cycles), `guards/` (`when`), `runner/`

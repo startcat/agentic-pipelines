@@ -1,0 +1,15 @@
+{
+  "name": "startcat",
+  "description": "Claude Code plugins from Start.cat.",
+  "owner": {
+    "name": "Start.cat",
+    "url": "https://start.cat"
+  },
+  "plugins": [
+    {
+      "name": "agentic-pipelines",
+      "source": "./claude-plugin",
+      "description": "Create, edit and check agentic-pipelines from Claude Code."
+    }
+  ]
+}

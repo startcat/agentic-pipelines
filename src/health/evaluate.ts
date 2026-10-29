@@ -64,7 +64,11 @@ export type JobFacts = {
  * the domain's override would keep biting.
  */
 export function evaluateTrigger(hasTriggers: boolean, job: JobFacts): TriggerHealth {
-  if (!hasTriggers) return 'no-trigger';
+  // No cron in the YAML, but a job still loaded: the triggers were removed
+  // after an install, and the old job keeps firing on the old cadence. That
+  // is the YAML and the scheduler disagreeing, which is what `drifted` says;
+  // calling it manual would hide a job that still runs (and spends).
+  if (!hasTriggers) return job.loaded && !job.disabled ? 'drifted' : 'no-trigger';
   if (job.disabled) return 'disabled';
   if (!job.loaded) return 'not-installed';
   // Without both sides no comparison is possible, and claiming a drift that

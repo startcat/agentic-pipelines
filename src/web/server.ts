@@ -4,7 +4,6 @@
  * without being able to get in its way (`run.json` is already written with an
  * atomic `rename`, so every read sees a complete version).
  */
-import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { userHome } from '../cli/install-helpers.ts';
 import { listPipelineNames, loadPipeline, type RepoContext } from '../cli/context.ts';
@@ -23,9 +22,18 @@ import {
   type Chrome,
   type HealthRow,
   type RunInfo,
-  type UnreadableRun,
 } from './render.ts';
-import { costReport, costRunsOf, spendOf, type CostRun } from './costs.ts';
+import { costReport, spendOf, type CostRun } from './costs.ts';
+import {
+  collectOverview,
+  costRunsFor,
+  isRunObject,
+  readRuns,
+  reasonOf,
+  runIds,
+  schedulerLabel,
+  unreadableReason,
+} from './collect.ts';
 import { createJobFactsCache } from './facts.ts';
 import { renderCostsPage } from './render-costs.ts';
 import { MAX_LOG_CHARS, renderStepLogPage } from './render-log.ts';
@@ -54,84 +62,6 @@ async function resolvePipelineName(ctx: RepoContext, raw: string): Promise<strin
 }
 
 const notFound = (): Response => new Response('No such page.', { status: 404 });
-
-const reasonOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
-
-/**
- * The run ids of a pipeline: the directory names under `.runs/<name>/`.
- * Read here and not through `RunStore.listRuns`, because that one parses every
- * `run.json` and throws on the first broken one — right for the CLI, which
- * must not act on a history it can't read, but on these pages one truncated
- * file would take the whole pipeline down with a 500. The names are only ever
- * compared against a URL, never joined from it.
- *
- * Only directories (or links to them) are runs: a stray file such as Finder's
- * `.DS_Store` is not a run that failed to read, and counting it as one hid a
- * whole pipeline's spend.
- */
-async function runIds(ctx: RepoContext, name: string): Promise<string[]> {
-  try {
-    const entries = await readdir(join(ctx.root, '.runs', name), { withFileTypes: true });
-    return entries
-      .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
-      .map((entry) => entry.name)
-      .sort()
-      .reverse();
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    throw err;
-  }
-}
-
-/**
- * `JSON.parse` of a `run.json` can give anything: `null`, a number, an array.
- * Only an object can be drawn as a run; the rest is unreadable, with a reason.
- */
-const isRunObject = (run: unknown): run is RunRecord =>
-  typeof run === 'object' && run !== null && !Array.isArray(run);
-
-/**
- * Every run of a pipeline that can be read, newest first, and the ones that
- * can't with the reason — one at a time, so a single broken `run.json` costs
- * its own row and not the page. Same order as `RunStore.listRuns`. `ids` runs
- * parallel to `runs`: the directory each one was read from.
- */
-async function readRuns(
-  ctx: RepoContext,
-  store: RunStore,
-  name: string,
-): Promise<{ runs: RunRecord[]; ids: string[]; unreadable: UnreadableRun[] }> {
-  const runs: RunRecord[] = [];
-  const ids: string[] = [];
-  const unreadable: UnreadableRun[] = [];
-  let entries: string[];
-  try {
-    entries = await runIds(ctx, name);
-  } catch (err) {
-    return { runs, ids, unreadable: [{ reason: reasonOf(err) }] };
-  }
-  for (const id of entries) {
-    try {
-      const run = await store.readRun(name, id);
-      if (run === undefined) continue;
-      if (isRunObject(run)) {
-        runs.push(run);
-        ids.push(id);
-      } else unreadable.push({ id, reason: 'run.json is not a run record' });
-    } catch (err) {
-      unreadable.push({ id, reason: reasonOf(err) });
-    }
-  }
-  return { runs, ids, unreadable };
-}
-
-/**
- * A pipeline's runs as the costs see them. Named by their DIRECTORIES, not by
- * what the file says: those are what the links are built from, so a run.json
- * with a missing or stale `id` or `pipeline` still links to its own page.
- */
-const costRunsFor = (name: string, runs: RunRecord[], ids: string[]): CostRun[] =>
-  costRunsOf(runs.map((run, i) => ({ ...run, pipeline: name, id: ids[i]! })));
 
 /**
  * One run, by LOOKUP of the URL's id among the directory names, then read
@@ -164,29 +94,6 @@ async function findRun(
 /** A run's steps, or none when a malformed `run.json` has no object there. */
 const stepsOf = (run: RunRecord): Record<string, unknown> =>
   typeof run.steps === 'object' && run.steps !== null ? run.steps : {};
-
-/**
- * Why a pipeline couldn't be read, said for THIS surface.
- *
- * `loadPipeline` is written for the CLI, where a person types the name and
- * getting it wrong is the normal case: "Pipeline "broken" does not exist.
- * Available: good, broken" is useful there. Here the name comes from walking
- * the disk, so the sentence contradicts itself —it names `broken` as absent
- * and as available at once— and reads as if the tool is broken.
- *
- * On the web the fact is different and simple: the folder is there, the file
- * is not. Any other failure (an unreadable YAML, a `name` that doesn't match
- * its directory) keeps its message: there the original text is the only thing
- * that says what needs fixing.
- *
- * Returns PLAIN TEXT, no tags: `renderHealthPanel` runs it through
- * `escapeHtml` like everything else.
- */
-async function unreadableReason(ctx: RepoContext, name: string, err: unknown): Promise<string> {
-  const yaml = join(ctx.root, 'pipelines', name, 'pipeline.yaml');
-  if (!(await Bun.file(yaml).exists())) return 'the folder has no pipeline.yaml';
-  return err instanceof Error ? err.message : String(err);
-}
 
 const POLL_MS = 1_000;
 
@@ -314,19 +221,6 @@ const FONT_FILES: Record<string, string> = {
   'azeret-mono-var.woff2': join(import.meta.dir, 'fonts', 'azeret-mono-var.woff2'),
 };
 
-/**
- * The scheduler's name for the footer. `schedulerFor()` throws on a platform
- * it doesn't support; the rows of the dashboard already say so one by one, so
- * the footer just says it doesn't know instead of turning every page into a 500.
- */
-function schedulerLabel(): string {
-  try {
-    return schedulerFor().label;
-  } catch {
-    return '—';
-  }
-}
-
 export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Server<undefined> {
   const store = new RunStore(ctx.root);
   const jobFacts = createJobFactsCache(JOB_FACTS_TTL_MS);
@@ -345,44 +239,32 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
   /**
    * The dashboard's rows and, from the very same reads, the runs the spend
    * strip adds up: `.runs/` is walked once per tick, not once for the rows and
-   * again for the money.
+   * again for the money. The reads and the verdicts are `collectOverview`'s,
+   * the same ones `pipelines status --json` prints; this only adds what the
+   * page draws on top.
    */
   async function healthRows(
     now: Date,
   ): Promise<{ rows: HealthRow[]; costRuns: CostRun[]; unreadableRuns: number }> {
+    const overview = await collectOverview(ctx, await listPipelineNames(ctx), now, jobFacts.get);
     const rows: HealthRow[] = [];
-    const costRuns: CostRun[] = [];
-    let unreadableRuns = 0;
-    for (const name of await listPipelineNames(ctx)) {
-      // Per-pipeline containment: `loadPipeline` throws under ORDINARY
-      // conditions (a half-authored `pipelines/<x>/` with no `pipeline.yaml`
-      // — exactly when this viewer is most useful), and so does a history with
-      // a `run.json` truncated mid-write. Without this try/catch, a single
-      // broken pipeline took down `GET /` with a 500 for all the others.
-      // `schedulerFor()` is inside for the same reason: on a platform without a
-      // scheduler each row shows the error, but the dashboard doesn't 500.
+    for (const entry of overview.entries) {
+      if ('error' in entry) {
+        rows.push(entry);
+        continue;
+      }
+      const { name, pipeline, health, next } = entry;
+      // Its own containment, like `collectOverview`'s: on a platform without a
+      // scheduler `schedulerFor()` throws, and that row shows the error but
+      // the dashboard doesn't 500.
       try {
-        // The runs first, read one at a time (`readRuns`, as /costs does): a
-        // pipeline whose YAML broke after it ran, or with one unreadable run,
-        // still spent the money of the runs that can be read, and the strip
-        // has to agree with the page it links to.
-        const { runs, ids, unreadable } = await readRuns(ctx, store, name);
-        for (const run of costRunsFor(name, runs, ids)) costRuns.push(run);
-        unreadableRuns += unreadable.length;
-        // Health, though, is not judged on a partial history: the CLI's
-        // `status` refuses one (`RunStore.listRuns` throws), and the row says
-        // why with the same message instead of a verdict on what is left.
-        if (unreadable.length > 0) throw new Error(unreadable[0]!.reason);
         const backend = schedulerFor();
-        const pipeline = await loadPipeline(ctx, name);
-        const facts = await jobFacts.get(pipeline, ctx, now);
-        const health = evaluateHealth(pipeline, runs, facts, now);
         rows.push({
           name,
           description: pipeline.description,
           health,
           steps: pipeline.steps.map((step) => step.id),
-          next: nextRun(health.trigger, pipeline.triggers.map((t) => t.cron), now),
+          next,
           scheduler: { label: backend.label, logPath: backend.logPath(userHome(), name) },
           // The job's log is read ONLY here. It is the only trace of an engine
           // that dies before writing `run.json`, and it is not a general source
@@ -394,7 +276,7 @@ export function createServer(ctx: RepoContext, opts: { port: number }): Bun.Serv
         rows.push({ name, error: await unreadableReason(ctx, name, err) });
       }
     }
-    return { rows, costRuns, unreadableRuns };
+    return { rows, costRuns: overview.costRuns, unreadableRuns: overview.unreadableRuns };
   }
 
   /**

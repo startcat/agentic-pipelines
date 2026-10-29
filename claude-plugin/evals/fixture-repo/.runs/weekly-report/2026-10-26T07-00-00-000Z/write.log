@@ -1,0 +1,5 @@
+[assistant] I'll read every changed file before grouping the commits.
+[tool_use] Read /Users/me/reports/2026-10-19.md
+[tool_use] Read /Users/me/reports/2026-10-12.md
+[assistant] Reading the previous reports for context...
+SDK failure: error_max_budget_usd
