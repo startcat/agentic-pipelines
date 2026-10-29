@@ -165,7 +165,22 @@ mcp_servers:
 | `command` | string | yes | Interpolable with `{{params.*}}` (never `{{secrets.*}}`). |
 | `args` | string[] | no (`[]`) | Interpolable like `command`. |
 | `env` | string[] | no (`[]`) | **Names** of the secrets this server needs, resolved against `requires.env`; never values in the YAML. |
-| `kind` | `"playwright"` | no | See [The security model](#the-security-model). Without `kind:`, no tool from that server passes `validate`: tool governance is deny-by-default. Today only the `playwright` kind exists; adding another one requires extending the engine. |
+| `kind` | `"playwright"` \| `"declared"` | no | See [The security model](#the-security-model). Without `kind:`, no tool from that server passes `validate`: tool governance is deny-by-default. `playwright` uses the engine's profile table; `declared` is for a server of your own whose tools the engine doesn't know, and whoever writes the pipeline lists them in `allow`. |
+| `allow` | string[] | required with `kind: declared`; forbidden otherwise | Names of the server's tools (without the `mcp__<name>__` prefix) that a step may ask for. Only these pass `validate`, and at runtime the hook allows only the tools of `allow` that the step grants in its `tools:` (`allow` is the server's ceiling, `tools:` is what each step receives). `validate` rejects exactly the names of the always-forbidden execution tools (`Bash`, `REPL`, `browser_evaluate`...); anything else, such as a tool that runs a shell under another name, is the pipeline author's responsibility. Because `doctor` and the preflight of every `run` start the server to list its tools, a `declared` server's `tools/list` must answer without external resources, with the `{{params.*}}` arguments unresolved and without secrets. |
+
+Example of a `declared` server:
+
+```yaml
+mcp_servers:
+  my-device:
+    command: my-device-mcp
+    args: ["--stdio"]
+    kind: declared
+    allow: [screenshot, tap]
+```
+
+A step uses it with `mcp_servers: [my-device]` and
+`tools: [mcp__my-device__screenshot, mcp__my-device__tap]`.
 
 An `agent` step enables the server by listing it in its own
 `mcp_servers: [name]` (see [`agent` steps](#agent-steps)). The engine always
@@ -322,7 +337,7 @@ from the environment (see
 |---|---|---|---|
 | `agent` | string | yes | Name of `agents/<agent>.md` in the data repo (YAML front matter + Markdown prompt). |
 | `prompt` | string | yes | Path to this step's prompt `.md` file, relative to the pipeline directory. May contain `{{...}}` references; they are resolved against outputs of previous steps and params (and secrets, see [Interpolation](#interpolation)). |
-| `tools` | string[] | no | Deny-by-default list: every native tool must be in the engine's internal table (`Read`, `Write`, `Edit`, `NotebookEdit`, `Glob`, `Grep`, `StructuredOutput`), and every `mcp__<server>__<suffix>` tool must have its server declared in this same step's `mcp_servers:`, with that server having a known `kind:` in the pipeline registry. Without `tools:`, the step gets the minimal default: `Read`, `Grep`, `Glob`. `Bash` and any other arbitrary-code-execution tool (`REPL`, `Workflow`, `Agent`, `EnterWorktree`, `ExitWorktree`, `browser_evaluate`, `browser_run_code_unsafe`) are **always forbidden** in an `agent` step; if you need to run commands, use a `type: shell` step. |
+| `tools` | string[] | no | Deny-by-default list: every native tool must be in the engine's internal table (`Read`, `Write`, `Edit`, `NotebookEdit`, `Glob`, `Grep`, `StructuredOutput`), and every `mcp__<server>__<suffix>` tool must have its server declared in this same step's `mcp_servers:`, with that server having a known `kind:` in the pipeline registry (if it is `declared`, the suffix must also be in its `allow`). Without `tools:`, the step gets the minimal default: `Read`, `Grep`, `Glob`. `Bash` and any other arbitrary-code-execution tool (`REPL`, `Workflow`, `Agent`, `EnterWorktree`, `ExitWorktree`, `browser_evaluate`, `browser_run_code_unsafe`) are **always forbidden** in an `agent` step; if you need to run commands, use a `type: shell` step. |
 | `mcp_servers` | string[] | no (`[]`) | Names from the pipeline-level `mcp_servers` registry that this step enables. |
 | `additional_dirs` | string[] | no (`[]`) | **Read-only** directories outside `cwd` that this step can reach. Interpolable only with `{{params.*}}`, never `{{secrets.*}}` (checked by `validate`). |
 | `max_cost_usd` | number > 0 | no | Spending cap in USD for this particular step (mapped to the SDK's `maxBudgetUsd`). No cap if omitted. |
@@ -418,6 +433,12 @@ not the SDK's `permissionMode`; it is the engine**:
      in the face of the unknown, not open.
    - The hook never throws: any internal error becomes an explicit denial.
 
+   **`declared` servers**: the engine doesn't know their tools' fields, so it
+   applies no filesystem profiles to them, only the `allow` list. Whoever
+   writes the pipeline vouches that no tool in `allow` runs arbitrary code or
+   writes where it shouldn't. A tool of that server that isn't in `allow`, or
+   that the step doesn't grant in its `tools:`, is denied at runtime.
+
 3. **`strictMcpConfig: true`**, always: no "ambient" MCP server already
    configured on the machine (plugins, another project's `.mcp.json`) joins
    the session without `mcp_servers:` knowing about it.
@@ -435,10 +456,12 @@ gets added to the engine's table before it turns into a confusing failure in
 another run.
 
 **`doctor`** adds one more layer: for each MCP server with a known `kind:`,
-it starts the real server and compares, live, the `tools/list` it returns
-against the engine's internal table. It detects tools that were added,
-renamed or removed in an MCP package update before a real run discovers
-them. This check (`mcp-schema`) is purely informational in `run` (it never
+it starts the real server and reads its `tools/list` live, to detect tools
+that were added, renamed or removed in an MCP package update before a real
+run discovers them. Depending on the `kind:`: with `playwright` it compares
+each tool's fields against the engine's internal table; with `declared` it
+only checks that every tool granted to the steps still exists in the real
+server, without comparing fields. This check (`mcp-schema`) is purely informational in `run` (it never
 blocks a run), but it does block `doctor`.
 
 ## `pipelines.yaml`: data repo configuration
@@ -767,8 +790,11 @@ bun x tsc --noEmit   # typecheck
   (launchd) and Linux (systemd user timers); they know nothing about crontab
   or other schedulers. Windows through WSL2 hasn't been verified.
 - **stdio MCP servers only.** SSE/HTTP are not supported.
-- **Only `kind: playwright` in `mcp_servers`.** Any other MCP package needs
-  the engine's governance table extended first.
+- **`kind: playwright` or `kind: declared` in `mcp_servers`.** `playwright`
+  uses the engine's governance table; `declared` exists for a server of your
+  own whose tools the engine doesn't know: whoever writes the pipeline lists
+  in `allow` what is permitted and vouches that none of those tools runs
+  arbitrary code or writes where it shouldn't.
 - **No dependency cache between runs**: each throwaway/execution
   environment is the responsibility of whoever prepares it (the engine
   doesn't install a target repo's dependencies, e.g. `yarn install`).

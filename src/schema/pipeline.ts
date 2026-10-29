@@ -151,9 +151,44 @@ const mcpServerSchema = z
      * undeclared, no tool of that server passes `validate` — same
      * deny-by-default criterion as the rest.
      */
-    kind: z.enum(['playwright']).optional(),
+    kind: z.enum(['playwright', 'declared']).optional(),
+    /**
+     * Only with `kind: declared`: the exact list of the server's tools a step
+     * may be granted. The engine knows nothing about an arbitrary server's
+     * tools, so whoever registers it declares them; anything not listed here
+     * is never granted.
+     */
+    allow: z
+      .array(z.string().regex(/^[A-Za-z0-9_-]+$/, 'must be a tool name (letters, digits, _ and -)'))
+      .min(1)
+      .optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((server, ctx) => {
+    if (server.kind === 'declared' && !server.allow) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['allow'],
+        message: 'kind: declared requires allow with the list of allowed tools',
+      });
+    }
+    if (server.kind !== 'declared' && server.allow) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['allow'],
+        message: 'allow is only accepted with kind: declared',
+      });
+    }
+    server.allow?.forEach((tool, i) => {
+      if (HARD_DENY_TOOLS.has(tool)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['allow', i],
+          message: `"${tool}" cannot be allowed: it runs arbitrary code or escapes the sandbox`,
+        });
+      }
+    });
+  });
 
 const baseStepSchema = z
   .object({
@@ -473,7 +508,8 @@ export function parsePipeline(yamlText: string): Pipeline {
         return;
       }
       const serverName = step.mcp_servers.find((name) => tool.startsWith(`mcp__${name}__`))!;
-      const kind = parsed.mcp_servers[serverName]?.kind;
+      const server = parsed.mcp_servers[serverName];
+      const kind = server?.kind;
       const suffix = tool.slice(`mcp__${serverName}__`.length);
       if (HARD_DENY_TOOLS.has(suffix)) {
         mcpIssues.push(
@@ -485,6 +521,14 @@ export function parsePipeline(yamlText: string): Pipeline {
         mcpIssues.push(
           `steps.${index}.tools.${toolIndex}: "${tool}" cannot be granted — the server "${serverName}" does not declare kind: in mcp_servers`,
         );
+        return;
+      }
+      if (kind === 'declared') {
+        if (!server!.allow?.includes(suffix)) {
+          mcpIssues.push(
+            `steps.${index}.tools.${toolIndex}: "${suffix}" is not in the allow of server "${serverName}"`,
+          );
+        }
         return;
       }
       if (!MCP_TOOLS_BY_KIND[kind].has(suffix)) {
