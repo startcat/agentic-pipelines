@@ -7,7 +7,7 @@ enforced by the engine itself, not by the SDK. `launchd` (macOS) or a
 `systemd` user timer (Linux) fires each pipeline on schedule, the engine runs
 it, stores every run on disk, and notifies you when it finishes.
 
-![Terminal recording of the pipelines CLI. It validates a data repo with two example pipelines, then runs hello-world, a shell-only pipeline whose two steps succeed. Next it runs hello-agent: a shell step writes a short notes file, and an agent step reads it inside the engine's sandbox and returns a validated JSON summary. pipelines status lists both runs, with $0.01 for the agent run. Finally, pipelines show piped to jq prints the agent step's outputs, the tools it used, and one sandbox denial: the agent first tried to read /notes.txt outside its working folder, the engine blocked it, and the run still finished green.](docs/demo.gif)
+![Terminal recording of the pipelines CLI. It validates a data repo with two example pipelines, then runs hello-world, a shell-only pipeline whose two steps succeed. Next it runs hello-agent: a shell step writes a short notes file, and an agent step reads it inside the engine's sandbox and returns a validated JSON summary. pipelines status lists both runs, with $0.02 for the agent run. Finally, pipelines show piped to jq prints the agent step's outputs, the tools it used, and one sandbox denial: the agent first tried to read /notes.txt outside its working folder, the engine blocked it, and the run still finished green.](docs/demo.gif)
 
 This repository is **the engine**. It ships no pipelines of its own: yours
 live in a separate **data repo** that you create, and the engine loads it at
