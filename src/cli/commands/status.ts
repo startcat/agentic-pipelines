@@ -8,9 +8,11 @@ import { repoCostRuns, toStatusJson } from '../status-json.ts';
 
 /**
  * The overview as JSON, from the same reads as the dashboard. Only reads.
- * An unknown name fails with `loadPipeline`'s own message, as the text output
- * does; a pipeline that can't be read is an entry with its `error`, not a
- * failed command. `costs` is always the whole repo's, like `/costs`.
+ * An unknown name fails with `loadPipeline`'s own message and exit code 1
+ * (the text output, unlike this, prints it with "(no runs)"): a script reading
+ * the JSON must not mistake a typo for a pipeline that never ran. A pipeline
+ * that can't be read is an entry with its `error`, not a failed command.
+ * `costs` is always the whole repo's, like `/costs`.
  */
 async function printStatusJson(ctx: RepoContext, name: string | undefined): Promise<void> {
   const all = await listPipelineNames(ctx);
@@ -27,7 +29,8 @@ async function printStatusJson(ctx: RepoContext, name: string | undefined): Prom
     name === undefined
       ? { runs: overview.costRuns, unreadable: overview.unreadableRuns }
       : await repoCostRuns(ctx);
-  const json = toStatusJson({ overview, costs, repo: ctx.root, scheduler: schedulerLabel(), now });
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const json = toStatusJson({ overview, costs, repo: ctx.root, scheduler: schedulerLabel(), timeZone, now });
   writeStdout(JSON.stringify(json, null, 2));
 }
 

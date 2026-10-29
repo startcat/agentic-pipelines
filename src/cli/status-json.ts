@@ -9,6 +9,7 @@ import type { Health, TriggerHealth, WorkHealth } from '../health/evaluate.ts';
 import { RunStore } from '../runs/store.ts';
 import { costRunsFor, readRuns, type Overview } from '../web/collect.ts';
 import { spendOf, type CostRun } from '../web/costs.ts';
+import { formatNext, formatWhen } from '../web/format.ts';
 import type { NextRun } from '../web/schedule.ts';
 import { panelSummary, verdict, type Tone } from '../web/verdict.ts';
 
@@ -29,15 +30,21 @@ export type StatusEntry =
       work: WorkHealth;
       contradiction: boolean;
       consecutiveSkips: number;
+      /** The crons in the YAML, in local time. Empty for a manual pipeline. */
+      triggers: string[];
       lastRun: {
         id: string;
         status: string;
         startedAt: string;
+        /** `startedAt` as the dashboard says it, in local time: "today 07:00", "Mon 07:00". */
+        startedLabel: string;
         costUsd: number | null;
         forced: boolean;
         skipReason?: string;
       } | null;
       next: string | null;
+      /** `next` as the dashboard says it, in local time: "tomorrow 08:00". Only when `next` is set. */
+      nextLabel?: string;
       nextReason?: NextReason;
     }
   | { name: string; error: string };
@@ -46,6 +53,8 @@ export type StatusJson = {
   generatedAt: string;
   repo: string;
   scheduler: string;
+  /** The machine's IANA time zone: the one crons and the labels are read in. */
+  timeZone: string;
   summary: { line: string; tone: Tone; sub: string };
   pipelines: StatusEntry[];
   costs: {
@@ -79,15 +88,26 @@ export async function repoCostRuns(ctx: RepoContext): Promise<RepoCosts> {
  * only happens on the trigger axis's `not-installed` and `disabled`, so the
  * reason is that axis.
  */
-function nextOf(next: NextRun, trigger: TriggerHealth): { next: string | null; nextReason?: NextReason } {
+function nextOf(
+  next: NextRun,
+  trigger: TriggerHealth,
+  now: Date,
+): { next: string | null; nextLabel?: string; nextReason?: NextReason } {
   switch (next.kind) {
     case 'at':
-      return next.at !== '' ? { next: next.at } : { next: null, nextReason: 'unknown' };
+      return next.at !== ''
+        ? { next: next.at, nextLabel: formatNext(new Date(next.at), now) }
+        : { next: null, nextReason: 'unknown' };
     case 'manual':
       return { next: null, nextReason: 'manual' };
     case 'none':
       return { next: null, nextReason: trigger === 'disabled' ? 'disabled' : 'not-installed' };
   }
+}
+
+function startedLabel(iso: string, now: Date): string {
+  const { day, time } = formatWhen(iso, now);
+  return time === '' ? day : `${day} ${time}`;
 }
 
 const finiteOrNull = (value: unknown): number | null =>
@@ -98,9 +118,10 @@ export function toStatusJson(input: {
   costs: RepoCosts;
   repo: string;
   scheduler: string;
+  timeZone: string;
   now: Date;
 }): StatusJson {
-  const { overview, costs, repo, scheduler, now } = input;
+  const { overview, costs, repo, scheduler, timeZone, now } = input;
   const healths: Health[] = [];
   let broken = 0;
   const pipelines: StatusEntry[] = [];
@@ -122,6 +143,7 @@ export function toStatusJson(input: {
       work: health.work,
       contradiction: health.contradiction,
       consecutiveSkips: health.consecutiveSkips,
+      triggers: pipeline.triggers.map((t) => t.cron),
       lastRun:
         last === undefined
           ? null
@@ -131,11 +153,12 @@ export function toStatusJson(input: {
               id: ids[0]!,
               status: last.status,
               startedAt: last.startedAt,
+              startedLabel: startedLabel(last.startedAt, now),
               costUsd: finiteOrNull(last.totalCostUsd),
               forced: last.forced === true,
               ...(typeof last.skipReason === 'string' ? { skipReason: last.skipReason } : {}),
             },
-      ...nextOf(next, health.trigger),
+      ...nextOf(next, health.trigger, now),
     });
   }
   const spend = spendOf(costs.runs, now);
@@ -143,6 +166,7 @@ export function toStatusJson(input: {
     generatedAt: now.toISOString(),
     repo,
     scheduler,
+    timeZone,
     summary: panelSummary(healths, broken),
     pipelines,
     costs: { month: spend.month, previous: spend.previous, unreadableRuns: costs.unreadable },

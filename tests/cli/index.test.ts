@@ -744,7 +744,7 @@ describe('status --json', () => {
     expect(JSON.parse(stdout).pipelines.length).toBe(1);
   });
 
-  test('an unknown name fails like the text status does', async () => {
+  test('an unknown name fails with exit 1 (the text output prints it with no runs)', async () => {
     writePipeline('ok', OK_YAML);
     const { code, out } = await cli(['status', 'nope', '--json']);
     expect(code).toBe(1);
