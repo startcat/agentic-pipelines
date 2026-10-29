@@ -326,8 +326,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <path data-edge-from="failed" data-edge-to="pasos" data-edge-label="pipelines resume &lt;run-id&gt;" data-edge-key="2" data-edge-id="failed-resume" data-composition-points="619,307;880,307;880,80;402,80;402,126" d="M 619 307 L 870 307 Q 880 307 880 297 L 880 90 Q 880 80 870 80 L 412 80 Q 402 80 402 90 L 402 126" class="a-emphasis" stroke-width="2" marker-end="url(#arrowhead-emphasis)"/>
 
         <!-- States -->
-        <g id="node-disparo" data-node-id="disparo" data-node-label="Trigger" tabindex="0" role="button" aria-label="Focus Trigger, launchd or pipelines run, Run phases" aria-pressed="false" data-node-kind="start" data-node-sublabel="launchd or pipelines run" data-node-tag="entry" data-node-context="Run phases">
-          <title>Trigger · launchd or pipelines run · Run phases · entry</title>
+        <g id="node-disparo" data-node-id="disparo" data-node-label="Trigger" tabindex="0" role="button" aria-label="Focus Trigger, scheduler or pipelines run, Run phases" aria-pressed="false" data-node-kind="start" data-node-sublabel="scheduler or pipelines run" data-node-tag="entry" data-node-context="Run phases">
+          <title>Trigger · scheduler or pipelines run · Run phases · entry</title>
           <rect x="35" y="126" width="118" height="62" rx="7" class="c-mask"/>
           <rect x="35" y="126" width="118" height="62" rx="7" class="c-frontend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="start" class="semantic-sigil s-frontend" transform="translate(136 132) scale(0.6875)">
@@ -336,7 +336,7 @@ rect.c-bg-rect { fill: var(--bg); }
           </g>
         <text x="45" y="140" class="t-frontend" font-size="7" font-weight="700">01</text>
           <text data-node-label="" x="94" y="147" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Trigger</text>
-          <text x="94" y="163" class="t-muted" font-size="7" text-anchor="middle">launchd or pipelines run</text>
+          <text x="94" y="163" class="t-muted" font-size="7" text-anchor="middle">scheduler or pipelines run</text>
         <text x="94" y="177" class="t-frontend" font-size="7" text-anchor="middle">entry</text>
         </g>
 
@@ -407,8 +407,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="556" y="325" class="t-security" font-size="7" text-anchor="middle">exit 1</text>
         </g>
 
-        <g id="node-skipped" data-node-id="skipped" data-node-label="skipped" tabindex="0" role="button" aria-label="Focus skipped, false guard or lock, Skip" aria-pressed="false" data-node-kind="neutral" data-node-sublabel="false guard or lock" data-node-tag="exit 0 / 3" data-node-context="Skip">
-          <title>skipped · false guard or lock · Skip · exit 0 / 3</title>
+        <g id="node-skipped" data-node-id="skipped" data-node-label="skipped" tabindex="0" role="button" aria-label="Focus skipped, false guard or busy lock, Skip" aria-pressed="false" data-node-kind="neutral" data-node-sublabel="false guard or busy lock" data-node-tag="0 guard · 3 lock" data-node-context="Skip">
+          <title>skipped · false guard or busy lock · Skip · 0 guard · 3 lock</title>
           <rect x="339" y="278" width="126" height="58" rx="7" class="c-mask"/>
           <rect x="339" y="278" width="126" height="58" rx="7" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="neutral" class="semantic-sigil s-external" transform="translate(448 284) scale(0.6875)">
@@ -416,17 +416,17 @@ rect.c-bg-rect { fill: var(--bg); }
             <circle cx="8" cy="8" r="1.2" class="sigil-fill"/>
           </g>
           <text data-node-label="" x="402" y="299" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">skipped</text>
-          <text x="402" y="315" class="t-muted" font-size="7" text-anchor="middle">false guard or lock</text>
-        <text x="402" y="325" class="t-muted" font-size="7" text-anchor="middle">exit 0 / 3</text>
+          <text x="402" y="315" class="t-muted" font-size="7" text-anchor="middle">false guard or busy lock</text>
+        <text x="402" y="325" class="t-muted" font-size="7" text-anchor="middle">0 guard · 3 lock</text>
         </g>
 
         <!-- Transition labels -->
         <g data-edge-from="preflight" data-edge-to="skipped" data-edge-label="when: fails" data-edge-key="0" data-edge-id="preflight-skipped">
-          <rect x="255.65" y="286" width="75.7" height="16" rx="4" class="c-mask"/>
+          <rect x="260.55" y="286" width="65.9" height="16" rx="4" class="c-mask"/>
           <text x="293.5" y="297" class="t-messagebus" font-size="8" text-anchor="middle">when: fails</text>
         </g>
         <g data-edge-from="cierre" data-edge-to="failed" data-edge-label="a step went red" data-edge-key="1" data-edge-id="cierre-failed">
-          <rect x="501" y="191" width="110" height="16" rx="4" class="c-mask"/>
+          <rect x="513.25" y="191" width="85.5" height="16" rx="4" class="c-mask"/>
           <text x="556" y="202" class="t-security" font-size="8" text-anchor="middle">a step went red</text>
         </g>
         <g data-edge-from="failed" data-edge-to="pasos" data-edge-label="pipelines resume &lt;run-id&gt;" data-edge-key="2" data-edge-id="failed-resume">
